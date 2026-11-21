@@ -49,7 +49,8 @@ import com.example.model.OwnedCard
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.EmptyVaultState
 import com.example.ui.components.RarityChip
-import com.example.ui.theme.DeepCobalt
+import com.example.ui.components.rememberMlbbImageRequest
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintNeon
@@ -72,6 +73,7 @@ fun RecycleForgeScreen(
     includeStatusBarPadding: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val palette = CollectorTheme.colors
     var pendingConfirmCard by remember { mutableStateOf<OwnedCard?>(null) }
 
     val duplicateExtras = remember(uiState.ownedCards) {
@@ -120,7 +122,7 @@ fun RecycleForgeScreen(
                         Icon(
                             imageVector = Icons.Default.Recycling,
                             contentDescription = null,
-                            tint = DeepCobalt,
+                            tint = palette.accentPrimary,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -147,7 +149,7 @@ fun RecycleForgeScreen(
                     enabled = safeAutoExtras.isNotEmpty(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = StudioGold,
-                        contentColor = InkSlate
+                        contentColor = palette.goldButtonContent
                     ),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
@@ -260,6 +262,7 @@ private fun RecycleCardRow(
     onInspect: () -> Unit,
     onRecycleClick: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     Surface(
         color = PureWhiteCard,
         shape = RoundedCornerShape(16.dp),
@@ -284,7 +287,7 @@ private fun RecycleCardRow(
             ) {
                 if (card.imageUrl.isNotBlank()) {
                     AsyncImage(
-                        model = card.imageUrl,
+                        model = rememberMlbbImageRequest(card.imageUrl),
                         contentDescription = card.skinName,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
@@ -304,7 +307,7 @@ private fun RecycleCardRow(
                         Icon(
                             imageVector = Icons.Default.Bolt,
                             contentDescription = "Misprint",
-                            tint = DeepCobalt,
+                            tint = palette.misprintLabel,
                             modifier = Modifier.size(14.dp)
                         )
                     }

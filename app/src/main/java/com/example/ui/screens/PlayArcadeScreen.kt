@@ -29,10 +29,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -44,7 +46,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -61,20 +62,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import com.example.data.local.HourlyChargeStatus
 import com.example.data.local.PlayerWalletState
+import com.example.model.QuizQuestion
+import com.example.model.QuizQuestionBank
+import com.example.model.QuizQuestionType
 import com.example.model.SkinCatalogItem
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.DiamondsPill
 import com.example.ui.components.RarityChip
+import com.example.ui.components.SettingsGearButton
+import com.example.ui.components.rememberMlbbImageRequest
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
-import com.example.ui.theme.PearlCanvas
+import com.example.ui.theme.MoonlightInk
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.RarityUncommon
 import com.example.ui.theme.SkyAzure
@@ -84,7 +90,9 @@ import com.example.ui.theme.StudioCrimson
 import com.example.ui.theme.StudioGold
 import com.example.ui.theme.StudioGoldBright
 import com.example.ui.theme.StudioGoldText
+import com.example.ui.theme.rememberSafeHapticPerformer
 import com.example.ui.viewmodel.MegaCollectorUiState
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.random.Random
 
@@ -92,94 +100,144 @@ import kotlin.random.Random
 fun PlayArcadeScreen(
     uiState: MegaCollectorUiState,
     onClaimScratcherPrize: (Int) -> Unit,
-    onAwardMinigameDiamonds: (Int, String) -> Unit,
+    onAwardPrismDiamonds: (Int, String) -> Unit,
+    onCompleteHourlyQuiz: (Int, Int) -> Unit,
     onPlasticCrinkle: () -> Unit,
+    onOpenSettings: () -> Unit,
     onButtonClickSfx: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
+    val palette = CollectorTheme.colors
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(PearlCanvas)
-            .statusBarsPadding(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .background(palette.canvas)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.16f else 0.34f),
+                        palette.canvas
+                    )
+                )
+            )
+            .statusBarsPadding()
     ) {
-        // Arcade Studio Header
-        item {
-            Surface(
-                color = PureWhiteCard,
-                shape = RoundedCornerShape(22.dp),
-                shadowElevation = 3.dp,
-                border = BorderStroke(1.5.dp, SkyAzure.copy(alpha = 0.45f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Arcade Studio Header
+            item {
+                Surface(
+                    color = PureWhiteCard,
+                    shape = RoundedCornerShape(22.dp),
+                    shadowElevation = 4.dp,
+                    border = BorderStroke(1.2.dp, SkyAzure.copy(alpha = 0.45f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                text = "Arcade & Scratchers",
+                                text = if (palette.isDark) "Moonlight Arcade" else "Collector Arcade",
                                 style = MaterialTheme.typography.headlineMedium,
-                                color = DeepCobalt
+                                color = palette.accentPrimary,
+                                modifier = Modifier.weight(1f)
                             )
-                            Text(
-                                text = "Win 💎 Diamonds from games & 🪙 Coins from daily scratchers!",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = SlateMuted
-                            )
+                            SettingsGearButton(onClick = onOpenSettings)
                         }
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CoinsPill(coins = uiState.wallet.coins)
-                        DiamondsPill(diamonds = uiState.wallet.diamonds)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Scratchers & Prism Strike refill +1 every 1 hour (stack up to 3). 10-Question Quiz resets every 1 hour!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SlateMuted
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CoinsPill(coins = uiState.wallet.coins)
+                            DiamondsPill(diamonds = uiState.wallet.diamonds)
+                        }
                     }
                 }
             }
-        }
 
-        // Daily Coin Scratchers Card
-        item {
-            DailyScratcherSection(
-                remainingScratchers = uiState.dailyScratchersRemaining,
-                onScratchComplete = onClaimScratcherPrize,
-                onScratchSound = onPlasticCrinkle
+            // Hourly Coin Scratchers (Stack up to 3, +1 per hour)
+            item {
+                HourlyScratcherSection(
+                    status = uiState.scratcherStatus,
+                    onScratchComplete = onClaimScratcherPrize,
+                    onScratchSound = onPlasticCrinkle
+                )
+            }
+
+            // Minigame 1: 10-Question Hourly Legends & Map Quiz
+            item {
+                HourlyTenQuestionQuizCard(
+                    catalog = uiState.catalog,
+                    cooldownRemainingMs = uiState.quizCooldownRemainingMs,
+                    onCompleteQuiz = onCompleteHourlyQuiz,
+                    onButtonClickSfx = onButtonClickSfx
+                )
+            }
+
+            // Minigame 2: Hourly Prism Timing Tap (Stack up to 3, +1 per hour)
+            item {
+                HourlyPrismTimingTapGame(
+                    status = uiState.prismStatus,
+                    onStrike = onAwardPrismDiamonds,
+                    onButtonClickSfx = onButtonClickSfx
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HourlyChargeBadge(
+    status: HourlyChargeStatus,
+    accent: Color
+) {
+    val label = if (status.charges >= PlayerWalletState.MAX_HOURLY_CHARGES) {
+        "${status.charges}/3 Ready"
+    } else {
+        "${status.charges}/3 • +1 in ${formatCountdownMs(status.msUntilNextCharge)}"
+    }
+    Surface(
+        color = SkyFrost,
+        shape = RoundedCornerShape(999.dp),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.55f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Schedule,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(13.dp)
             )
-        }
-
-        // Minigame 1: Hero Skin Guess (Earns Diamonds)
-        item {
-            HeroSkinGuessGame(
-                catalog = uiState.catalog,
-                onWinDiamonds = { amount ->
-                    onAwardMinigameDiamonds(amount, "Skin Guess Win!")
-                },
-                onButtonClickSfx = onButtonClickSfx
-            )
-        }
-
-        // Minigame 2: Prism Timing Tap (Earns Diamonds)
-        item {
-            PrismTimingTapGame(
-                onWinDiamonds = { amount, label ->
-                    onAwardMinigameDiamonds(amount, label)
-                },
-                onButtonClickSfx = onButtonClickSfx
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = accent
             )
         }
     }
 }
 
 @Composable
-private fun DailyScratcherSection(
-    remainingScratchers: Int,
+private fun HourlyScratcherSection(
+    status: HourlyChargeStatus,
     onScratchComplete: (Int) -> Unit,
     onScratchSound: () -> Unit
 ) {
-    val haptic = LocalHapticFeedback.current
+    val palette = CollectorTheme.colors
+    val performHaptic = rememberSafeHapticPerformer()
     var cardSeed by remember { mutableIntStateOf(0) }
     val prizeCoins = remember(cardSeed) {
         val roll = Random.nextDouble()
@@ -195,11 +253,12 @@ private fun DailyScratcherSection(
     var scratched by remember(cardSeed) { mutableStateOf(false) }
 
     val scratchProgress = (scratchPoints.size / 26f).coerceIn(0f, 1f)
+    val hasCharges = status.charges > 0
 
     fun finishScratch() {
-        if (!scratched && remainingScratchers > 0) {
+        if (!scratched && hasCharges) {
             scratched = true
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            performHaptic(HapticFeedbackType.LongPress)
             onScratchComplete(prizeCoins)
         }
     }
@@ -207,8 +266,8 @@ private fun DailyScratcherSection(
     Surface(
         color = PureWhiteCard,
         shape = RoundedCornerShape(22.dp),
-        shadowElevation = 3.dp,
-        border = BorderStroke(1.5.dp, StudioGold.copy(alpha = 0.65f))
+        shadowElevation = 4.dp,
+        border = BorderStroke(1.5.dp, StudioGold.copy(alpha = 0.55f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -216,7 +275,10 @@ private fun DailyScratcherSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Casino,
                         contentDescription = null,
@@ -225,37 +287,26 @@ private fun DailyScratcherSection(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Daily Coin Scratchers",
+                        text = "Coin Scratchers",
                         style = MaterialTheme.typography.titleLarge,
                         color = InkSlate
                     )
                 }
-                Surface(
-                    color = if (remainingScratchers > 0) Color(0xFFFFFBEB) else SkyFrost,
-                    shape = RoundedCornerShape(999.dp),
-                    border = BorderStroke(1.dp, if (remainingScratchers > 0) StudioGold else IceBorder)
-                ) {
-                    Text(
-                        text = "$remainingScratchers/${PlayerWalletState.MAX_DAILY_SCRATCHERS} Left",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (remainingScratchers > 0) StudioGoldText else SlateMuted,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
+                HourlyChargeBadge(status = status, accent = palette.goldText)
             }
 
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Rub the silver foil ticket to uncover 100 to 500 🪙 Coins!",
+                text = "Recharges +1 ticket every hour (stacks up to 3). Scratch to win 100–500 🪙!",
                 style = MaterialTheme.typography.bodyMedium,
                 color = SlateMuted
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (remainingScratchers <= 0 && !scratched) {
+            if (!hasCharges && !scratched) {
                 Surface(
-                    color = SkyFrost,
+                    color = palette.abyss,
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.dp, IceBorder),
                     modifier = Modifier.fillMaxWidth()
@@ -265,41 +316,46 @@ private fun DailyScratcherSection(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "All 3 Daily Scratchers Scratched!",
+                            text = "Scratcher Recharging",
                             style = MaterialTheme.typography.titleMedium,
-                            color = DeepCobalt
+                            color = palette.accentPrimary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Come back tomorrow for 3 fresh Coin Scratcher tickets.",
+                            text = "Next +1 Scratcher unlocks in ${formatCountdownMs(status.msUntilNextCharge)}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = SlateMuted
                         )
                     }
                 }
             } else {
+                val scratchBacking = if (palette.isDark) {
+                    listOf(Color(0xFF28200D), Color(0xFF3A2D11))
+                } else {
+                    listOf(Color(0xFFFEF3C7), Color(0xFFFDE68A))
+                }
+                val revealedHeadlineColor = if (palette.isDark) StudioGoldBright else StudioGoldText
+                val revealedSubColor = if (palette.isDark) MoonlightInk else InkSlate
+                val scratchUncoveredColor = if (palette.isDark) Color(0xFF28200D) else Color(0xFFFEF3C7)
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(138.dp)
                         .clip(RoundedCornerShape(18.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFFFFFBEB), Color(0xFFFEF3C7))
-                            )
-                        )
-                        .border(2.dp, StudioGold, RoundedCornerShape(18.dp))
-                        .pointerInput(cardSeed, remainingScratchers) {
+                        .background(Brush.linearGradient(colors = scratchBacking))
+                        .border(2.dp, StudioGold.copy(alpha = 0.85f), RoundedCornerShape(18.dp))
+                        .pointerInput(cardSeed, status.charges) {
                             detectDragGestures(
                                 onDragStart = { offset ->
-                                    if (!scratched && remainingScratchers > 0) {
+                                    if (!scratched && status.charges > 0) {
                                         onScratchSound()
                                         scratchPoints.add(offset)
                                     }
                                 }
                             ) { change, _ ->
                                 change.consume()
-                                if (!scratched && remainingScratchers > 0) {
+                                if (!scratched && status.charges > 0) {
                                     val pos = change.position
                                     val last = scratchPoints.lastOrNull()
                                     if (last == null || (pos - last).getDistance() > 14f) {
@@ -316,7 +372,6 @@ private fun DailyScratcherSection(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    // Underlying Coin Prize
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             imageVector = Icons.Default.MonetizationOn,
@@ -327,27 +382,26 @@ private fun DailyScratcherSection(
                         Text(
                             text = "+$prizeCoins Coins!",
                             style = MaterialTheme.typography.headlineMedium,
-                            color = StudioGoldText
+                            color = revealedHeadlineColor
                         )
                         Text(
-                            text = if (prizeCoins >= 350) "LUCKY JACKPOT!" else "Daily Coin Ticket",
+                            text = if (prizeCoins >= 350) "MEGA JACKPOT!" else "Coin Ticket",
                             style = MaterialTheme.typography.labelMedium,
-                            color = InkSlate
+                            color = revealedSubColor
                         )
                     }
 
-                    // Silver Foil Scratch Overlay
                     if (!scratched) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             drawRoundRect(
                                 brush = Brush.linearGradient(
-                                    colors = listOf(Color(0xFFCBD5E1), Color(0xFF94A3B8), Color(0xFFE2E8F0))
+                                    colors = listOf(Color(0xFF475569), Color(0xFF64748B), Color(0xFF334155))
                                 ),
                                 cornerRadius = CornerRadius(18f, 18f)
                             )
                             scratchPoints.forEach { pt ->
                                 drawCircle(
-                                    color = Color(0xFFFFFBEB),
+                                    color = scratchUncoveredColor,
                                     radius = 34f,
                                     center = pt
                                 )
@@ -358,14 +412,14 @@ private fun DailyScratcherSection(
                                 Icon(
                                     imageVector = Icons.Default.TouchApp,
                                     contentDescription = null,
-                                    tint = InkSlate.copy(alpha = 0.78f),
+                                    tint = Color.White.copy(alpha = 0.9f),
                                     modifier = Modifier.size(28.dp)
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "Drag finger here to scratch!",
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = InkSlate
+                                    color = Color.White
                                 )
                             }
                         }
@@ -398,7 +452,7 @@ private fun DailyScratcherSection(
                             Text("Quick Scratch", color = StudioGoldText)
                         }
                     }
-                } else if (remainingScratchers > 0) {
+                } else if (hasCharges) {
                     Button(
                         onClick = { cardSeed++ },
                         colors = ButtonDefaults.buttonColors(
@@ -412,7 +466,7 @@ private fun DailyScratcherSection(
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Grab Next Scratcher ($remainingScratchers Left)")
+                        Text("Grab Next Scratcher (${status.charges}/3 Left)")
                     }
                 }
             }
@@ -421,39 +475,29 @@ private fun DailyScratcherSection(
 }
 
 @Composable
-private fun HeroSkinGuessGame(
+private fun HourlyTenQuestionQuizCard(
     catalog: List<SkinCatalogItem>,
-    onWinDiamonds: (Int) -> Unit,
+    cooldownRemainingMs: Long,
+    onCompleteQuiz: (Int, Int) -> Unit,
     onButtonClickSfx: () -> Unit
 ) {
-    var roundKey by remember { mutableIntStateOf(0) }
-    var streak by remember { mutableIntStateOf(0) }
-    var answeredHero by remember(roundKey) { mutableStateOf<String?>(null) }
-
-    val uniqueHeroNames = remember(catalog) {
-        catalog.map { it.heroName }.distinct().filter { it.isNotBlank() && it != "Unknown Hero" }
+    val palette = CollectorTheme.colors
+    var quizSessionId by remember { mutableIntStateOf(0) }
+    var inProgress by remember { mutableStateOf(false) }
+    var questions by remember(quizSessionId) {
+        mutableStateOf<List<QuizQuestion>>(emptyList())
     }
+    var currentIndex by remember(quizSessionId) { mutableIntStateOf(0) }
+    var correctCount by remember(quizSessionId) { mutableIntStateOf(0) }
+    var selectedOption by remember(quizSessionId, currentIndex) { mutableStateOf<String?>(null) }
+    var finishedScore by remember(quizSessionId) { mutableStateOf<Pair<Int, Int>?>(null) }
 
-    val targetSkin = remember(catalog, roundKey) {
-        val withArt = catalog.filter { it.heroName.isNotBlank() && it.heroName != "Unknown Hero" }
-        withArt.randomOrNull()
-    }
-
-    val choices = remember(targetSkin, uniqueHeroNames, roundKey) {
-        if (targetSkin == null) emptyList()
-        else {
-            val distractors = uniqueHeroNames
-                .filter { !it.equals(targetSkin.heroName, ignoreCase = true) }
-                .shuffled()
-                .take(3)
-            (distractors + targetSkin.heroName).shuffled()
-        }
-    }
+    val onCooldown = cooldownRemainingMs > 0L
 
     Surface(
         color = PureWhiteCard,
         shape = RoundedCornerShape(22.dp),
-        shadowElevation = 3.dp,
+        shadowElevation = 4.dp,
         border = BorderStroke(1.5.dp, SkyAzure.copy(alpha = 0.55f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -462,29 +506,38 @@ private fun HeroSkinGuessGame(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Quiz,
                         contentDescription = null,
-                        tint = DeepCobalt,
+                        tint = palette.accentPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Who Wears This Skin?",
+                        text = "10-Question Arena Quiz",
                         style = MaterialTheme.typography.titleLarge,
                         color = InkSlate
                     )
                 }
+
                 Surface(
                     color = SkyFrost,
                     shape = RoundedCornerShape(999.dp),
-                    border = BorderStroke(1.dp, SkyAzure.copy(alpha = 0.45f))
+                    border = BorderStroke(
+                        1.dp,
+                        if (onCooldown) IceBorder else palette.accentPrimary.copy(alpha = 0.6f)
+                    )
                 ) {
                     Text(
-                        text = "Streak: $streak",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = DeepCobalt,
+                        text = if (inProgress) "Q ${currentIndex + 1}/10"
+                        else if (onCooldown) formatCountdownMs(cooldownRemainingMs)
+                        else "Hourly Ready",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (onCooldown && !inProgress) SlateMuted else palette.accentPrimary,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
@@ -492,77 +545,190 @@ private fun HeroSkinGuessGame(
 
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Guess the hero for +5 💎 Diamonds (+7 💎 on 3+ win streak)!",
+                text = "10 questions mixing MLBBDex Skin IDs & Map Knowledge once every 1 hour (+2 💎/hit + up to +10 💎 bonus)!",
                 style = MaterialTheme.typography.bodyMedium,
                 color = SlateMuted
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (targetSkin == null || choices.size < 2) {
-                Text(
-                    text = "Syncing hero catalog from MLBBDex...",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = SlateMuted
-                )
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(92.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(SkyFrost)
-                            .border(1.dp, IceBorder, RoundedCornerShape(14.dp))
+            when {
+                finishedScore != null && !inProgress -> {
+                    val (score, reward) = finishedScore!!
+                    Surface(
+                        color = palette.abyss,
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, RarityUncommon.copy(alpha = 0.6f)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        if (targetSkin.imageUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = targetSkin.imageUrl,
-                                contentDescription = targetSkin.skinName,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = RarityUncommon,
+                                modifier = Modifier.size(30.dp)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Quiz Scored $score / 10!",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = InkSlate
+                            )
+                            Text(
+                                text = "Earned +$reward 💎 • Next 10-question quiz in ${formatCountdownMs(cooldownRemainingMs)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = palette.accentPrimary
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        RarityChip(rarity = targetSkin.rarity, compact = true)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = targetSkin.skinName,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = InkSlate
-                        )
-                        Text(
-                            text = "Role: ${targetSkin.role}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = SlateMuted
-                        )
+                }
+
+                !inProgress && onCooldown -> {
+                    Surface(
+                        color = palette.abyss,
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, IceBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Hourly Quiz Cooldown",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = palette.accentPrimary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Next 10-question set unlocks in ${formatCountdownMs(cooldownRemainingMs)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = SlateMuted
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                !inProgress -> {
+                    Button(
+                        onClick = {
+                            onButtonClickSfx()
+                            questions = QuizQuestionBank.buildHourlyQuiz(catalog)
+                            currentIndex = 0
+                            correctCount = 0
+                            selectedOption = null
+                            finishedScore = null
+                            inProgress = true
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = DeepCobalt,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .testTag("start_hourly_quiz_button")
+                    ) {
+                        Text("Start 10-Question Quiz", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
 
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    choices.chunked(2).forEach { rowChoices ->
+                else -> {
+                    val q = questions.getOrNull(currentIndex)
+                    if (q != null) {
+                        LinearProgressIndicator(
+                            progress = { (currentIndex + 1).toFloat() / 10f },
+                            color = palette.accentPrimary,
+                            trackColor = SkyFrost,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            rowChoices.forEach { hero ->
-                                val isAnswered = answeredHero != null
-                                val isCorrect = hero == targetSkin.heroName
-                                val isChosen = hero == answeredHero
+                            Surface(
+                                color = SkyFrost,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = q.type.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (q.type == QuizQuestionType.MAP_KNOWLEDGE) StudioGoldText else palette.accentPrimary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                            if (q.skinRarity != null) {
+                                RarityChip(rarity = q.skinRarity, compact = true)
+                            }
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text(
+                                text = "Score: $correctCount/${currentIndex + if (selectedOption != null) 1 else 0}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = palette.goldText
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (q.imageUrl.isNotBlank()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(88.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(palette.abyss)
+                                        .border(1.dp, IceBorder, RoundedCornerShape(14.dp))
+                                ) {
+                                    SubcomposeAsyncImage(
+                                        model = rememberMlbbImageRequest(q.imageUrl),
+                                        contentDescription = q.prompt,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = q.prompt,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = InkSlate,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = q.prompt,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = InkSlate
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            q.options.forEach { option ->
+                                val answered = selectedOption != null
+                                val isCorrect = option == q.correctAnswer
+                                val isChosen = option == selectedOption
                                 val bgColor = when {
-                                    !isAnswered -> SkyFrost
-                                    isCorrect -> RarityUncommon.copy(alpha = 0.22f)
-                                    isChosen -> StudioCrimson.copy(alpha = 0.18f)
-                                    else -> PearlCanvas
+                                    !answered -> SkyFrost
+                                    isCorrect -> RarityUncommon.copy(alpha = 0.24f)
+                                    isChosen -> StudioCrimson.copy(alpha = 0.24f)
+                                    else -> palette.abyss
                                 }
                                 val borderColor = when {
-                                    !isAnswered -> IceBorder
+                                    !answered -> IceBorder
                                     isCorrect -> RarityUncommon
                                     isChosen -> StudioCrimson
                                     else -> IceBorder
@@ -573,56 +739,79 @@ private fun HeroSkinGuessGame(
                                     shape = RoundedCornerShape(12.dp),
                                     border = BorderStroke(1.2.dp, borderColor),
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .testTag("quiz_choice_$hero")
+                                        .fillMaxWidth()
+                                        .testTag("quiz_option_${option.take(16)}")
                                 ) {
                                     OutlinedButton(
                                         onClick = {
-                                            if (answeredHero == null) {
-                                                answeredHero = hero
-                                                if (hero == targetSkin.heroName) {
-                                                    streak++
-                                                    val reward = if (streak >= 3) 7 else 5
-                                                    onWinDiamonds(reward)
-                                                } else {
-                                                    onButtonClickSfx()
-                                                    streak = 0
+                                            if (selectedOption == null) {
+                                                selectedOption = option
+                                                if (option == q.correctAnswer) {
+                                                    correctCount++
                                                 }
+                                                onButtonClickSfx()
                                             }
                                         },
                                         border = null,
-                                        modifier = Modifier.fillMaxSize()
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
-                                            text = hero,
+                                            text = option,
                                             style = MaterialTheme.typography.labelLarge,
-                                            color = InkSlate,
-                                            maxLines = 1
+                                            color = InkSlate
                                         )
                                     }
                                 }
                             }
                         }
-                    }
-                }
 
-                if (answeredHero != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = {
-                            onButtonClickSfx()
-                            roundKey++
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = DeepCobalt,
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Next Skin Round")
+                        if (selectedOption != null) {
+                            if (q.explanation.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = q.explanation,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = palette.accentPrimary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            val isLast = currentIndex >= questions.lastIndex
+                            Button(
+                                onClick = {
+                                    onButtonClickSfx()
+                                    if (!isLast) {
+                                        currentIndex++
+                                        selectedOption = null
+                                    } else {
+                                        val finalScore = correctCount
+                                        val bonus = when {
+                                            finalScore >= 8 -> 10
+                                            finalScore >= 5 -> 4
+                                            else -> 0
+                                        }
+                                        val totalDiamonds = (finalScore * 2) + bonus
+                                        finishedScore = finalScore to totalDiamonds
+                                        inProgress = false
+                                        onCompleteQuiz(finalScore, totalDiamonds)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isLast) StudioGold else DeepCobalt,
+                                    contentColor = if (isLast) palette.goldButtonContent else Color.White
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("quiz_next_question_button")
+                            ) {
+                                Text(
+                                    text = if (isLast) "Finish Quiz & Claim Diamonds" else "Next Question (${currentIndex + 2}/10)",
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -631,10 +820,12 @@ private fun HeroSkinGuessGame(
 }
 
 @Composable
-private fun PrismTimingTapGame(
-    onWinDiamonds: (Int, String) -> Unit,
+private fun HourlyPrismTimingTapGame(
+    status: HourlyChargeStatus,
+    onStrike: (Int, String) -> Unit,
     onButtonClickSfx: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     val infiniteTransition = rememberInfiniteTransition(label = "prism_bar")
     val sweepPosition by infiniteTransition.animateFloat(
         initialValue = 0.04f,
@@ -647,65 +838,73 @@ private fun PrismTimingTapGame(
     )
 
     var lastResultText by remember { mutableStateOf("Tap when the marker crosses the Gold Center!") }
+    val hasCharges = status.charges > 0
 
     Surface(
         color = PureWhiteCard,
         shape = RoundedCornerShape(22.dp),
-        shadowElevation = 3.dp,
-        border = BorderStroke(1.5.dp, DeepCobalt.copy(alpha = 0.45f))
+        shadowElevation = 4.dp,
+        border = BorderStroke(1.5.dp, palette.gloomHalo.copy(alpha = 0.65f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Bolt,
-                    contentDescription = null,
-                    tint = StudioGold,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Prism Strike Timing",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = InkSlate
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Bolt,
+                        contentDescription = null,
+                        tint = StudioGold,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Prism Strike Timing",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = InkSlate
+                    )
+                }
+                HourlyChargeBadge(status = status, accent = palette.accentPrimary)
             }
 
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Bullseye (+8 💎) • Inner Blue (+4 💎) • Outer (+1 💎)",
+                text = "Recharges +1 strike every hour (stacks up to 3). Bullseye (+8 💎) • Inner (+4 💎) • Outer (+1 💎)",
                 style = MaterialTheme.typography.bodyMedium,
                 color = SlateMuted
             )
 
             Spacer(modifier = Modifier.height(14.dp))
 
+            val prismGold = StudioGoldBright
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(34.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                // Base track
                 drawRoundRect(
-                    color = Color(0xFFE2E8F0),
+                    color = Color(0xFF1E293B),
                     cornerRadius = CornerRadius(12f, 12f)
                 )
-                // Inner Sky Blue Zone (0.32..0.68)
                 drawRect(
                     color = SkyAzure.copy(alpha = 0.45f),
                     topLeft = Offset(size.width * 0.32f, 0f),
                     size = Size(size.width * 0.36f, size.height)
                 )
-                // Gold Bullseye Center (0.45..0.55)
                 drawRect(
-                    color = StudioGoldBright,
+                    color = prismGold,
                     topLeft = Offset(size.width * 0.45f, 0f),
                     size = Size(size.width * 0.10f, size.height)
                 )
-                // Sweeping Marker
                 val markerX = size.width * sweepPosition
                 drawLine(
-                    color = InkSlate,
+                    color = Color.White,
                     start = Offset(markerX, 2f),
                     end = Offset(markerX, size.height - 2f),
                     strokeWidth = 10f
@@ -714,35 +913,40 @@ private fun PrismTimingTapGame(
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = lastResultText,
+                text = if (hasCharges) lastResultText
+                else "Recharging... +1 strike in ${formatCountdownMs(status.msUntilNextCharge)}",
                 style = MaterialTheme.typography.labelMedium,
-                color = DeepCobalt
+                color = palette.accentPrimary
             )
 
             Spacer(modifier = Modifier.height(10.dp))
 
             Button(
                 onClick = {
+                    if (!hasCharges) return@Button
                     val distFromCenter = abs(sweepPosition - 0.5f)
                     when {
                         distFromCenter <= 0.06f -> {
                             lastResultText = "GOLD BULLSEYE! +8 💎 Diamonds"
-                            onWinDiamonds(8, "Gold Bullseye!")
+                            onStrike(8, "Gold Bullseye!")
                         }
                         distFromCenter <= 0.18f -> {
                             lastResultText = "Prism Hit! +4 💎 Diamonds"
-                            onWinDiamonds(4, "Prism Hit!")
+                            onStrike(4, "Prism Hit!")
                         }
                         else -> {
                             onButtonClickSfx()
                             lastResultText = "Outer Edge Hit! +1 💎 Diamond"
-                            onWinDiamonds(1, "Timing Tap!")
+                            onStrike(1, "Timing Tap!")
                         }
                     }
                 },
+                enabled = hasCharges,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = DeepCobalt,
-                    contentColor = Color.White
+                    contentColor = Color.White,
+                    disabledContainerColor = SkyFrost,
+                    disabledContentColor = SlateMuted
                 ),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
@@ -752,8 +956,19 @@ private fun PrismTimingTapGame(
             ) {
                 Icon(Icons.Default.Diamond, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Strike for Diamonds!", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    text = if (hasCharges) "Strike for Diamonds! (${status.charges}/3)"
+                    else "Recharging (${formatCountdownMs(status.msUntilNextCharge)})",
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
         }
     }
+}
+
+private fun formatCountdownMs(ms: Long): String {
+    val totalSec = (ms / 1000L).coerceAtLeast(0L)
+    val mins = totalSec / 60L
+    val secs = totalSec % 60L
+    return String.format(Locale.US, "%02d:%02d", mins, secs)
 }

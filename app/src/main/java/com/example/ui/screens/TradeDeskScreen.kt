@@ -65,6 +65,8 @@ import com.example.model.OwnedCard
 import com.example.model.TradeListing
 import com.example.ui.components.EmptyVaultState
 import com.example.ui.components.RarityChip
+import com.example.ui.components.rememberMlbbImageRequest
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
@@ -93,6 +95,7 @@ fun TradeDeskScreen(
     includeStatusBarPadding: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val palette = CollectorTheme.colors
     val context = LocalContext.current
     var selectedCard by remember(preselectedCardForTrade) { mutableStateOf(preselectedCardForTrade) }
     var seekingNote by remember { mutableStateOf("") }
@@ -114,7 +117,7 @@ fun TradeDeskScreen(
         // Honest Offline P2P Notice
         item {
             Surface(
-                color = Color(0xFFFFFBEB),
+                color = palette.goldSurfaceTint,
                 shape = RoundedCornerShape(16.dp),
                 border = BorderStroke(1.dp, StudioGold.copy(alpha = 0.55f))
             ) {
@@ -159,7 +162,7 @@ fun TradeDeskScreen(
                         Icon(
                             imageVector = Icons.Default.SwapHoriz,
                             contentDescription = null,
-                            tint = DeepCobalt,
+                            tint = palette.accentPrimary,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -214,7 +217,7 @@ fun TradeDeskScreen(
                                                 Icon(
                                                     imageVector = Icons.Default.Bolt,
                                                     contentDescription = "Misprint",
-                                                    tint = DeepCobalt,
+                                                    tint = palette.misprintLabel,
                                                     modifier = Modifier.size(14.dp)
                                                 )
                                             }
@@ -326,7 +329,7 @@ fun TradeDeskScreen(
                         enabled = pasteCodeInput.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = StudioGold,
-                            contentColor = InkSlate
+                            contentColor = palette.goldButtonContent
                         ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
@@ -365,7 +368,7 @@ fun TradeDeskScreen(
                                 Text(
                                     text = "${slip.serialCode}${if (slip.isMisprint) " • 1/1 MISPRINT" else ""}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (slip.isMisprint) DeepCobalt else StudioGoldText
+                                    color = if (slip.isMisprint) palette.misprintLabel else StudioGoldText
                                 )
                                 if (slip.seekingNote.isNotBlank()) {
                                     Text(
@@ -516,6 +519,7 @@ private fun TradeListingRow(
     onShareCode: () -> Unit,
     onCancel: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     Surface(
         color = PureWhiteCard,
         shape = RoundedCornerShape(16.dp),
@@ -539,7 +543,7 @@ private fun TradeListingRow(
             ) {
                 if (listing.imageUrl.isNotBlank()) {
                     AsyncImage(
-                        model = listing.imageUrl,
+                        model = rememberMlbbImageRequest(listing.imageUrl),
                         contentDescription = listing.skinName,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
@@ -569,7 +573,7 @@ private fun TradeListingRow(
             }
 
             IconButton(onClick = onCopyCode) {
-                Icon(Icons.Default.ContentCopy, contentDescription = "Copy trade slip", tint = DeepCobalt)
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy trade slip", tint = palette.accentPrimary)
             }
             IconButton(onClick = onShareCode) {
                 Icon(Icons.Default.Share, contentDescription = "Share trade slip", tint = StudioGoldText)

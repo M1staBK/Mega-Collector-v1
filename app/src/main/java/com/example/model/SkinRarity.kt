@@ -23,7 +23,7 @@ enum class SkinRarity(
         displayName = "Common",
         tierRank = 1,
         primaryColor = RarityCommon,
-        secondaryColor = Color(0xFF475569),
+        secondaryColor = Color(0xFF334155),
         basePullWeight = 32.99,
         recycleGold = 30,
         prestigePower = 10,
@@ -33,7 +33,7 @@ enum class SkinRarity(
         displayName = "Uncommon",
         tierRank = 2,
         primaryColor = RarityUncommon,
-        secondaryColor = Color(0xFF047857),
+        secondaryColor = Color(0xFF065F46),
         basePullWeight = 36.0,
         recycleGold = 65,
         prestigePower = 25,
@@ -43,7 +43,7 @@ enum class SkinRarity(
         displayName = "Special",
         tierRank = 3,
         primaryColor = RaritySpecial,
-        secondaryColor = Color(0xFF0369A1),
+        secondaryColor = Color(0xFF075985),
         basePullWeight = 19.0,
         recycleGold = 140,
         prestigePower = 60,
@@ -53,7 +53,7 @@ enum class SkinRarity(
         displayName = "Epic",
         tierRank = 4,
         primaryColor = RarityEpic,
-        secondaryColor = Color(0xFF5B21B6),
+        secondaryColor = Color(0xFF4C1D95),
         basePullWeight = 8.0,
         recycleGold = 300,
         prestigePower = 150,
@@ -63,7 +63,7 @@ enum class SkinRarity(
         displayName = "Luckybox",
         tierRank = 5,
         primaryColor = RarityLuckybox,
-        secondaryColor = Color(0xFF9D174D),
+        secondaryColor = Color(0xFF831843),
         basePullWeight = 3.0,
         recycleGold = 550,
         prestigePower = 320,
@@ -73,7 +73,7 @@ enum class SkinRarity(
         displayName = "Collector",
         tierRank = 6,
         primaryColor = RarityCollector,
-        secondaryColor = Color(0xFFB45309),
+        secondaryColor = Color(0xFF92400E),
         basePullWeight = 1.0,
         recycleGold = 950,
         prestigePower = 600,
@@ -110,14 +110,21 @@ enum class SkinRarity(
 
         private fun classifyText(text: String): SkinRarity? = when {
             text.contains("legend") ||
+                text.contains("supreme") ||
                 text.contains("prime") ||
                 text.contains("zenith") ||
-                text.contains("aspirant") ||
-                text.contains("exorcist") ||
-                text.contains("11.11") -> LEGEND
+                text.contains("11.11") ||
+                text.contains("double 11") -> LEGEND
+            text.contains("luckybox") ||
+                text.contains("lucky box") ||
+                text.contains("limited epic") ||
+                text.contains("vault") -> LUCKYBOX
             text.contains("collector") ||
+                text.contains("exquisite") ||
                 text.contains("grand") ||
                 text.contains("kof") ||
+                text.contains("aspirant") ||
+                text.contains("exorcist") ||
                 text.contains("transformers") ||
                 text.contains("sanrio") ||
                 text.contains("jujutsu") ||
@@ -126,14 +133,13 @@ enum class SkinRarity(
                 text.contains("ducati") ||
                 text.contains("neobeast") ||
                 text.contains("kishin") ||
-                text.contains("soul vessel") -> COLLECTOR
-            text.contains("luckybox") ||
-                text.contains("lucky box") ||
-                text.contains("limited epic") ||
-                text.contains("vault") -> LUCKYBOX
+                text.contains("soul vessel") ||
+                text.contains("naruto") -> COLLECTOR
             text.contains("epic") ||
+                text.contains("deluxe") ||
                 text.contains("zodiac") ||
                 text.contains("venom") ||
+                text.contains("v.e.n.o.m") ||
                 text.contains("saber") ||
                 text.contains("s.a.b.e.r") ||
                 text.contains("lightborn") ||
@@ -142,26 +148,31 @@ enum class SkinRarity(
                 text.contains("sparkle") ||
                 text.contains("dragon tamer") ||
                 text.contains("blazing") ||
-                text.contains("valentine") -> EPIC
+                text.contains("atomic") -> EPIC
             text.contains("special") ||
+                text.contains("exceptional") ||
                 text.contains("starlight") ||
                 text.contains("annual") ||
                 text.contains("summer") ||
                 text.contains("halloween") ||
                 text.contains("christmas") ||
+                text.contains("valentine") ||
                 text.contains("mpl") ||
                 text.contains("msc") ||
                 text.contains("lunar") ||
-                text.contains("create") -> SPECIAL
+                text.contains("create") ||
+                text.contains("anniversary") -> SPECIAL
             text.contains("uncommon") ||
                 text.contains("elite") ||
                 text.contains("season") ||
+                Regex("\\bs\\d{1,2}\\b").containsMatchIn(text) ||
                 text.contains("painted") -> UNCOMMON
             text.contains("common") ||
                 text.contains("basic") ||
                 text.contains("normal") ||
                 text.contains("classic") ||
-                text.contains("default") -> COMMON
+                text.contains("default") ||
+                text.contains("limited") -> COMMON
             else -> null
         }
     }

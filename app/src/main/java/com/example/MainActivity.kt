@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.OwnedCard
+import com.example.ui.components.SettingsDialog
 import com.example.ui.screens.CardInspectScreen
 import com.example.ui.screens.PackOpeningScreen
 import com.example.ui.screens.PlayArcadeScreen
@@ -73,14 +74,8 @@ import com.example.ui.screens.RecycleForgeScreen
 import com.example.ui.screens.ShopPacksScreen
 import com.example.ui.screens.TradeDeskScreen
 import com.example.ui.screens.VaultScreen
-import com.example.ui.theme.DeepCobalt
-import com.example.ui.theme.IceBorder
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.MegaCollectorTheme
-import com.example.ui.theme.PearlCanvas
-import com.example.ui.theme.PureWhiteCard
-import com.example.ui.theme.SkyFrost
-import com.example.ui.theme.SlateMuted
-import com.example.ui.theme.StudioGold
 import com.example.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 
@@ -117,10 +112,41 @@ class MainActivity : ComponentActivity() {
             )
         )
         setContent {
-            MegaCollectorTheme {
-                MegaCollectorApp()
-            }
+            MegaCollectorRoot(
+                onThemeChanged = { darkMode ->
+                    val style = if (darkMode) {
+                        SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.light(
+                            android.graphics.Color.TRANSPARENT,
+                            android.graphics.Color.TRANSPARENT
+                        )
+                    }
+                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                }
+            )
         }
+    }
+}
+
+@Composable
+fun MegaCollectorRoot(
+    viewModel: MainViewModel = viewModel(),
+    onThemeChanged: (Boolean) -> Unit = {}
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val darkMode = uiState.wallet.darkModeEnabled
+    val vibrationEnabled = uiState.wallet.vibrationEnabled
+
+    LaunchedEffect(darkMode) {
+        onThemeChanged(darkMode)
+    }
+
+    MegaCollectorTheme(
+        darkTheme = darkMode,
+        vibrationEnabled = vibrationEnabled
+    ) {
+        MegaCollectorApp(viewModel = viewModel)
     }
 }
 
@@ -129,6 +155,7 @@ fun MegaCollectorApp(
     viewModel: MainViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val palette = CollectorTheme.colors
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -136,6 +163,7 @@ fun MegaCollectorApp(
     var vaultSubTab by rememberSaveable { mutableStateOf(VaultSubTab.COLLECTION) }
     var inspectingCardId by rememberSaveable { mutableStateOf<Long?>(null) }
     var preselectedTradeCard by remember { mutableStateOf<OwnedCard?>(null) }
+    var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
 
     val claimableQuestCount = remember(uiState.quests) {
         uiState.quests.count { it.canClaim }
@@ -156,20 +184,22 @@ fun MegaCollectorApp(
             val useRail = maxWidth >= 600.dp
 
             Scaffold(
-                containerColor = PearlCanvas,
+                containerColor = palette.canvas,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                 bottomBar = {
                     if (!useRail && packSession == null && inspectingCardId == null) {
                         NavigationBar(
-                            containerColor = PureWhiteCard,
-                            tonalElevation = 4.dp
+                            containerColor = palette.navBar,
+                            tonalElevation = 2.dp
                         ) {
                             CollectorTab.entries.forEach { tab ->
                                 val selected = activeTab == tab
                                 val badgeCount = when (tab) {
                                     CollectorTab.QUESTS -> claimableQuestCount
-                                    CollectorTab.PLAY -> uiState.dailyScratchersRemaining
+                                    CollectorTab.PLAY -> uiState.scratcherStatus.charges +
+                                        uiState.prismStatus.charges +
+                                        if (uiState.quizCooldownRemainingMs <= 0L) 1 else 0
                                     else -> 0
                                 }
                                 NavigationBarItem(
@@ -182,7 +212,10 @@ fun MegaCollectorApp(
                                         BadgedBox(
                                             badge = {
                                                 if (badgeCount > 0) {
-                                                    Badge(containerColor = StudioGold) {
+                                                    Badge(
+                                                        containerColor = palette.gold,
+                                                        contentColor = palette.goldButtonContent
+                                                    ) {
                                                         Text("$badgeCount")
                                                     }
                                                 }
@@ -196,11 +229,11 @@ fun MegaCollectorApp(
                                     },
                                     label = { Text(stringResource(tab.labelRes)) },
                                     colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = DeepCobalt,
-                                        selectedTextColor = DeepCobalt,
-                                        indicatorColor = SkyFrost,
-                                        unselectedIconColor = SlateMuted,
-                                        unselectedTextColor = SlateMuted
+                                        selectedIconColor = palette.accentPrimary,
+                                        selectedTextColor = palette.accentPrimary,
+                                        indicatorColor = palette.frostSurface,
+                                        unselectedIconColor = palette.muted,
+                                        unselectedTextColor = palette.muted
                                     ),
                                     modifier = Modifier.testTag("nav_${tab.route}")
                                 )
@@ -216,7 +249,7 @@ fun MegaCollectorApp(
                 ) {
                     if (useRail && packSession == null && inspectingCardId == null) {
                         NavigationRail(
-                            containerColor = PureWhiteCard,
+                            containerColor = palette.navBar,
                             modifier = Modifier.fillMaxHeight()
                         ) {
                             CollectorTab.entries.forEach { tab ->
@@ -235,11 +268,11 @@ fun MegaCollectorApp(
                                     },
                                     label = { Text(stringResource(tab.labelRes)) },
                                     colors = NavigationRailItemDefaults.colors(
-                                        selectedIconColor = DeepCobalt,
-                                        selectedTextColor = DeepCobalt,
-                                        indicatorColor = SkyFrost,
-                                        unselectedIconColor = SlateMuted,
-                                        unselectedTextColor = SlateMuted
+                                        selectedIconColor = palette.accentPrimary,
+                                        selectedTextColor = palette.accentPrimary,
+                                        indicatorColor = palette.frostSurface,
+                                        unselectedIconColor = palette.muted,
+                                        unselectedTextColor = palette.muted
                                     ),
                                     modifier = Modifier.testTag("rail_${tab.route}")
                                 )
@@ -262,34 +295,46 @@ fun MegaCollectorApp(
                                     viewModel.playClick()
                                     viewModel.syncCatalog()
                                 },
-                                onToggleMute = viewModel::toggleSoundMute,
+                                onOpenSettings = {
+                                    viewModel.playClick()
+                                    showSettingsDialog = true
+                                },
                                 onButtonClickSfx = viewModel::playClick
                             )
 
                             CollectorTab.PLAY -> PlayArcadeScreen(
                                 uiState = uiState,
                                 onClaimScratcherPrize = viewModel::claimScratcherPrize,
-                                onAwardMinigameDiamonds = viewModel::awardMinigameDiamonds,
+                                onAwardPrismDiamonds = viewModel::awardPrismDiamonds,
+                                onCompleteHourlyQuiz = viewModel::completeHourlyQuiz,
                                 onPlasticCrinkle = viewModel::playPlasticCrinkle,
+                                onOpenSettings = {
+                                    viewModel.playClick()
+                                    showSettingsDialog = true
+                                },
                                 onButtonClickSfx = viewModel::playClick
                             )
 
                             CollectorTab.QUESTS -> QuestsScreen(
                                 uiState = uiState,
                                 onClaimQuest = viewModel::claimQuest,
+                                onOpenSettings = {
+                                    viewModel.playClick()
+                                    showSettingsDialog = true
+                                },
                                 onButtonClickSfx = viewModel::playClick
                             )
 
                             CollectorTab.VAULT -> Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(PearlCanvas)
+                                    .background(palette.canvas)
                                     .statusBarsPadding()
                             ) {
                                 Surface(
-                                    color = PureWhiteCard,
+                                    color = palette.cardSurface,
                                     shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.dp, IceBorder),
+                                    border = BorderStroke(1.dp, palette.border),
                                     shadowElevation = 2.dp,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -311,10 +356,10 @@ fun MegaCollectorApp(
                                                 },
                                                 label = { Text(sub.label) },
                                                 colors = FilterChipDefaults.filterChipColors(
-                                                    selectedContainerColor = DeepCobalt,
+                                                    selectedContainerColor = palette.buttonPrimary,
                                                     selectedLabelColor = Color.White,
-                                                    containerColor = SkyFrost,
-                                                    labelColor = SlateMuted
+                                                    containerColor = palette.frostSurface,
+                                                    labelColor = palette.muted
                                                 ),
                                                 modifier = Modifier
                                                     .weight(1f)
@@ -371,7 +416,10 @@ fun MegaCollectorApp(
                             CollectorTab.PROFILE -> ProfileScreen(
                                 uiState = uiState,
                                 onUpdateAlias = viewModel::updateAlias,
-                                onToggleMute = viewModel::toggleSoundMute,
+                                onOpenSettings = {
+                                    viewModel.playClick()
+                                    showSettingsDialog = true
+                                },
                                 onButtonClickSfx = viewModel::playClick
                             )
                         }
@@ -389,8 +437,10 @@ fun MegaCollectorApp(
             }
             PackOpeningScreen(
                 session = packSession,
-                soundMuted = uiState.wallet.soundMuted,
-                onToggleMute = viewModel::toggleSoundMute,
+                onOpenSettings = {
+                    viewModel.playClick()
+                    showSettingsDialog = true
+                },
                 onPlasticCrinkle = viewModel::playPlasticCrinkle,
                 onPackTear = viewModel::playPackTear,
                 onCardFlipSound = viewModel::playCardFlipSfx,
@@ -443,6 +493,30 @@ fun MegaCollectorApp(
                     vaultSubTab = VaultSubTab.TRADE
                 },
                 onButtonClickSfx = viewModel::playClick
+            )
+        }
+
+        if (showSettingsDialog) {
+            SettingsDialog(
+                soundEnabled = !uiState.wallet.soundMuted,
+                darkModeEnabled = uiState.wallet.darkModeEnabled,
+                vibrationEnabled = uiState.wallet.vibrationEnabled,
+                onToggleSound = { enabled ->
+                    viewModel.setSoundEnabled(enabled)
+                    if (enabled) viewModel.playClick()
+                },
+                onToggleDarkMode = { dark ->
+                    viewModel.playClick()
+                    viewModel.setDarkModeEnabled(dark)
+                },
+                onToggleVibration = { enabled ->
+                    viewModel.playClick()
+                    viewModel.setVibrationEnabled(enabled)
+                },
+                onDismiss = {
+                    viewModel.playClick()
+                    showSettingsDialog = false
+                }
             )
         }
     }

@@ -28,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Semaphore
@@ -78,104 +79,90 @@ class CollectorRepository(
             val collectedById = LinkedHashMap<String, SkinCatalogItem>(1300)
 
             onProgress(0, "Connecting to mlbbdex.com/api/v1/skins/...")
-            val page1Raw = MlbbDexClient.api.getSkinsPage(limit = 100, page = 1).string()
-            val page1Parsed = SkinJsonParser.parseSkinsPage(page1Raw)
-            page1Parsed.items.forEach { collectedById[it.id] = it }
-
-            if (collectedById.isNotEmpty()) {
-                dao.replaceCatalog(collectedById.values.map { SkinCatalogEntity.fromDomain(it) })
-                onProgress(collectedById.size, "Indexed ${collectedById.size} skins...")
+            // 1) Fetch newest 100 skins (high-res illustration URLs + series)
+            val topRaw = runCatching {
+                MlbbDexClient.api.getSkinsPage(limit = 100, page = 1).string()
+            }.getOrNull()
+            if (topRaw != null) {
+                SkinJsonParser.parseSkinsPage(topRaw).items.forEach { item ->
+                    collectedById[item.id] = item
+                }
             }
 
-            var paginationWorked = false
-            val maxPages = (page1Parsed.totalPages ?: 25).coerceIn(2, 30)
-            for (page in 2..maxPages) {
-                val raw = runCatching {
-                    MlbbDexClient.api.getSkinsPage(limit = 100, page = page).string()
+            // 2) Fetch all hero slugs (mlbbdex returns all ~133 heroes cleanly in 1 request)
+            onProgress(collectedById.size, "Loading full MLBB hero roster...")
+            val allHeroes = LinkedHashMap<String, ParsedHeroRef>()
+            for (heroPage in 1..3) {
+                val rawHeroes = runCatching {
+                    MlbbDexClient.api.getHeroesPage(limit = 200, page = heroPage).string()
                 }.getOrNull() ?: break
-                val parsed = SkinJsonParser.parseSkinsPage(raw)
-                if (parsed.items.isEmpty()) break
-
+                val refs = SkinJsonParser.parseHeroRefs(rawHeroes)
+                if (refs.isEmpty()) break
                 var added = 0
-                for (item in parsed.items) {
-                    if (collectedById.put(item.id, item) == null) {
-                        added++
-                    }
+                for (ref in refs) {
+                    if (allHeroes.put(ref.slug, ref) == null) added++
                 }
-                if (added == 0) break
-                paginationWorked = true
-                dao.upsertCatalog(parsed.items.map { SkinCatalogEntity.fromDomain(it) })
-                onProgress(collectedById.size, "Syncing MLBBDex skins (${collectedById.size})...")
-                if (parsed.hasNextPage == false) break
+                if (added == 0 || refs.size < 150) break
             }
 
-            if (!paginationWorked && collectedById.size >= 20) {
-                var offset = collectedById.size
-                for (step in 0 until 25) {
-                    val raw = runCatching {
-                        MlbbDexClient.api.getSkinsPage(limit = 100, offset = offset).string()
-                    }.getOrNull() ?: break
-                    val parsed = SkinJsonParser.parseSkinsPage(raw)
-                    if (parsed.items.isEmpty()) break
+            // 3) Fetch every hero's full skin list + illustrations/images.skins with retries so zero heroes drop
+            if (allHeroes.isNotEmpty()) {
+                val semaphore = Semaphore(4)
+                val heroList = allHeroes.values.toList()
+                val chunks = heroList.chunked(16)
+                var processedHeroes = 0
 
-                    var added = 0
-                    for (item in parsed.items) {
-                        if (collectedById.put(item.id, item) == null) {
-                            added++
-                        }
-                    }
-                    if (added == 0) break
-                    dao.upsertCatalog(parsed.items.map { SkinCatalogEntity.fromDomain(it) })
-                    onProgress(collectedById.size, "Syncing MLBBDex skins (${collectedById.size})...")
-                    offset += parsed.items.size
-                }
-            }
-
-            if (collectedById.size < 600) {
-                onProgress(collectedById.size, "Expanding full hero rosters from mlbbdex.com...")
-                val allHeroes = LinkedHashMap<String, ParsedHeroRef>()
-                for (heroPage in 1..4) {
-                    val rawHeroes = runCatching {
-                        MlbbDexClient.api.getHeroesPage(limit = 200, page = heroPage).string()
-                    }.getOrNull() ?: break
-                    val refs = SkinJsonParser.parseHeroRefs(rawHeroes)
-                    if (refs.isEmpty()) break
-                    var newHeroes = 0
-                    for (ref in refs) {
-                        if (allHeroes.put(ref.slug, ref) == null) newHeroes++
-                    }
-                    if (newHeroes == 0) break
-                }
-
-                if (allHeroes.isNotEmpty()) {
-                    val semaphore = Semaphore(6)
-                    val chunks = allHeroes.values.chunked(18)
-                    for (chunk in chunks) {
-                        val batchSkins = coroutineScope {
-                            chunk.map { hero ->
-                                async {
-                                    semaphore.withPermit {
+                for (chunk in chunks) {
+                    val batchSkins = coroutineScope {
+                        chunk.map { hero ->
+                            async {
+                                semaphore.withPermit {
+                                    var parsed: List<SkinCatalogItem> = emptyList()
+                                    for (attempt in 0 until 3) {
+                                        if (attempt > 0) delay(300L * attempt)
                                         val rawDetail = runCatching {
                                             MlbbDexClient.api.getHeroDetail(hero.slug).string()
-                                        }.getOrNull() ?: return@withPermit emptyList()
-                                        SkinJsonParser.parseHeroDetailSkins(
-                                            rawJson = rawDetail,
-                                            fallbackHeroName = hero.name,
-                                            fallbackRole = hero.role
-                                        )
+                                        }.getOrNull()
+                                        if (rawDetail != null) {
+                                            val candidate = SkinJsonParser.parseHeroDetailSkins(
+                                                rawJson = rawDetail,
+                                                fallbackHeroName = hero.name,
+                                                fallbackRole = hero.role
+                                            )
+                                            if (candidate.isNotEmpty()) {
+                                                parsed = candidate
+                                                break
+                                            }
+                                        }
                                     }
+                                    parsed
                                 }
-                            }.awaitAll().flatten()
-                        }
-                        if (batchSkins.isNotEmpty()) {
-                            batchSkins.forEach { collectedById[it.id] = it }
-                            dao.upsertCatalog(batchSkins.map { SkinCatalogEntity.fromDomain(it) })
-                            onProgress(
-                                collectedById.size,
-                                "Syncing full catalog (${collectedById.size} skins)..."
+                            }
+                        }.awaitAll().flatten()
+                    }
+                    processedHeroes += chunk.size
+
+                    for (skin in batchSkins) {
+                        val existing = collectedById[skin.id]
+                        if (existing == null) {
+                            collectedById[skin.id] = skin
+                        } else {
+                            // Merge best available artwork URL & proper hero capitalization
+                            val bestImage = skin.imageUrl.ifBlank { existing.imageUrl }
+                            val bestRarity = if (skin.rawTier != "Common") skin.rarity else existing.rarity
+                            val bestTier = if (skin.rawTier != "Common") skin.rawTier else existing.rawTier
+                            collectedById[skin.id] = skin.copy(
+                                imageUrl = bestImage,
+                                rarity = bestRarity,
+                                rawTier = bestTier
                             )
                         }
                     }
+
+                    onProgress(
+                        collectedById.size,
+                        "Importing ${collectedById.size} skins ($processedHeroes/${heroList.size} heroes)..."
+                    )
                 }
             }
 
@@ -185,9 +172,12 @@ class CollectorRepository(
                 )
             }
 
-            dao.backfillOwnedCardImages()
+            dao.replaceCatalog(collectedById.values.map { SkinCatalogEntity.fromDomain(it) })
+            dao.backfillMissingOwnedImages()
+
             prefs.markCatalogSynced(
                 timestampMs = System.currentTimeMillis(),
+                epochDay = currentLocalEpochDay(),
                 schemaVersion = PlayerPreferencesStore.CURRENT_CATALOG_SCHEMA_VERSION
             )
             Result.success(collectedById.size)
@@ -206,7 +196,7 @@ class CollectorRepository(
             val catalog = dao.getAllCatalogOnce().map { it.toDomain() }
             if (catalog.isEmpty()) {
                 return@withContext Result.failure(
-                    IllegalStateException("Skin catalog not synced yet. Tap Sync MLBBDex first.")
+                    IllegalStateException("Skin catalog not synced yet. Tap Refresh above.")
                 )
             }
 
@@ -380,26 +370,40 @@ class CollectorRepository(
             else Result.failure(IllegalStateException("Need ${option.diamondCost} 💎 Diamonds."))
         }
 
-    suspend fun recordDailyScratcherCoinPrize(coinPrize: Int): Result<Int> =
+    suspend fun consumeScratcherChargeAndAwardCoins(coinPrize: Int): Result<Int> =
         withContext(Dispatchers.IO) {
-            val ok = prefs.recordScratcherReward(
+            val ok = prefs.consumeScratcherChargeAndAwardCoins(
                 coinReward = coinPrize,
+                nowMs = System.currentTimeMillis(),
                 todayEpochDay = currentLocalEpochDay(),
                 currentWeekKey = currentLocalWeekKey()
             )
             if (ok) Result.success(coinPrize)
-            else Result.failure(IllegalStateException("No daily scratchers remaining today! Come back tomorrow."))
+            else Result.failure(IllegalStateException("Scratcher recharging! +1 ticket refills every hour (max 3)."))
         }
 
-    suspend fun awardMinigameDiamonds(diamondsEarned: Int): Result<Int> =
+    suspend fun consumePrismChargeAndAwardDiamonds(diamondsEarned: Int): Result<Int> =
         withContext(Dispatchers.IO) {
-            prefs.addDiamonds(
-                amount = diamondsEarned,
-                fromMinigameWin = diamondsEarned > 1,
+            val ok = prefs.consumePrismChargeAndAwardDiamonds(
+                diamondReward = diamondsEarned,
+                nowMs = System.currentTimeMillis(),
                 todayEpochDay = currentLocalEpochDay(),
                 currentWeekKey = currentLocalWeekKey()
             )
-            Result.success(diamondsEarned)
+            if (ok) Result.success(diamondsEarned)
+            else Result.failure(IllegalStateException("Prism Strike recharging! +1 charge refills every hour (max 3)."))
+        }
+
+    suspend fun completeHourlyQuizAndAwardDiamonds(diamondsEarned: Int): Result<Int> =
+        withContext(Dispatchers.IO) {
+            val ok = prefs.completeHourlyQuizAndAwardDiamonds(
+                diamondReward = diamondsEarned,
+                nowMs = System.currentTimeMillis(),
+                todayEpochDay = currentLocalEpochDay(),
+                currentWeekKey = currentLocalWeekKey()
+            )
+            if (ok) Result.success(diamondsEarned)
+            else Result.failure(IllegalStateException("Quiz is on 1-hour cooldown."))
         }
 
     fun buildQuestItems(wallet: PlayerWalletState): List<QuestUiItem> {
@@ -650,6 +654,14 @@ class CollectorRepository(
 
     suspend fun setSoundMuted(muted: Boolean) {
         prefs.setSoundMuted(muted)
+    }
+
+    suspend fun setDarkModeEnabled(enabled: Boolean) {
+        prefs.setDarkModeEnabled(enabled)
+    }
+
+    suspend fun setVibrationEnabled(enabled: Boolean) {
+        prefs.setVibrationEnabled(enabled)
     }
 
     private fun randomHex4(): String =

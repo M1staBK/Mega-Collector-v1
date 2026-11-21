@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.audio.PackSoundEngine
+import com.example.data.local.HourlyChargeStatus
 import com.example.data.local.MegaCollectorDatabase
 import com.example.data.local.PlayerPreferencesStore
 import com.example.data.local.PlayerWalletState
@@ -17,12 +18,14 @@ import com.example.model.QuestUiItem
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.TradeListing
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -56,7 +59,9 @@ data class MegaCollectorUiState(
     val syncStatus: CatalogSyncStatus = CatalogSyncStatus.Idle,
     val isDailyRewardClaimable: Boolean = true,
     val nextDailyDayIndex: Int = 1,
-    val dailyScratchersRemaining: Int = PlayerWalletState.MAX_DAILY_SCRATCHERS,
+    val scratcherStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
+    val prismStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
+    val quizCooldownRemainingMs: Long = 0L,
     val packSession: PackOpeningSession? = null,
     val isOpeningPack: Boolean = false,
     val decodedSlipPreview: DecodedTradeSlip? = null,
@@ -75,6 +80,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _decodedSlipPreview = MutableStateFlow<DecodedTradeSlip?>(null)
     private val _snackbarMessage = MutableStateFlow<String?>(null)
 
+    private val clockTickFlow = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(1000L)
+        }
+    }
+
     val dailyRewardTiers: List<DailyRewardTier> = repository.dailyRewardTiers
 
     private data class EphemeralState(
@@ -82,7 +94,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val packSession: PackOpeningSession?,
         val isOpeningPack: Boolean,
         val decodedSlip: DecodedTradeSlip?,
-        val snackbar: String?
+        val snackbar: String?,
+        val nowMs: Long
     )
 
     private val ephemeralFlow = combine(
@@ -92,7 +105,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _decodedSlipPreview,
         _snackbarMessage
     ) { sync, session, opening, slip, snack ->
-        EphemeralState(sync, session, opening, slip, snack)
+        EphemeralState(sync, session, opening, slip, snack, System.currentTimeMillis())
+    }.combine(clockTickFlow) { eph, nowMs ->
+        eph.copy(nowMs = nowMs)
     }
 
     val uiState: StateFlow<MegaCollectorUiState> = combine(
@@ -112,11 +127,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             wallet.dailyStreakCount.coerceIn(1, 7)
         }
 
-        val scratchersLeft = if (wallet.lastScratcherEpochDay < today) {
-            PlayerWalletState.MAX_DAILY_SCRATCHERS
-        } else {
-            wallet.dailyScratchersRemaining
-        }
+        val scratcherStatus = wallet.currentScratcherStatus(eph.nowMs)
+        val prismStatus = wallet.currentPrismStatus(eph.nowMs)
+        val quizCooldown = wallet.currentQuizCooldownRemainingMs(eph.nowMs)
 
         MegaCollectorUiState(
             wallet = wallet,
@@ -131,7 +144,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             },
             isDailyRewardClaimable = claimable,
             nextDailyDayIndex = nextDay,
-            dailyScratchersRemaining = scratchersLeft,
+            scratcherStatus = scratcherStatus,
+            prismStatus = prismStatus,
+            quizCooldownRemainingMs = quizCooldown,
             packSession = eph.packSession,
             isOpeningPack = eph.isOpeningPack,
             decodedSlipPreview = eph.decodedSlip,
@@ -149,10 +164,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val count = db.collectorDao().getCatalogCount()
             val wallet = repository.walletFlow.first()
             soundEngine.setMuted(wallet.soundMuted)
-            if (count < 300 || wallet.catalogSchemaVersion < PlayerPreferencesStore.CURRENT_CATALOG_SCHEMA_VERSION) {
-                syncCatalog()
-            } else {
+
+            val today = repository.currentLocalEpochDay()
+            val alreadySyncedToday = wallet.catalogSyncedEpochDay >= today &&
+                wallet.catalogSchemaVersion >= PlayerPreferencesStore.CURRENT_CATALOG_SCHEMA_VERSION &&
+                count >= 950
+
+            if (alreadySyncedToday) {
+                // Remembered in Room all day until next day's refresh
                 _syncStatus.value = CatalogSyncStatus.Synced(count)
+            } else {
+                syncCatalog()
             }
         }
     }
@@ -183,6 +205,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setSoundEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            val muted = !enabled
+            repository.setSoundMuted(muted)
+            soundEngine.setMuted(muted)
+            if (enabled) {
+                soundEngine.playClick()
+            }
+        }
+    }
+
+    fun setDarkModeEnabled(enabled: Boolean) {
+        soundEngine.playClick()
+        viewModelScope.launch {
+            repository.setDarkModeEnabled(enabled)
+        }
+    }
+
+    fun setVibrationEnabled(enabled: Boolean) {
+        soundEngine.playClick()
+        viewModelScope.launch {
+            repository.setVibrationEnabled(enabled)
+        }
+    }
+
     fun observeOwnedCard(instanceId: Long): Flow<OwnedCard?> =
         repository.observeCard(instanceId)
 
@@ -195,7 +242,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
                 .onSuccess { count ->
                     _syncStatus.value = CatalogSyncStatus.Synced(count)
-                    _snackbarMessage.value = "Synced $count MOBA Legends skins from MLBBDex!"
+                    _snackbarMessage.value = "Synced $count skins (saved for today)!"
                 }
                 .onFailure { err ->
                     _syncStatus.value = CatalogSyncStatus.Error(
@@ -250,26 +297,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun claimScratcherPrize(coinPrize: Int) {
         viewModelScope.launch {
-            repository.recordDailyScratcherCoinPrize(coinPrize)
+            repository.consumeScratcherChargeAndAwardCoins(coinPrize)
                 .onSuccess { coins ->
                     soundEngine.playRewardChime()
                     _snackbarMessage.value = "Scratcher Won +$coins 🪙 Coins!"
                 }
                 .onFailure { err ->
-                    _snackbarMessage.value = err.localizedMessage ?: "No daily scratchers left today."
+                    _snackbarMessage.value = err.localizedMessage ?: "Scratcher recharging!"
                 }
         }
     }
 
-    fun awardMinigameDiamonds(diamondsEarned: Int, winLabel: String) {
+    fun awardPrismDiamonds(diamondsEarned: Int, winLabel: String) {
         viewModelScope.launch {
-            repository.awardMinigameDiamonds(diamondsEarned)
-            if (diamondsEarned >= 4) {
-                soundEngine.playRewardChime()
-            } else {
-                soundEngine.playClick()
-            }
-            _snackbarMessage.value = "$winLabel +$diamondsEarned 💎 Diamonds!"
+            repository.consumePrismChargeAndAwardDiamonds(diamondsEarned)
+                .onSuccess { earned ->
+                    if (earned >= 4) soundEngine.playRewardChime() else soundEngine.playClick()
+                    _snackbarMessage.value = "$winLabel +$earned 💎 Diamonds!"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Prism Strike recharging!"
+                }
+        }
+    }
+
+    fun completeHourlyQuiz(score: Int, diamondsEarned: Int) {
+        viewModelScope.launch {
+            repository.completeHourlyQuizAndAwardDiamonds(diamondsEarned)
+                .onSuccess { earned ->
+                    soundEngine.playRewardChime()
+                    _snackbarMessage.value = "10-Question Quiz Complete ($score/10): +$earned 💎 Diamonds!"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Quiz on hourly cooldown."
+                }
         }
     }
 

@@ -51,7 +51,8 @@ import com.example.model.SkinRarity
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.DiamondsPill
 import com.example.ui.components.MlbbDexCreditCard
-import com.example.ui.components.SoundMuteButton
+import com.example.ui.components.SettingsGearButton
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
@@ -68,10 +69,11 @@ import com.example.ui.viewmodel.MegaCollectorUiState
 fun ProfileScreen(
     uiState: MegaCollectorUiState,
     onUpdateAlias: (String) -> Unit,
-    onToggleMute: () -> Unit,
+    onOpenSettings: () -> Unit,
     onButtonClickSfx: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = CollectorTheme.colors
     var showEditAlias by remember { mutableStateOf(false) }
 
     val uniqueSkinCount = remember(uiState.ownedCards) {
@@ -177,10 +179,7 @@ fun ProfileScreen(
                             }
                         }
 
-                        SoundMuteButton(
-                            isMuted = uiState.wallet.soundMuted,
-                            onToggle = onToggleMute
-                        )
+                        SettingsGearButton(onClick = onOpenSettings)
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -201,7 +200,7 @@ fun ProfileScreen(
                 StatTile(
                     label = "Total Cards",
                     value = "${uiState.ownedCards.size}",
-                    accent = DeepCobalt,
+                    accent = palette.accentPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 StatTile(
@@ -213,7 +212,7 @@ fun ProfileScreen(
                 StatTile(
                     label = "1/1 Misprints",
                     value = "$misprintCount",
-                    accent = SkyAzure,
+                    accent = palette.misprintLabel,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -239,7 +238,7 @@ fun ProfileScreen(
                 StatTile(
                     label = "Daily Streak",
                     value = "${uiState.wallet.dailyStreakCount}d",
-                    accent = DeepCobalt,
+                    accent = palette.accentPrimary,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -303,20 +302,20 @@ fun ProfileScreen(
                             Icon(
                                 imageVector = Icons.Default.Bolt,
                                 contentDescription = null,
-                                tint = DeepCobalt,
+                                tint = palette.misprintLabel,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "1-of-1 Misprint Anomalies",
                                 style = MaterialTheme.typography.labelLarge,
-                                color = DeepCobalt
+                                color = palette.misprintLabel
                             )
                         }
                         Text(
                             text = "$misprintCount",
                             style = MaterialTheme.typography.labelMedium,
-                            color = DeepCobalt
+                            color = palette.misprintLabel
                         )
                     }
                 }
@@ -336,7 +335,7 @@ fun ProfileScreen(
                         Text(
                             text = stringResource(R.string.api_credit_title),
                             style = MaterialTheme.typography.labelLarge,
-                            color = DeepCobalt
+                            color = palette.accentPrimary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(

@@ -76,7 +76,7 @@ object SkinJsonParser {
             val slug = firstNonBlankString(obj, listOf("slug", "hero_slug", "id", "hero_id"))
                 ?: name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
             if (slug.isBlank()) continue
-            val role = firstNonBlankString(obj, listOf("role", "class", "lane")) ?: "Hero"
+            val role = extractRole(obj) ?: "Hero"
             heroes += ParsedHeroRef(slug = slug, name = name, role = role)
         }
         return heroes.distinctBy { it.slug }
@@ -100,17 +100,45 @@ object SkinJsonParser {
             heroContainer,
             listOf("name", "hero_name", "heroName", "title")
         ) ?: fallbackHeroName
-        val heroRole = firstNonBlankString(
-            heroContainer,
-            listOf("role", "hero_role", "class", "lane")
-        ) ?: fallbackRole
+        val heroRole = extractRole(heroContainer) ?: fallbackRole
+
+        // Extract hero-level artwork maps:
+        // 1) data.illustrations[skinName] -> "/visuels/heros/.../illustrations/..."
+        // 2) data.images.skins[skinId] -> "/visuels/heros/.../skins/..."
+        // 3) data.images.portrait -> "/visuels/heros/.../portrait.webp"
+        val illustrationsByName = LinkedHashMap<String, String>()
+        heroContainer.optJSONObject("illustrations")?.let { illus ->
+            val keys = illus.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val rawUrl = illus.optString(key, "").trim()
+                if (rawUrl.isNotEmpty() && !rawUrl.equals("null", ignoreCase = true)) {
+                    illustrationsByName[key.trim().lowercase()] = rawUrl
+                }
+            }
+        }
+
+        val imagesObj = heroContainer.optJSONObject("images")
+        val skinImagesById = LinkedHashMap<String, String>()
+        imagesObj?.optJSONObject("skins")?.let { skinsImgObj ->
+            val keys = skinsImgObj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val rawUrl = skinsImgObj.optString(key, "").trim()
+                if (rawUrl.isNotEmpty() && !rawUrl.equals("null", ignoreCase = true)) {
+                    skinImagesById[key.trim()] = rawUrl
+                }
+            }
+        }
+        val portraitFallback = imagesObj?.let {
+            firstNonBlankString(it, listOf("portrait", "icon", "cover"))
+        } ?: ""
 
         val skinsArray = heroContainer.optJSONArray("skins")
             ?: rootObj.optJSONArray("skins")
             ?: extractArray(parsed, listOf("skins", "data", "items"))
             ?: return emptyList()
 
-        val heroArt = HeroArt.from(heroContainer)
         val items = ArrayList<SkinCatalogItem>(skinsArray.length())
         for (i in 0 until skinsArray.length()) {
             val obj = skinsArray.optJSONObject(i) ?: continue
@@ -118,38 +146,25 @@ object SkinJsonParser {
                 obj = obj,
                 index = i,
                 defaultHeroName = heroName,
-                defaultRole = heroRole
-            )?.let { items.add(heroArt.fillImage(it)) }
+                defaultRole = heroRole,
+                illustrationsByName = illustrationsByName,
+                skinImagesById = skinImagesById,
+                heroPortraitFallback = portraitFallback
+            )?.let { items.add(it) }
         }
         return items.distinctBy { it.id }
     }
 
-    /**
-     * Hero detail skins carry no image of their own: mlbbdex lists the art on the hero, in
-     * `illustrations` (skin name -> path). Skins missing from it fall back to the hero portrait.
-     */
-    private class HeroArt(
-        private val illustrationsByName: Map<String, String>,
-        private val portrait: String
-    ) {
-        fun fillImage(item: SkinCatalogItem): SkinCatalogItem {
-            if (item.imageUrl.isNotBlank()) return item
-            val path = illustrationsByName[item.skinName.lowercase()] ?: portrait
-            return item.copy(imageUrl = normalizeImageUrl(path))
+    private fun extractRole(obj: JSONObject): String? {
+        firstNonBlankString(obj, listOf("role", "hero_role", "heroRole", "class", "lane"))?.let { return it }
+        val rolesArr = obj.optJSONArray("roles")
+        if (rolesArr != null && rolesArr.length() > 0) {
+            val joined = (0 until rolesArr.length())
+                .mapNotNull { rolesArr.optString(it, "").takeIf { s -> s.isNotBlank() && s != "null" } }
+                .joinToString(" / ")
+            if (joined.isNotBlank()) return joined
         }
-
-        companion object {
-            fun from(hero: JSONObject): HeroArt {
-                val illustrations = hero.optJSONObject("illustrations")
-                val byName = HashMap<String, String>()
-                illustrations?.keys()?.forEach { name ->
-                    val path = illustrations.optString(name)
-                    if (path.isNotBlank()) byName[name.lowercase()] = path
-                }
-                val portrait = hero.optJSONObject("images")?.optString("portrait").orEmpty()
-                return HeroArt(byName, portrait)
-            }
-        }
+        return null
     }
 
     private fun extractArray(parsed: Any?, candidateKeys: List<String>): JSONArray? {
@@ -177,29 +192,33 @@ object SkinJsonParser {
         obj: JSONObject,
         index: Int,
         defaultHeroName: String = "Legend",
-        defaultRole: String = "Fighter"
+        defaultRole: String = "Fighter",
+        illustrationsByName: Map<String, String> = emptyMap(),
+        skinImagesById: Map<String, String> = emptyMap(),
+        heroPortraitFallback: String = ""
     ): SkinCatalogItem? {
         val skinName = firstNonBlankString(obj, listOf("name", "skin_name", "skinName", "title", "skin"))
             ?: return null
 
         val heroObj = obj.optJSONObject("hero")
-        val heroName = firstNonBlankString(obj, listOf("hero_name", "heroName", "hero", "character", "champion"))
+        val rawHeroName = firstNonBlankString(obj, listOf("hero_name", "heroName", "hero", "character", "champion"))
             ?: heroObj?.let { firstNonBlankString(it, listOf("name", "hero_name", "title")) }
             ?: defaultHeroName
+        val heroName = rawHeroName.replaceFirstChar { it.uppercase() }
 
-        val role = firstNonBlankString(obj, listOf("role", "hero_role", "heroRole", "class", "lane"))
-            ?: heroObj?.let { firstNonBlankString(it, listOf("role", "class")) }
+        val role = extractRole(obj)
+            ?: heroObj?.let { extractRole(it) }
             ?: defaultRole
 
         val tierObj = obj.optJSONObject("tier") ?: obj.optJSONObject("rarity") ?: obj.optJSONObject("series")
-        val rawTier = firstNonBlankString(
+        // Prefer specific series/label/tier over broad rarity tag so "Luckybox", "Elite", "StarLight" classify accurately!
+        val specificLabel = firstNonBlankString(
             obj,
-            listOf(
-                "tier", "rarity", "skin_tier", "skinTier", "series",
-                "grade", "tag", "category", "label", "type", "badge"
-            )
-        ) ?: tierObj?.let { firstNonBlankString(it, listOf("name", "title", "label")) }
-            ?: "Common"
+            listOf("series", "label", "tier", "skin_tier", "skinTier", "grade", "tag", "category", "type", "badge")
+        )
+        val broadRarity = firstNonBlankString(obj, listOf("rarity"))
+            ?: tierObj?.let { firstNonBlankString(it, listOf("name", "title", "label")) }
+        val rawTier = specificLabel ?: broadRarity ?: "Common"
 
         val explicitId = firstNonBlankString(obj, listOf("id", "skin_id", "skinId", "_id", "slug"))
         val stableId = explicitId ?: "${heroName}_${skinName}_$index"
@@ -208,7 +227,7 @@ object SkinJsonParser {
             .trim('_')
 
         val imageObj = obj.optJSONObject("images") ?: obj.optJSONObject("media")
-        val rawImageUrl = firstNonBlankString(
+        val directImage = firstNonBlankString(
             obj,
             listOf(
                 "image", "image_url", "imageUrl", "splash", "splash_url", "splashUrl",
@@ -216,10 +235,15 @@ object SkinJsonParser {
             )
         ) ?: imageObj?.let {
             firstNonBlankString(it, listOf("splash", "portrait", "full", "url", "image", "thumbnail"))
-        } ?: ""
+        }
+
+        val illustrationHit = illustrationsByName[skinName.trim().lowercase()]
+        val skinImageHit = explicitId?.let { skinImagesById[it] } ?: skinImagesById[stableId]
+        val rawImageUrl = directImage ?: illustrationHit ?: skinImageHit ?: heroPortraitFallback
 
         val normalizedUrl = normalizeImageUrl(rawImageUrl)
-        val rarity = SkinRarity.fromApiTier(rawTier, skinName)
+        // Check combined tier & broadRarity & skinName for accurate classification
+        val rarity = SkinRarity.fromApiTier("$rawTier ${broadRarity.orEmpty()}", skinName)
 
         return SkinCatalogItem(
             id = stableId,
@@ -269,10 +293,11 @@ object SkinJsonParser {
     }
 
     private fun normalizeImageUrl(raw: String): String {
-        val trimmed = raw.trim()
+        val trimmed = raw.trim().replace(" ", "%20")
         return when {
             trimmed.isEmpty() -> ""
-            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
+            trimmed.startsWith("http://") -> trimmed.replaceFirst("http://", "https://")
+            trimmed.startsWith("https://") -> trimmed
             trimmed.startsWith("//") -> "https:$trimmed"
             trimmed.startsWith("/") -> "$BASE_DOMAIN$trimmed"
             else -> "$BASE_DOMAIN/$trimmed"

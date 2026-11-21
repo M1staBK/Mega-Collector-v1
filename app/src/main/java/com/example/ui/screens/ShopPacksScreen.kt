@@ -70,12 +70,13 @@ import com.example.model.SkinRarity
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.DiamondsPill
 import com.example.ui.components.MlbbDexCreditCard
-import com.example.ui.components.SoundMuteButton
+import com.example.ui.components.SettingsGearButton
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintMagenta
-import com.example.ui.theme.MisprintNeon
+import com.example.ui.theme.MoonlightNight
 import com.example.ui.theme.PearlCanvas
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.SkyAzure
@@ -96,351 +97,365 @@ fun ShopPacksScreen(
     onOpenPackBundle: (PackBundleOption, Boolean, Boolean) -> Unit,
     onExchangeDiamondsForCoins: (DiamondExchangeOption) -> Unit,
     onSyncCatalog: () -> Unit,
-    onToggleMute: () -> Unit,
+    onOpenSettings: () -> Unit,
     onButtonClickSfx: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = CollectorTheme.colors
     var showOddsDialog by remember { mutableStateOf(false) }
 
-    LazyColumn(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(PearlCanvas),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Luminous Studio Hero Header
-        item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(234.dp)
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.img_arena_banner),
-                    contentDescription = "MEGA COLLECTOR Studio Banner",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+            .background(palette.canvas)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.16f else 0.35f),
+                        palette.canvas
+                    )
                 )
+            )
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Studio Hero Header
+            item {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color(0xFFE0F2FE).copy(alpha = 0.88f),
-                                    Color(0xFFF4F7FB).copy(alpha = 0.90f),
-                                    PearlCanvas
+                        .fillMaxWidth()
+                        .height(234.dp)
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.img_arena_banner),
+                        contentDescription = "MEGA COLLECTOR Studio Banner",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        palette.heroTopScrim,
+                                        palette.heroMidScrim,
+                                        palette.canvas
+                                    )
                                 )
                             )
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "MEGA COLLECTOR",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = palette.accentPrimary
+                                )
+                                Text(
+                                    text = if (palette.isDark) {
+                                        "MOBA Legends Moonlight Card Studio"
+                                    } else {
+                                        "MOBA Legends Sky Card Studio"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = InkSlate
+                                )
+                            }
+                            SettingsGearButton(onClick = onOpenSettings)
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CoinsPill(coins = uiState.wallet.coins)
+                            DiamondsPill(diamonds = uiState.wallet.diamonds)
+                        }
+
+                        SyncStatusBanner(
+                            syncStatus = uiState.syncStatus,
+                            onRetry = onSyncCatalog
                         )
-                )
+                    }
+                }
+            }
+
+            // Daily Streak Rewards Strip
+            item {
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarMonth,
+                                contentDescription = null,
+                                tint = StudioGold,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Daily Streak Rewards",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = InkSlate
+                            )
+                        }
+
+                        if (uiState.isDailyRewardClaimable) {
+                            Button(
+                                onClick = onClaimDailyReward,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = StudioGold,
+                                    contentColor = palette.goldButtonContent
+                                ),
+                                shape = RoundedCornerShape(999.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("claim_daily_reward_button")
+                            ) {
+                                Text(
+                                    text = "Claim Day ${uiState.nextDailyDayIndex}",
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                        } else {
+                            Surface(
+                                color = SkyFrost,
+                                shape = RoundedCornerShape(999.dp),
+                                border = BorderStroke(1.dp, SkyAzure.copy(alpha = 0.45f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = palette.accentPrimary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Streak Day ${uiState.wallet.dailyStreakCount}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = palette.accentPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(dailyRewardTiers) { tier ->
+                            val claimed = if (uiState.isDailyRewardClaimable) {
+                                tier.dayIndex < uiState.nextDailyDayIndex
+                            } else {
+                                tier.dayIndex <= uiState.wallet.dailyStreakCount
+                            }
+                            val isToday = uiState.isDailyRewardClaimable && tier.dayIndex == uiState.nextDailyDayIndex
+
+                            DailyTierTile(
+                                tier = tier,
+                                isClaimed = claimed,
+                                isCurrentClaimable = isToday,
+                                onClick = { if (isToday) onClaimDailyReward() }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Single Canonical Booster Pack Showcase
+            item {
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .statusBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "MEGA COLLECTOR",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = DeepCobalt
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Style,
+                                contentDescription = null,
+                                tint = palette.accentPrimary,
+                                modifier = Modifier.size(20.dp)
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "MOBA Legends Card Studio",
-                                style = MaterialTheme.typography.bodyMedium,
+                                text = "Booster Pack Shop",
+                                style = MaterialTheme.typography.titleLarge,
                                 color = InkSlate
                             )
                         }
-                        SoundMuteButton(
-                            isMuted = uiState.wallet.soundMuted,
-                            onToggle = onToggleMute
+                        Surface(
+                            color = SkyFrost,
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, palette.misprintLabel.copy(alpha = 0.55f))
+                        ) {
+                            Text(
+                                text = "0.005% 1/1 MISPRINTS",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.misprintLabel,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    MegaPackShowcaseCard(
+                        freeTickets = uiState.wallet.bonusFreePacks,
+                        catalogReady = uiState.catalog.isNotEmpty(),
+                        isOpening = uiState.isOpeningPack,
+                        onOpenFreeTicket = { onOpenPackBundle(PackBundleOption.SINGLE, false, true) },
+                        onShowOdds = {
+                            onButtonClickSfx()
+                            showOddsDialog = true
+                        }
+                    )
+                }
+            }
+
+            // Pack Bundles with Discounts (1 Pack, 5 Packs 5% OFF, 10 Packs 10% OFF)
+            item {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Choose Pack Bundle",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = InkSlate
+                    )
+
+                    PackBundleOption.entries.forEach { bundle ->
+                        BundlePurchaseCard(
+                            bundle = bundle,
+                            coins = uiState.wallet.coins,
+                            diamonds = uiState.wallet.diamonds,
+                            catalogReady = uiState.catalog.isNotEmpty(),
+                            isOpening = uiState.isOpeningPack,
+                            onBuyWithCoins = { onOpenPackBundle(bundle, false, false) },
+                            onBuyWithDiamonds = { onOpenPackBundle(bundle, true, false) }
+                        )
+                    }
+                }
+            }
+
+            // Diamond-to-Coin Exchange Bar
+            item {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CurrencyExchange,
+                            contentDescription = null,
+                            tint = palette.accentPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Redeem Diamonds for Coins",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = InkSlate
                         )
                     }
 
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        CoinsPill(coins = uiState.wallet.coins)
-                        DiamondsPill(diamonds = uiState.wallet.diamonds)
-                    }
-
-                    SyncStatusBanner(
-                        syncStatus = uiState.syncStatus,
-                        onRetry = onSyncCatalog
-                    )
-                }
-            }
-        }
-
-        // Daily Streak Rewards Strip
-        item {
-            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarMonth,
-                            contentDescription = null,
-                            tint = StudioGold,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Daily Streak Rewards",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = InkSlate
-                        )
-                    }
-
-                    if (uiState.isDailyRewardClaimable) {
-                        Button(
-                            onClick = onClaimDailyReward,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = StudioGold,
-                                contentColor = InkSlate
-                            ),
-                            shape = RoundedCornerShape(999.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("claim_daily_reward_button")
-                        ) {
-                            Text(
-                                text = "Claim Day ${uiState.nextDailyDayIndex}",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        }
-                    } else {
-                        Surface(
-                            color = SkyFrost,
-                            shape = RoundedCornerShape(999.dp),
-                            border = BorderStroke(1.dp, SkyAzure.copy(alpha = 0.45f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = DeepCobalt,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Streak Day ${uiState.wallet.dailyStreakCount}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = DeepCobalt
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(dailyRewardTiers) { tier ->
-                        val claimed = if (uiState.isDailyRewardClaimable) {
-                            tier.dayIndex < uiState.nextDailyDayIndex
-                        } else {
-                            tier.dayIndex <= uiState.wallet.dailyStreakCount
-                        }
-                        val isToday = uiState.isDailyRewardClaimable && tier.dayIndex == uiState.nextDailyDayIndex
-
-                        DailyTierTile(
-                            tier = tier,
-                            isClaimed = claimed,
-                            isCurrentClaimable = isToday,
-                            onClick = { if (isToday) onClaimDailyReward() }
-                        )
-                    }
-                }
-            }
-        }
-
-        // Single Canonical Booster Pack Showcase
-        item {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Style,
-                            contentDescription = null,
-                            tint = DeepCobalt,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Booster Pack Shop",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = InkSlate
-                        )
-                    }
-                    Surface(
-                        color = SkyFrost,
-                        shape = RoundedCornerShape(999.dp),
-                        border = BorderStroke(1.dp, MisprintNeon.copy(alpha = 0.55f))
-                    ) {
-                        Text(
-                            text = "0.005% 1/1 MISPRINTS",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = DeepCobalt,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-
-                MegaPackShowcaseCard(
-                    freeTickets = uiState.wallet.bonusFreePacks,
-                    catalogReady = uiState.catalog.isNotEmpty(),
-                    isOpening = uiState.isOpeningPack,
-                    onOpenFreeTicket = { onOpenPackBundle(PackBundleOption.SINGLE, false, true) },
-                    onShowOdds = {
-                        onButtonClickSfx()
-                        showOddsDialog = true
-                    }
-                )
-            }
-        }
-
-        // Pack Bundles with Discounts (1 Pack, 5 Packs 5% OFF, 10 Packs 10% OFF)
-        item {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "Choose Pack Bundle",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = InkSlate
-                )
-
-                PackBundleOption.entries.forEach { bundle ->
-                    BundlePurchaseCard(
-                        bundle = bundle,
-                        coins = uiState.wallet.coins,
-                        diamonds = uiState.wallet.diamonds,
-                        catalogReady = uiState.catalog.isNotEmpty(),
-                        isOpening = uiState.isOpeningPack,
-                        onBuyWithCoins = { onOpenPackBundle(bundle, false, false) },
-                        onBuyWithDiamonds = { onOpenPackBundle(bundle, true, false) }
-                    )
-                }
-            }
-        }
-
-        // Diamond-to-Coin Exchange Bar
-        item {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.CurrencyExchange,
-                        contentDescription = null,
-                        tint = DeepCobalt,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Redeem Diamonds for Coins",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = InkSlate
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    DiamondExchangeOption.ALL.forEach { option ->
-                        val canAfford = uiState.wallet.diamonds >= option.diamondCost
-                        Surface(
-                            color = if (canAfford) PureWhiteCard else PearlCanvas,
-                            shape = RoundedCornerShape(16.dp),
-                            shadowElevation = if (canAfford) 2.dp else 0.dp,
-                            border = BorderStroke(
-                                1.2.dp,
-                                if (canAfford) SkyAzure.copy(alpha = 0.6f) else IceBorder
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable(enabled = canAfford) {
-                                    onExchangeDiamondsForCoins(option)
-                                }
-                                .testTag("exchange_${option.id}")
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(10.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                if (option.bonusLabel != null) {
-                                    Surface(
-                                        color = StudioGold.copy(alpha = 0.2f),
-                                        shape = RoundedCornerShape(6.dp)
-                                    ) {
-                                        Text(
-                                            text = option.bonusLabel,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = StudioGoldText,
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                        )
+                        DiamondExchangeOption.ALL.forEach { option ->
+                            val canAfford = uiState.wallet.diamonds >= option.diamondCost
+                            Surface(
+                                color = if (canAfford) PureWhiteCard else PearlCanvas,
+                                shape = RoundedCornerShape(16.dp),
+                                shadowElevation = if (canAfford) 2.dp else 0.dp,
+                                border = BorderStroke(
+                                    1.2.dp,
+                                    if (canAfford) SkyAzure.copy(alpha = 0.6f) else IceBorder
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable(enabled = canAfford) {
+                                        onExchangeDiamondsForCoins(option)
                                     }
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                }
-                                Text(
-                                    text = "+%,d".format(option.coinReward),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = StudioGoldText
-                                )
-                                Text(
-                                    text = "Coins",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = SlateMuted
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Surface(
-                                    color = if (canAfford) DeepCobalt else IceBorder,
-                                    shape = RoundedCornerShape(999.dp)
+                                    .testTag("exchange_${option.id}")
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                    if (option.bonusLabel != null) {
+                                        Surface(
+                                            color = StudioGold.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                text = option.bonusLabel,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = StudioGoldText,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                    }
+                                    Text(
+                                        text = "+%,d".format(option.coinReward),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = StudioGoldText
+                                    )
+                                    Text(
+                                        text = "Coins",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = SlateMuted
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Surface(
+                                        color = if (canAfford) DeepCobalt else IceBorder,
+                                        shape = RoundedCornerShape(999.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Diamond,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Text(
-                                            text = "${option.diamondCost}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = Color.White
-                                        )
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Diamond,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = "${option.diamondCost}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color.White
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -448,14 +463,14 @@ fun ShopPacksScreen(
                     }
                 }
             }
-        }
 
-        // MLBBDex API Credits Card
-        item {
-            MlbbDexCreditCard(
-                skinCount = uiState.catalog.size,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
+            // MLBBDex API Credits Card
+            item {
+                MlbbDexCreditCard(
+                    skinCount = uiState.catalog.size,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
         }
     }
 
@@ -474,6 +489,7 @@ private fun SyncStatusBanner(
     syncStatus: CatalogSyncStatus,
     onRetry: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     Surface(
         color = PureWhiteCard,
         shape = RoundedCornerShape(16.dp),
@@ -503,7 +519,7 @@ private fun SyncStatusBanner(
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
-                            color = DeepCobalt
+                            color = palette.accentPrimary
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -517,12 +533,12 @@ private fun SyncStatusBanner(
                         Icon(
                             imageVector = Icons.Default.AutoAwesome,
                             contentDescription = null,
-                            tint = DeepCobalt,
+                            tint = palette.accentPrimary,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "MLBBDex Live: ${syncStatus.count} skins ready",
+                            text = "MLBBDex Cached: ${syncStatus.count} skins ready today",
                             style = MaterialTheme.typography.bodyMedium,
                             color = InkSlate
                         )
@@ -553,7 +569,7 @@ private fun SyncStatusBanner(
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "Refresh MLBBDex catalog",
-                        tint = if (syncStatus is CatalogSyncStatus.Error) StudioCrimson else DeepCobalt,
+                        tint = if (syncStatus is CatalogSyncStatus.Error) StudioCrimson else palette.accentPrimary,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -569,13 +585,14 @@ private fun DailyTierTile(
     isCurrentClaimable: Boolean,
     onClick: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     val borderColor = when {
         isCurrentClaimable -> StudioGold
         isClaimed -> SkyAzure.copy(alpha = 0.55f)
         else -> IceBorder
     }
     Surface(
-        color = if (isCurrentClaimable) Color(0xFFFFFBEB) else PureWhiteCard,
+        color = if (isCurrentClaimable) palette.goldSurfaceTint else PureWhiteCard,
         shape = RoundedCornerShape(16.dp),
         shadowElevation = if (isCurrentClaimable) 4.dp else 1.dp,
         border = BorderStroke(if (isCurrentClaimable) 2.dp else 1.dp, borderColor),
@@ -613,7 +630,7 @@ private fun DailyTierTile(
                     Text(
                         text = "+${tier.bonusDiamonds} 💎",
                         style = MaterialTheme.typography.labelSmall,
-                        color = DeepCobalt,
+                        color = palette.accentPrimary,
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                     )
                 }
@@ -621,7 +638,7 @@ private fun DailyTierTile(
             if (tier.bonusFreePacks > 0) {
                 Spacer(modifier = Modifier.height(3.dp))
                 Surface(
-                    color = MisprintMagenta.copy(alpha = 0.14f),
+                    color = MisprintMagenta.copy(alpha = 0.16f),
                     shape = RoundedCornerShape(6.dp)
                 ) {
                     Text(
@@ -637,7 +654,7 @@ private fun DailyTierTile(
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = "Claimed",
-                    tint = DeepCobalt,
+                    tint = palette.accentPrimary,
                     modifier = Modifier.size(14.dp)
                 )
             }
@@ -653,6 +670,7 @@ private fun MegaPackShowcaseCard(
     onOpenFreeTicket: () -> Unit,
     onShowOdds: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = PureWhiteCard,
@@ -676,7 +694,7 @@ private fun MegaPackShowcaseCard(
                         modifier = Modifier.fillMaxSize()
                     )
                     Surface(
-                        color = InkSlate.copy(alpha = 0.88f),
+                        color = MoonlightNight.copy(alpha = 0.9f),
                         shape = RoundedCornerShape(6.dp),
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -714,7 +732,7 @@ private fun MegaPackShowcaseCard(
                             Icon(
                                 imageVector = Icons.Default.Info,
                                 contentDescription = "View drop rates",
-                                tint = DeepCobalt,
+                                tint = palette.accentPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -740,14 +758,14 @@ private fun MegaPackShowcaseCard(
                             Icon(
                                 imageVector = Icons.Default.Bolt,
                                 contentDescription = null,
-                                tint = DeepCobalt,
+                                tint = palette.accentPrimary,
                                 modifier = Modifier.size(13.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "1/1 Misprint: ${MegaPackConfig.MISPRINT_ODDS_LABEL}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = DeepCobalt
+                                color = palette.accentPrimary
                             )
                         }
                     }
@@ -789,6 +807,7 @@ private fun BundlePurchaseCard(
     onBuyWithCoins: () -> Unit,
     onBuyWithDiamonds: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     val canBuyCoins = coins >= bundle.coinCost
     val canBuyDiamonds = diamonds >= bundle.diamondCost
 
@@ -827,14 +846,14 @@ private fun BundlePurchaseCard(
                                 Icon(
                                     imageVector = Icons.Default.LocalOffer,
                                     contentDescription = null,
-                                    tint = InkSlate,
+                                    tint = palette.goldButtonContent,
                                     modifier = Modifier.size(12.dp)
                                 )
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
                                     text = bundle.badgeText,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = InkSlate
+                                    color = palette.goldButtonContent
                                 )
                             }
                         }
@@ -863,7 +882,7 @@ private fun BundlePurchaseCard(
                     enabled = catalogReady && canBuyCoins && !isOpening,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = StudioGold,
-                        contentColor = InkSlate
+                        contentColor = palette.goldButtonContent
                     ),
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
@@ -889,7 +908,7 @@ private fun BundlePurchaseCard(
                     enabled = catalogReady && canBuyDiamonds && !isOpening,
                     border = BorderStroke(
                         1.4.dp,
-                        if (canBuyDiamonds) DeepCobalt else IceBorder
+                        if (canBuyDiamonds) palette.accentPrimary else IceBorder
                     ),
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
@@ -901,14 +920,14 @@ private fun BundlePurchaseCard(
                     Icon(
                         imageVector = Icons.Default.Diamond,
                         contentDescription = null,
-                        tint = if (canBuyDiamonds) DeepCobalt else SlateMuted,
+                        tint = if (canBuyDiamonds) palette.accentPrimary else SlateMuted,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = "${bundle.diamondCost} Diamonds",
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (canBuyDiamonds) DeepCobalt else SlateMuted
+                        color = if (canBuyDiamonds) palette.accentPrimary else SlateMuted
                     )
                 }
             }
@@ -920,6 +939,7 @@ private fun BundlePurchaseCard(
 private fun PackOddsDialog(
     onDismiss: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = PureWhiteCard,
@@ -972,7 +992,7 @@ private fun PackOddsDialog(
                     Text(
                         text = "1-of-1 Misprint Bonus Roll: ${MegaPackConfig.MISPRINT_ODDS_LABEL}",
                         style = MaterialTheme.typography.labelMedium,
-                        color = DeepCobalt,
+                        color = palette.accentPrimary,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
@@ -980,7 +1000,7 @@ private fun PackOddsDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close", color = DeepCobalt)
+                Text("Close", color = palette.accentPrimary)
             }
         }
     )

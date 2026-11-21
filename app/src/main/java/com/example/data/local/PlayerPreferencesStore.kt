@@ -27,11 +27,18 @@ data class PlayerWalletState(
     val bonusFreePacks: Int = 1,
     val collectorAlias: String = "Mythic Ace",
     val catalogLastSyncedMs: Long = 0L,
+    val catalogSyncedEpochDay: Long = -1L,
     val catalogSchemaVersion: Int = 0,
     val soundMuted: Boolean = false,
-    // Daily Scratchers
-    val lastScratcherEpochDay: Long = -1L,
-    val dailyScratchersUsedToday: Int = 0,
+    val darkModeEnabled: Boolean = false,
+    val vibrationEnabled: Boolean = true,
+    // Hourly-recharging Charges (1 charge per 1 hour, stacks up to 3)
+    val scratcherStoredCharges: Int = MAX_HOURLY_CHARGES,
+    val scratcherLastRefillMs: Long = 0L,
+    val prismStoredCharges: Int = MAX_HOURLY_CHARGES,
+    val prismLastRefillMs: Long = 0L,
+    // 10-Question Hourly Quiz Cooldown (every 1 hour)
+    val quizLastCompletedMs: Long = 0L,
     // Quest Counters (Daily)
     val questDailyEpochDay: Long = -1L,
     val dailyPacksOpened: Int = 0,
@@ -53,13 +60,48 @@ data class PlayerWalletState(
     val communityTradesDone: Int = 0,
     val claimedCommunityQuestIds: Set<String> = emptySet()
 ) {
-    val dailyScratchersRemaining: Int
-        get() = (MAX_DAILY_SCRATCHERS - dailyScratchersUsedToday).coerceAtLeast(0)
+    fun currentScratcherStatus(nowMs: Long): HourlyChargeStatus =
+        computeHourlyChargeStatus(scratcherStoredCharges, scratcherLastRefillMs, nowMs)
+
+    fun currentPrismStatus(nowMs: Long): HourlyChargeStatus =
+        computeHourlyChargeStatus(prismStoredCharges, prismLastRefillMs, nowMs)
+
+    fun currentQuizCooldownRemainingMs(nowMs: Long): Long {
+        if (quizLastCompletedMs <= 0L) return 0L
+        val elapsed = (nowMs - quizLastCompletedMs).coerceAtLeast(0L)
+        return (ONE_HOUR_MS - elapsed).coerceAtLeast(0L)
+    }
 
     companion object {
-        const val MAX_DAILY_SCRATCHERS = 3
+        const val MAX_HOURLY_CHARGES = 3
+        const val ONE_HOUR_MS = 3_600_000L
+
+        fun computeHourlyChargeStatus(
+            storedCharges: Int,
+            lastRefillMs: Long,
+            nowMs: Long
+        ): HourlyChargeStatus {
+            val clampedStored = storedCharges.coerceIn(0, MAX_HOURLY_CHARGES)
+            if (clampedStored >= MAX_HOURLY_CHARGES || lastRefillMs <= 0L) {
+                return HourlyChargeStatus(charges = MAX_HOURLY_CHARGES, msUntilNextCharge = 0L)
+            }
+            val elapsed = (nowMs - lastRefillMs).coerceAtLeast(0L)
+            val gained = (elapsed / ONE_HOUR_MS).toInt()
+            val effective = (clampedStored + gained).coerceAtMost(MAX_HOURLY_CHARGES)
+            val remaining = if (effective >= MAX_HOURLY_CHARGES) {
+                0L
+            } else {
+                ONE_HOUR_MS - (elapsed % ONE_HOUR_MS)
+            }
+            return HourlyChargeStatus(charges = effective, msUntilNextCharge = remaining)
+        }
     }
 }
+
+data class HourlyChargeStatus(
+    val charges: Int,
+    val msUntilNextCharge: Long
+)
 
 class PlayerPreferencesStore(private val context: Context) {
     private object Keys {
@@ -72,11 +114,17 @@ class PlayerPreferencesStore(private val context: Context) {
         val BONUS_FREE_PACKS = intPreferencesKey("bonus_starter_packs")
         val COLLECTOR_ALIAS = stringPreferencesKey("collector_alias")
         val CATALOG_LAST_SYNCED_MS = longPreferencesKey("catalog_last_synced_ms")
+        val CATALOG_SYNCED_EPOCH_DAY = longPreferencesKey("catalog_synced_epoch_day")
         val CATALOG_SCHEMA_VERSION = intPreferencesKey("catalog_schema_version")
         val SOUND_MUTED = booleanPreferencesKey("sound_muted")
+        val DARK_MODE_ENABLED = booleanPreferencesKey("dark_mode_enabled")
+        val VIBRATION_ENABLED = booleanPreferencesKey("vibration_enabled")
 
-        val LAST_SCRATCHER_EPOCH_DAY = longPreferencesKey("last_scratcher_epoch_day")
-        val DAILY_SCRATCHERS_USED = intPreferencesKey("daily_scratchers_used")
+        val SCRATCHER_CHARGES = intPreferencesKey("scratcher_charges_v2")
+        val SCRATCHER_LAST_REFILL_MS = longPreferencesKey("scratcher_last_refill_ms")
+        val PRISM_CHARGES = intPreferencesKey("prism_charges_v2")
+        val PRISM_LAST_REFILL_MS = longPreferencesKey("prism_last_refill_ms")
+        val QUIZ_LAST_COMPLETED_MS = longPreferencesKey("quiz_last_completed_ms")
 
         val QUEST_DAILY_EPOCH_DAY = longPreferencesKey("quest_daily_epoch_day")
         val DAILY_PACKS_OPENED = intPreferencesKey("daily_packs_opened")
@@ -110,10 +158,16 @@ class PlayerPreferencesStore(private val context: Context) {
             bonusFreePacks = prefs[Keys.BONUS_FREE_PACKS] ?: 1,
             collectorAlias = prefs[Keys.COLLECTOR_ALIAS] ?: "Mythic Ace",
             catalogLastSyncedMs = prefs[Keys.CATALOG_LAST_SYNCED_MS] ?: 0L,
+            catalogSyncedEpochDay = prefs[Keys.CATALOG_SYNCED_EPOCH_DAY] ?: -1L,
             catalogSchemaVersion = prefs[Keys.CATALOG_SCHEMA_VERSION] ?: 0,
             soundMuted = prefs[Keys.SOUND_MUTED] ?: false,
-            lastScratcherEpochDay = prefs[Keys.LAST_SCRATCHER_EPOCH_DAY] ?: -1L,
-            dailyScratchersUsedToday = prefs[Keys.DAILY_SCRATCHERS_USED] ?: 0,
+            darkModeEnabled = prefs[Keys.DARK_MODE_ENABLED] ?: false,
+            vibrationEnabled = prefs[Keys.VIBRATION_ENABLED] ?: true,
+            scratcherStoredCharges = prefs[Keys.SCRATCHER_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES,
+            scratcherLastRefillMs = prefs[Keys.SCRATCHER_LAST_REFILL_MS] ?: 0L,
+            prismStoredCharges = prefs[Keys.PRISM_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES,
+            prismLastRefillMs = prefs[Keys.PRISM_LAST_REFILL_MS] ?: 0L,
+            quizLastCompletedMs = prefs[Keys.QUIZ_LAST_COMPLETED_MS] ?: 0L,
             questDailyEpochDay = prefs[Keys.QUEST_DAILY_EPOCH_DAY] ?: -1L,
             dailyPacksOpened = prefs[Keys.DAILY_PACKS_OPENED] ?: 0,
             dailyEpicPlusCollected = prefs[Keys.DAILY_EPIC_PLUS] ?: 0,
@@ -192,19 +246,6 @@ class PlayerPreferencesStore(private val context: Context) {
         }
     }
 
-    suspend fun addDiamonds(amount: Int, fromMinigameWin: Boolean = false, todayEpochDay: Long? = null, currentWeekKey: Long? = null) {
-        context.collectorDataStore.edit { prefs ->
-            val cur = prefs[Keys.DIAMONDS] ?: 25
-            prefs[Keys.DIAMONDS] = cur + amount
-            if (fromMinigameWin && todayEpochDay != null && currentWeekKey != null) {
-                resetDailyIfNeeded(prefs, todayEpochDay)
-                resetWeeklyIfNeeded(prefs, currentWeekKey)
-                prefs[Keys.DAILY_MINIGAMES_WON] = (prefs[Keys.DAILY_MINIGAMES_WON] ?: 0) + 1
-                prefs[Keys.WEEKLY_MINIGAMES_WON] = (prefs[Keys.WEEKLY_MINIGAMES_WON] ?: 0) + 1
-            }
-        }
-    }
-
     suspend fun exchangeDiamondsForCoins(diamondCost: Int, coinGain: Int): Boolean {
         var success = false
         context.collectorDataStore.edit { prefs ->
@@ -218,23 +259,96 @@ class PlayerPreferencesStore(private val context: Context) {
         return success
     }
 
-    suspend fun recordScratcherReward(
+    suspend fun consumeScratcherChargeAndAwardCoins(
         coinReward: Int,
+        nowMs: Long,
         todayEpochDay: Long,
         currentWeekKey: Long
     ): Boolean {
         var recorded = false
         context.collectorDataStore.edit { prefs ->
-            val storedDay = prefs[Keys.LAST_SCRATCHER_EPOCH_DAY] ?: -1L
-            val used = if (storedDay < todayEpochDay) 0 else (prefs[Keys.DAILY_SCRATCHERS_USED] ?: 0)
-            if (used < PlayerWalletState.MAX_DAILY_SCRATCHERS) {
-                prefs[Keys.LAST_SCRATCHER_EPOCH_DAY] = todayEpochDay
-                prefs[Keys.DAILY_SCRATCHERS_USED] = used + 1
+            val stored = prefs[Keys.SCRATCHER_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES
+            val lastRefill = prefs[Keys.SCRATCHER_LAST_REFILL_MS] ?: 0L
+            val status = PlayerWalletState.computeHourlyChargeStatus(stored, lastRefill, nowMs)
+            if (status.charges > 0) {
+                val afterSpend = status.charges - 1
+                val newRefillAnchor = when {
+                    status.charges >= PlayerWalletState.MAX_HOURLY_CHARGES -> nowMs
+                    else -> {
+                        val elapsed = (nowMs - lastRefill).coerceAtLeast(0L)
+                        val gained = (elapsed / PlayerWalletState.ONE_HOUR_MS).toInt()
+                        lastRefill + gained * PlayerWalletState.ONE_HOUR_MS
+                    }
+                }
+                prefs[Keys.SCRATCHER_CHARGES] = afterSpend
+                prefs[Keys.SCRATCHER_LAST_REFILL_MS] = newRefillAnchor
                 prefs[Keys.COINS] = (prefs[Keys.COINS] ?: 1200) + coinReward
 
                 resetDailyIfNeeded(prefs, todayEpochDay)
                 resetWeeklyIfNeeded(prefs, currentWeekKey)
                 prefs[Keys.DAILY_SCRATCHERS_DONE] = (prefs[Keys.DAILY_SCRATCHERS_DONE] ?: 0) + 1
+                recorded = true
+            }
+        }
+        return recorded
+    }
+
+    suspend fun consumePrismChargeAndAwardDiamonds(
+        diamondReward: Int,
+        nowMs: Long,
+        todayEpochDay: Long,
+        currentWeekKey: Long
+    ): Boolean {
+        var recorded = false
+        context.collectorDataStore.edit { prefs ->
+            val stored = prefs[Keys.PRISM_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES
+            val lastRefill = prefs[Keys.PRISM_LAST_REFILL_MS] ?: 0L
+            val status = PlayerWalletState.computeHourlyChargeStatus(stored, lastRefill, nowMs)
+            if (status.charges > 0) {
+                val afterSpend = status.charges - 1
+                val newRefillAnchor = when {
+                    status.charges >= PlayerWalletState.MAX_HOURLY_CHARGES -> nowMs
+                    else -> {
+                        val elapsed = (nowMs - lastRefill).coerceAtLeast(0L)
+                        val gained = (elapsed / PlayerWalletState.ONE_HOUR_MS).toInt()
+                        lastRefill + gained * PlayerWalletState.ONE_HOUR_MS
+                    }
+                }
+                prefs[Keys.PRISM_CHARGES] = afterSpend
+                prefs[Keys.PRISM_LAST_REFILL_MS] = newRefillAnchor
+                prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: 25) + diamondReward
+
+                if (diamondReward > 0) {
+                    resetDailyIfNeeded(prefs, todayEpochDay)
+                    resetWeeklyIfNeeded(prefs, currentWeekKey)
+                    prefs[Keys.DAILY_MINIGAMES_WON] = (prefs[Keys.DAILY_MINIGAMES_WON] ?: 0) + 1
+                    prefs[Keys.WEEKLY_MINIGAMES_WON] = (prefs[Keys.WEEKLY_MINIGAMES_WON] ?: 0) + 1
+                }
+                recorded = true
+            }
+        }
+        return recorded
+    }
+
+    suspend fun completeHourlyQuizAndAwardDiamonds(
+        diamondReward: Int,
+        nowMs: Long,
+        todayEpochDay: Long,
+        currentWeekKey: Long
+    ): Boolean {
+        var recorded = false
+        context.collectorDataStore.edit { prefs ->
+            val last = prefs[Keys.QUIZ_LAST_COMPLETED_MS] ?: 0L
+            if (last <= 0L || (nowMs - last) >= PlayerWalletState.ONE_HOUR_MS) {
+                prefs[Keys.QUIZ_LAST_COMPLETED_MS] = nowMs
+                prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: 25) + diamondReward
+
+                if (diamondReward > 0) {
+                    resetDailyIfNeeded(prefs, todayEpochDay)
+                    resetWeeklyIfNeeded(prefs, currentWeekKey)
+                    prefs[Keys.DAILY_MINIGAMES_WON] = (prefs[Keys.DAILY_MINIGAMES_WON] ?: 0) + 1
+                    prefs[Keys.WEEKLY_MINIGAMES_WON] = (prefs[Keys.WEEKLY_MINIGAMES_WON] ?: 0) + 1
+                }
                 recorded = true
             }
         }
@@ -249,10 +363,6 @@ class PlayerPreferencesStore(private val context: Context) {
 
     suspend fun syncQuestPeriodsIfNeeded(todayEpochDay: Long, currentWeekKey: Long) {
         context.collectorDataStore.edit { prefs ->
-            if ((prefs[Keys.LAST_SCRATCHER_EPOCH_DAY] ?: -1L) < todayEpochDay) {
-                prefs[Keys.LAST_SCRATCHER_EPOCH_DAY] = todayEpochDay
-                prefs[Keys.DAILY_SCRATCHERS_USED] = 0
-            }
             resetDailyIfNeeded(prefs, todayEpochDay)
             resetWeeklyIfNeeded(prefs, currentWeekKey)
         }
@@ -320,9 +430,10 @@ class PlayerPreferencesStore(private val context: Context) {
         }
     }
 
-    suspend fun markCatalogSynced(timestampMs: Long, schemaVersion: Int) {
+    suspend fun markCatalogSynced(timestampMs: Long, epochDay: Long, schemaVersion: Int) {
         context.collectorDataStore.edit { prefs ->
             prefs[Keys.CATALOG_LAST_SYNCED_MS] = timestampMs
+            prefs[Keys.CATALOG_SYNCED_EPOCH_DAY] = epochDay
             prefs[Keys.CATALOG_SCHEMA_VERSION] = schemaVersion
         }
     }
@@ -330,6 +441,18 @@ class PlayerPreferencesStore(private val context: Context) {
     suspend fun setSoundMuted(muted: Boolean) {
         context.collectorDataStore.edit { prefs ->
             prefs[Keys.SOUND_MUTED] = muted
+        }
+    }
+
+    suspend fun setDarkModeEnabled(enabled: Boolean) {
+        context.collectorDataStore.edit { prefs ->
+            prefs[Keys.DARK_MODE_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setVibrationEnabled(enabled: Boolean) {
+        context.collectorDataStore.edit { prefs ->
+            prefs[Keys.VIBRATION_ENABLED] = enabled
         }
     }
 
@@ -358,7 +481,6 @@ class PlayerPreferencesStore(private val context: Context) {
     }
 
     companion object {
-        // 3: hero detail skins now get their art from the hero's illustrations (were blank).
         const val CURRENT_CATALOG_SCHEMA_VERSION = 3
     }
 }

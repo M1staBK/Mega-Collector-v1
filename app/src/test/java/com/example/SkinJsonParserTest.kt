@@ -1,11 +1,18 @@
 package com.example
 
+import com.example.data.local.PlayerWalletState
 import com.example.data.remote.SkinJsonParser
 import com.example.model.MegaPackConfig
 import com.example.model.PackBundleOption
 import com.example.model.QuestCatalog
+import com.example.model.QuizQuestionBank
+import com.example.model.QuizQuestionType
+import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
+import com.example.model.SkinVoiceLines
+import com.example.ui.components.CharacterFocusSquareTransformation
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -59,7 +66,7 @@ class SkinJsonParserTest {
     }
 
     @Test
-    fun `parses paginated skins envelope and hero detail embedded skins`() {
+    fun `parses paginated skins envelope and hero detail with illustrations and images maps`() {
         val pageJson = """
             {
               "data": [
@@ -90,20 +97,92 @@ class SkinJsonParserTest {
             {
               "data": {
                 "name": "Miya",
-                "role": "Marksman",
+                "roles": ["Marksman"],
+                "images": {
+                  "portrait": "/visuels/heros/miya/portrait.webp",
+                  "skins": {
+                    "miya_2": "/visuels/heros/miya/skins/miya_2.webp",
+                    "miya_3": "/visuels/heros/miya/skins/miya_3.webp"
+                  }
+                },
+                "illustrations": {
+                  "Modena Butterfly": "/visuels/heros/miya/illustrations/modena.webp"
+                },
                 "skins": [
-                  { "id": "miya_1", "name": "Modena Butterfly", "tier": "Legend" },
-                  { "id": "miya_2", "name": "Moonlight Archer", "tier": "Basic" }
+                  { "id": "miya_1", "name": "Modena Butterfly", "tier": "Supreme", "label": "Legend" },
+                  { "id": "miya_2", "name": "Doom Catalyst", "rarity": "Exquisite", "series": "Collector" },
+                  { "id": "miya_3", "name": "Christmas Carnival", "tier": "Basic", "series": "Luckybox" },
+                  { "id": "miya_4", "name": "Moonlight Archer", "tier": "Basic" }
                 ]
               }
             }
         """.trimIndent()
 
         val heroSkins = SkinJsonParser.parseHeroDetailSkins(heroDetailJson)
-        assertEquals(2, heroSkins.size)
+        assertEquals(4, heroSkins.size)
         assertEquals("Miya", heroSkins[0].heroName)
+        assertEquals("Marksman", heroSkins[0].role)
         assertEquals(SkinRarity.LEGEND, heroSkins[0].rarity)
-        assertEquals(SkinRarity.COMMON, heroSkins[1].rarity)
+        assertEquals("https://mlbbdex.com/visuels/heros/miya/illustrations/modena.webp", heroSkins[0].imageUrl)
+        assertEquals(SkinRarity.COLLECTOR, heroSkins[1].rarity)
+        assertEquals("https://mlbbdex.com/visuels/heros/miya/skins/miya_2.webp", heroSkins[1].imageUrl)
+        assertEquals(SkinRarity.LUCKYBOX, heroSkins[2].rarity)
+        assertEquals("https://mlbbdex.com/visuels/heros/miya/skins/miya_3.webp", heroSkins[2].imageUrl)
+        assertEquals(SkinRarity.COMMON, heroSkins[3].rarity)
+        assertEquals("https://mlbbdex.com/visuels/heros/miya/portrait.webp", heroSkins[3].imageUrl)
+    }
+
+    @Test
+    fun `hourly charges refill every hour and cap at stack of 3`() {
+        val anchor = 10_000_000L
+        val oneHour = PlayerWalletState.ONE_HOUR_MS
+
+        // Spent down to 0 at anchor: 30m later still 0 with 30m left
+        val after30m = PlayerWalletState.computeHourlyChargeStatus(0, anchor, anchor + oneHour / 2)
+        assertEquals(0, after30m.charges)
+        assertEquals(oneHour / 2, after30m.msUntilNextCharge)
+
+        // 2 hours 15 mins later: 2 charges accrued, 45m until 3rd
+        val after2h15m = PlayerWalletState.computeHourlyChargeStatus(0, anchor, anchor + oneHour * 2 + oneHour / 4)
+        assertEquals(2, after2h15m.charges)
+        assertEquals((oneHour * 3) / 4, after2h15m.msUntilNextCharge)
+
+        // 10 hours inactive: capped at 3 charges with 0ms timer
+        val after10h = PlayerWalletState.computeHourlyChargeStatus(1, anchor, anchor + oneHour * 10)
+        assertEquals(3, after10h.charges)
+        assertEquals(0L, after10h.msUntilNextCharge)
+
+        // Quiz cooldown lasts 1 hour and settings default to Light Mode + Audio/Vibration enabled
+        val wallet = PlayerWalletState(quizLastCompletedMs = anchor)
+        assertEquals(false, wallet.darkModeEnabled)
+        assertEquals(true, wallet.vibrationEnabled)
+        assertEquals(false, wallet.soundMuted)
+        assertEquals(oneHour / 2, wallet.currentQuizCooldownRemainingMs(anchor + oneHour / 2))
+        assertEquals(0L, wallet.currentQuizCooldownRemainingMs(anchor + oneHour))
+    }
+
+    @Test
+    fun `hourly quiz always builds 10 questions including map knowledge`() {
+        val emptyQuiz = QuizQuestionBank.buildHourlyQuiz(emptyList())
+        assertEquals(10, emptyQuiz.size)
+        assertTrue(emptyQuiz.all { it.type == QuizQuestionType.MAP_KNOWLEDGE })
+
+        val sampleCatalog = listOf("Gusion", "Miya", "Fanny", "Layla", "Ling").mapIndexed { idx, hero ->
+            SkinCatalogItem(
+                id = "skin_$idx",
+                skinName = "Skin $idx",
+                heroName = hero,
+                role = "Assassin",
+                rawTier = "Epic",
+                rarity = SkinRarity.EPIC,
+                imageUrl = "https://mlbbdex.com/visuels/$idx.webp"
+            )
+        }
+        val mixedQuiz = QuizQuestionBank.buildHourlyQuiz(sampleCatalog)
+        assertEquals(10, mixedQuiz.size)
+        assertEquals(5, mixedQuiz.count { it.type == QuizQuestionType.SKIN_IDENTITY })
+        assertEquals(5, mixedQuiz.count { it.type == QuizQuestionType.MAP_KNOWLEDGE })
+        assertTrue(mixedQuiz.all { it.options.size == 4 && it.correctAnswer in it.options })
     }
 
     @Test
@@ -111,20 +190,80 @@ class SkinJsonParserTest {
         val total = MegaPackConfig.RARITY_WEIGHTS.values.sum()
         assertEquals(100.0, total, 0.001)
         assertEquals(0.005, MegaPackConfig.MISPRINT_CHANCE_PERCENT, 0.0001)
-        // Ensure a skin with rawTier Basic stays COMMON even if skinName contains "Grand"
         assertEquals(SkinRarity.COMMON, SkinRarity.fromApiTier("Basic", "Grand Blade"))
 
-        // Bundle discount assertions: 5 packs = 5% off, 10 packs = 10% off
         assertEquals(200, PackBundleOption.SINGLE.coinCost)
         assertEquals(950, PackBundleOption.FIVE_PACK.coinCost)
         assertEquals(5, PackBundleOption.FIVE_PACK.discountPercent)
         assertEquals(1800, PackBundleOption.TEN_PACK.coinCost)
         assertEquals(10, PackBundleOption.TEN_PACK.discountPercent)
 
-        // Quest catalog completeness
         assertTrue(QuestCatalog.dailyQuests.isNotEmpty())
         assertTrue(QuestCatalog.weeklyQuests.isNotEmpty())
         assertTrue(QuestCatalog.communityQuests.isNotEmpty())
+    }
+
+    @Test
+    fun `character focus crop returns exact square anchored on character face or saliency peak`() {
+        // Landscape 1280x720 with face centered on the right side (78% across)
+        val faceRightRect = CharacterFocusSquareTransformation.computeFocusCropRect(
+            width = 1280,
+            height = 720,
+            faceNormX = 0.78f,
+            faceNormY = 0.35f
+        )
+        assertEquals(720, faceRightRect.width())
+        assertEquals(720, faceRightRect.height())
+        assertTrue(faceRightRect.left > 400)
+
+        // Landscape 1280x720 with visual energy concentrated on the left (columns 2..8 of 32)
+        val leftEnergyCrop = CharacterFocusSquareTransformation.computeFocusCropRect(
+            width = 1280,
+            height = 720,
+            energyProvider = { gridW, gridH ->
+                FloatArray(gridW * gridH).also { arr ->
+                    for (y in 2 until gridH / 2) {
+                        for (x in 2..8) {
+                            arr[y * gridW + x] = 100f
+                        }
+                    }
+                }
+            }
+        )
+        assertEquals(720, leftEnergyCrop.width())
+        assertEquals(720, leftEnergyCrop.height())
+        assertTrue(leftEnergyCrop.left < 180)
+
+        // Portrait 720x1280 fallback favors upper torso rather than bottom edge
+        val portraitCrop = CharacterFocusSquareTransformation.computeFocusCropRect(
+            width = 720,
+            height = 1280
+        )
+        assertEquals(720, portraitCrop.width())
+        assertEquals(720, portraitCrop.height())
+        assertTrue(portraitCrop.top in 100..220)
+    }
+
+    @Test
+    fun `skin voice lines resolve signature themes heroes and fallbacks`() {
+        val gusionQuote = SkinVoiceLines.quoteFor("Gusion", "Cosmic Gleam", SkinRarity.LEGEND, "Assassin")
+        val miyaQuote = SkinVoiceLines.quoteFor("Miya", "Modena Butterfly", SkinRarity.LEGEND, "Marksman")
+        val heroFallbackQuote = SkinVoiceLines.quoteFor("Tigreal", "Fallen Guard", SkinRarity.EPIC, "Tank")
+        val genericFallback = SkinVoiceLines.quoteFor("CustomHero", "Crimson Dawn", SkinRarity.COLLECTOR, "Fighter")
+        val explicitApiQuote = SkinVoiceLines.quoteFor(
+            heroName = "Miya",
+            skinName = "Moonlight",
+            rarity = SkinRarity.COMMON,
+            role = "Marksman",
+            apiQuote = "Arrows sing in the pale moonlight."
+        )
+
+        assertTrue(gusionQuote.contains("cosmic", ignoreCase = true))
+        assertTrue(miyaQuote.contains("wings", ignoreCase = true))
+        assertNotEquals(gusionQuote, miyaQuote)
+        assertTrue(heroFallbackQuote.isNotBlank())
+        assertTrue(genericFallback.contains("CustomHero"))
+        assertEquals("Arrows sing in the pale moonlight.", explicitApiQuote)
     }
 
     @Test

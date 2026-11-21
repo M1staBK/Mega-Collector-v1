@@ -63,14 +63,17 @@ interface CollectorDao {
     @Query("DELETE FROM trade_listings WHERE cardInstanceId = :cardInstanceId")
     suspend fun deleteTradeListingsForCard(cardInstanceId: Long)
 
-    /** Gives owned cards saved without art the image their catalog entry now has. */
     @Query(
-        "UPDATE owned_cards SET imageUrl = " +
-            "(SELECT c.imageUrl FROM skin_catalog c WHERE c.id = owned_cards.catalogId) " +
-            "WHERE imageUrl = '' AND EXISTS " +
-            "(SELECT 1 FROM skin_catalog c WHERE c.id = owned_cards.catalogId AND c.imageUrl != '')"
+        """
+        UPDATE owned_cards
+        SET imageUrl = COALESCE(
+            (SELECT imageUrl FROM skin_catalog WHERE skin_catalog.id = owned_cards.catalogId LIMIT 1),
+            imageUrl
+        )
+        WHERE imageUrl = ''
+        """
     )
-    suspend fun backfillOwnedCardImages(): Int
+    suspend fun backfillMissingOwnedImages()
 
     @Transaction
     suspend fun replaceCatalog(items: List<SkinCatalogEntity>) {

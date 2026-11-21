@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -24,21 +25,19 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
@@ -50,31 +49,35 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.SubcomposeAsyncImage
+import com.example.R
 import com.example.model.MisprintAnomaly
 import com.example.model.OwnedCard
 import com.example.model.SkinRarity
+import com.example.model.SkinVoiceLines
 import com.example.ui.sensors.CardTiltState
 import com.example.ui.theme.CardBackDeep
-import com.example.ui.theme.CardBackEdge
-import com.example.ui.theme.CardBackRoyal
-import com.example.ui.theme.InkSlate
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.MisprintMagenta
 import com.example.ui.theme.MisprintNeon
-import com.example.ui.theme.PureWhiteCard
+import com.example.ui.theme.MoonlightNight
+import com.example.ui.theme.MoonlightSilverBlue
 import com.example.ui.theme.SkyAzure
-import com.example.ui.theme.SkyFrost
-import com.example.ui.theme.StudioGold
 import com.example.ui.theme.StudioGoldBright
 import kotlin.math.roundToInt
 
@@ -122,8 +125,8 @@ fun HolographicCardView(
         Brush.linearGradient(
             colors = listOf(
                 card.rarity.primaryColor,
-                Color.White,
-                card.rarity.primaryColor.copy(alpha = 0.75f),
+                Color.White.copy(alpha = 0.88f),
+                card.rarity.primaryColor.copy(alpha = 0.82f),
                 card.rarity.secondaryColor
             ),
             start = Offset(roll * 10f, pitch * 10f),
@@ -145,11 +148,23 @@ fun HolographicCardView(
         Modifier
     }
 
-    val cardShape = RoundedCornerShape(if (compact) 16.dp else 22.dp)
+    val voiceQuote = remember(card.heroName, card.skinName, card.rarity, card.role) {
+        SkinVoiceLines.quoteFor(
+            heroName = card.heroName,
+            skinName = card.skinName,
+            rarity = card.rarity,
+            role = card.role
+        )
+    }
 
+    val cardShape = RoundedCornerShape(if (compact) 14.dp else 18.dp)
+    val thinPad = if (compact) 4.dp else 6.dp
+    val artCorner = RoundedCornerShape(if (compact) 10.dp else 13.dp)
+
+    // Pokemon TCG-inspired proportion (~63:95): 1:1 square artwork flush at top, rich quote & bottom nameplate below
     Box(
         modifier = modifier
-            .aspectRatio(0.68f)
+            .aspectRatio(0.665f)
             .then(dragModifier)
             .graphicsLayer {
                 rotationX = pitch
@@ -160,80 +175,242 @@ fun HolographicCardView(
                 elevation = if (compact) 6.dp else 14.dp,
                 shape = cardShape,
                 ambientColor = card.rarity.primaryColor.copy(alpha = 0.35f),
-                spotColor = InkSlate.copy(alpha = 0.28f)
+                spotColor = Color.Black.copy(alpha = 0.45f)
             )
             .clip(cardShape)
-            .background(Color(0xFF101935))
+            .background(Color(0xFF0C1220))
             .border(
-                width = if (card.isMisprint) 3.dp else if (card.rarity.tierRank >= 4) 2.5.dp else 1.8.dp,
+                width = if (card.isMisprint) (if (compact) 2.4.dp else 3.2.dp) else if (compact) 1.8.dp else 2.6.dp,
                 brush = borderBrush,
                 shape = cardShape
             )
     ) {
-        // Layer 1: Hero Skin Artwork with subtle parallax shift from gyroscope
-        val imageColorFilter = when (card.misprintAnomaly) {
-            MisprintAnomaly.INVERTED_CHROMA -> ColorFilter.colorMatrix(
-                ColorMatrix(
-                    floatArrayOf(
-                        -0.8f, 0f, 0.4f, 0f, 180f,
-                        0.2f, -0.8f, 0f, 0f, 190f,
-                        0f, 0.3f, -0.8f, 0f, 220f,
-                        0f, 0f, 0f, 1f, 0f
-                    )
-                )
-            )
-            MisprintAnomaly.GOLD_FOIL_BLEED -> ColorFilter.colorMatrix(
-                ColorMatrix().apply { setToSaturation(1.35f) }
-            )
-            else -> null
-        }
-
-        Box(
+        // Subtle uploaded MLBB emblem card texture on backplate
+        Image(
+            painter = painterResource(id = R.drawable.bg_mlbb_card_art),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxSize()
-                .offset {
-                    IntOffset(
-                        x = (-roll * 0.65f).roundToInt(),
-                        y = (pitch * 0.65f).roundToInt()
+                .alpha(0.28f)
+        )
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 1. 1:1 SQUARE CHARACTER-FOCUSED ARTWORK (no extra edge/bar on top)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = thinPad, top = thinPad, end = thinPad)
+                    .aspectRatio(1f)
+                    .clip(artCorner)
+                    .background(Color(0xFF090D18))
+                    .border(
+                        width = if (compact) 1.dp else 1.5.dp,
+                        color = card.rarity.primaryColor.copy(alpha = 0.72f),
+                        shape = artCorner
+                    )
+            ) {
+                val imageColorFilter = when (card.misprintAnomaly) {
+                    MisprintAnomaly.INVERTED_CHROMA -> ColorFilter.colorMatrix(
+                        ColorMatrix(
+                            floatArrayOf(
+                                -0.8f, 0f, 0.4f, 0f, 180f,
+                                0.2f, -0.8f, 0f, 0f, 190f,
+                                0f, 0.3f, -0.8f, 0f, 220f,
+                                0f, 0f, 0f, 1f, 0f
+                            )
+                        )
+                    )
+                    MisprintAnomaly.GOLD_FOIL_BLEED -> ColorFilter.colorMatrix(
+                        ColorMatrix().apply { setToSaturation(1.35f) }
+                    )
+                    else -> null
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset {
+                            IntOffset(
+                                x = (-roll * 0.45f).roundToInt(),
+                                y = (pitch * 0.45f).roundToInt()
+                            )
+                        }
+                ) {
+                    if (card.imageUrl.isNotBlank()) {
+                        val request = rememberMlbbSquareImageRequest(card.imageUrl)
+                        SubcomposeAsyncImage(
+                            model = request,
+                            contentDescription = "${card.heroName} ${card.skinName} skin card",
+                            contentScale = ContentScale.Crop,
+                            colorFilter = imageColorFilter,
+                            modifier = Modifier.fillMaxSize(),
+                            loading = {
+                                SkinFallbackArt(modifier = Modifier.fillMaxSize())
+                            },
+                            error = {
+                                SkinFallbackArt(modifier = Modifier.fillMaxSize())
+                            }
+                        )
+                    } else {
+                        SkinFallbackArt(modifier = Modifier.fillMaxSize())
+                    }
+                }
+
+                // Minimalist top-right 1/1 tag only on Misprints
+                if (card.isMisprint) {
+                    Surface(
+                        color = MisprintMagenta,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, StudioGoldBright),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(if (compact) 5.dp else 7.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = "Misprint",
+                                tint = StudioGoldBright,
+                                modifier = Modifier.size(if (compact) 10.dp else 12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = "1/1",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = if (compact) 8.sp else 10.sp
+                                ),
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2. POKEMON TCG LOWER BODY: Skin Quote Voice Line + Bottom-Left Name + Bottom-Right Rarity Logo
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = thinPad, vertical = if (compact) 4.dp else 7.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Quote Voice-Line Plaque (inspired by Pokemon TCG Pokédex/Flavor Text box)
+                Surface(
+                    color = Color(0xFF141D32).copy(alpha = 0.90f),
+                    shape = RoundedCornerShape(if (compact) 6.dp else 9.dp),
+                    border = BorderStroke(0.8.dp, card.rarity.primaryColor.copy(alpha = 0.42f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(
+                            horizontal = if (compact) 6.dp else 9.dp,
+                            vertical = if (compact) 3.dp else 6.dp
+                        ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(2.5.dp)
+                                .height(if (compact) 11.dp else 24.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(card.rarity.primaryColor)
+                        )
+                        Spacer(modifier = Modifier.width(if (compact) 5.dp else 7.dp))
+                        Text(
+                            text = "“$voiceQuote”",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontStyle = FontStyle.Italic,
+                                fontSize = if (compact) 8.5.sp else 11.sp,
+                                lineHeight = if (compact) 10.5.sp else 14.sp
+                            ),
+                            color = Color(0xFFE2E8F0),
+                            maxLines = if (compact) 1 else 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Thick Bottom Footer Row: Name at Bottom-Left, Rarity Emblem at Bottom-Right
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = if (compact) 3.dp else 5.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = if (compact) 6.dp else 10.dp)
+                    ) {
+                        if (card.isMisprint && card.misprintAnomaly != null && !compact) {
+                            Text(
+                                text = "1/1 ${card.misprintAnomaly.title.uppercase()}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = card.misprintAnomaly.accentA,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            text = card.heroName.uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = if (compact) 8.5.sp else 11.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = StudioGoldBright,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = card.skinName,
+                            style = if (compact) {
+                                MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 13.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else {
+                                MaterialTheme.typography.titleLarge.copy(
+                                    fontSize = 17.sp,
+                                    lineHeight = 20.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            color = Color.White,
+                            maxLines = if (compact) 1 else 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (!compact) {
+                            Spacer(modifier = Modifier.height(1.dp))
+                            Text(
+                                text = "${card.serialCode} • ${card.role}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
+                                color = if (card.isMisprint) MisprintNeon else Color(0xFF94A3B8),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    RarityLogoBadge(
+                        rarity = card.rarity,
+                        compact = compact
                     )
                 }
-        ) {
-            if (card.imageUrl.isNotBlank()) {
-                SubcomposeAsyncImage(
-                    model = card.imageUrl,
-                    contentDescription = "${card.heroName} ${card.skinName} skin card",
-                    contentScale = ContentScale.Crop,
-                    colorFilter = imageColorFilter,
-                    modifier = Modifier.fillMaxSize(),
-                    loading = {
-                        SkinFallbackArt(card = card, modifier = Modifier.fillMaxSize())
-                    },
-                    error = {
-                        SkinFallbackArt(card = card, modifier = Modifier.fillMaxSize())
-                    }
-                )
-            } else {
-                SkinFallbackArt(card = card, modifier = Modifier.fillMaxSize())
             }
         }
 
-        // Layer 2: Crisp studio vignette so typography over artwork always has high contrast
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to Color(0xFF0A1124).copy(alpha = 0.48f),
-                            0.35f to Color.Transparent,
-                            0.62f to Color(0xFF0A1124).copy(alpha = 0.32f),
-                            1.0f to Color(0xFF091022).copy(alpha = 0.94f)
-                        )
-                    )
-                )
-        )
-
         // Layer 3: Gyroscope-reactive specular metallic foil glare & rainbow prism sheen
+        val foilGold = StudioGoldBright
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -242,9 +419,9 @@ fun HolographicCardView(
                     val glareCenterX = size.width * (0.5f + (roll / 36f)).coerceIn(-0.3f, 1.3f)
                     val glareCenterY = size.height * (0.5f - (pitch / 36f)).coerceIn(-0.3f, 1.3f)
                     val glareIntensity = when {
-                        card.isMisprint -> 0.44f
-                        card.rarity.tierRank >= 5 -> 0.36f
-                        card.rarity.tierRank >= 3 -> 0.25f
+                        card.isMisprint -> 0.42f
+                        card.rarity.tierRank >= 5 -> 0.34f
+                        card.rarity.tierRank >= 3 -> 0.24f
                         else -> 0.14f
                     }
 
@@ -252,7 +429,7 @@ fun HolographicCardView(
                         brush = Brush.radialGradient(
                             colors = listOf(
                                 Color.White.copy(alpha = glareIntensity),
-                                card.rarity.primaryColor.copy(alpha = glareIntensity * 0.65f),
+                                card.rarity.primaryColor.copy(alpha = glareIntensity * 0.6f),
                                 Color.Transparent
                             ),
                             center = Offset(glareCenterX, glareCenterY),
@@ -267,9 +444,9 @@ fun HolographicCardView(
                             brush = Brush.linearGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    SkyAzure.copy(alpha = 0.18f),
-                                    StudioGoldBright.copy(alpha = 0.22f),
-                                    MisprintMagenta.copy(alpha = 0.18f),
+                                    SkyAzure.copy(alpha = 0.16f),
+                                    foilGold.copy(alpha = 0.20f),
+                                    MisprintMagenta.copy(alpha = 0.16f),
                                     Color.Transparent
                                 ),
                                 start = Offset(sweepOffset - size.width * 0.45f, 0f),
@@ -288,9 +465,9 @@ fun HolographicCardView(
                 val step = size.height / stripeCount
                 for (i in 0 until stripeCount) {
                     if (i % 2 == 0) {
-                        val y = i * step + glitchJitter * 1.8f
+                        val y = i * step + glitchJitter * 1.6f
                         drawLine(
-                            color = MisprintNeon.copy(alpha = 0.16f),
+                            color = MisprintNeon.copy(alpha = 0.14f),
                             start = Offset(0f, y),
                             end = Offset(size.width, y),
                             strokeWidth = 2f
@@ -299,117 +476,171 @@ fun HolographicCardView(
                 }
             }
         }
+    }
+}
 
-        // Layer 5: Foreground Card Frame Metadata (Parallax forward)
+@Composable
+fun RarityLogoBadge(
+    rarity: SkinRarity,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val iconSize = if (compact) 20.dp else 28.dp
+    Surface(
+        modifier = modifier,
+        color = Color(0xFF151E34),
+        shape = RoundedCornerShape(if (compact) 8.dp else 10.dp),
+        border = BorderStroke(1.2.dp, rarity.primaryColor)
+    ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .offset {
-                    IntOffset(
-                        x = (roll * 0.4f).roundToInt(),
-                        y = (-pitch * 0.4f).roundToInt()
-                    )
-                }
-                .padding(if (compact) 8.dp else 14.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.padding(
+                horizontal = if (compact) 5.dp else 8.dp,
+                vertical = if (compact) 3.dp else 5.dp
+            ),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RarityChip(rarity = card.rarity, compact = compact)
-                if (card.isMisprint) {
-                    Surface(
-                        color = MisprintMagenta,
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(1.dp, StudioGoldBright)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Bolt,
-                                contentDescription = "Misprint",
-                                tint = StudioGoldBright,
-                                modifier = Modifier.size(if (compact) 11.dp else 13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = "1/1",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = if (compact) 9.sp else 11.sp
-                                ),
-                                color = Color.White
-                            )
-                        }
-                    }
-                }
+            RarityLogoSymbol(
+                rarity = rarity,
+                modifier = Modifier.size(iconSize)
+            )
+            Spacer(modifier = Modifier.height(1.dp))
+            Text(
+                text = rarity.displayName.uppercase(),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = if (compact) 7.sp else 8.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.35.sp
+                ),
+                color = rarity.primaryColor,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+fun RarityLogoSymbol(
+    rarity: SkinRarity,
+    modifier: Modifier = Modifier
+) {
+    val crownGold = StudioGoldBright
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val cx = w / 2f
+        val cy = h / 2f
+        val r = size.minDimension * 0.42f
+        val primary = rarity.primaryColor
+        val highlight = Color.White.copy(alpha = 0.85f)
+
+        when (rarity) {
+            SkinRarity.COMMON -> {
+                drawCircle(color = primary.copy(alpha = 0.35f), radius = r)
+                drawCircle(color = primary, radius = r, style = Stroke(width = w * 0.10f))
+                drawCircle(color = highlight, radius = r * 0.32f)
             }
 
-            Column(modifier = Modifier.fillMaxWidth()) {
-                if (card.isMisprint && card.misprintAnomaly != null && !compact) {
-                    Surface(
-                        color = Color(0xFF0F172A).copy(alpha = 0.9f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, card.misprintAnomaly.accentA)
-                    ) {
-                        Text(
-                            text = "MISPRINT: ${card.misprintAnomaly.title.uppercase()}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = card.misprintAnomaly.accentA,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
+            SkinRarity.UNCOMMON -> {
+                val chevron = Path().apply {
+                    moveTo(cx, cy - r)
+                    lineTo(cx + r * 0.9f, cy + r * 0.1f)
+                    lineTo(cx, cy + r * 0.85f)
+                    lineTo(cx - r * 0.9f, cy + r * 0.1f)
+                    close()
                 }
-
-                Text(
-                    text = card.heroName.uppercase(),
-                    style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
-                    color = StudioGoldBright,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                drawPath(chevron, color = primary.copy(alpha = 0.30f))
+                drawPath(chevron, color = primary, style = Stroke(width = w * 0.09f, join = StrokeJoin.Round))
+                drawLine(
+                    color = highlight,
+                    start = Offset(cx - r * 0.4f, cy - r * 0.05f),
+                    end = Offset(cx, cy - r * 0.45f),
+                    strokeWidth = w * 0.08f,
+                    cap = StrokeCap.Round
                 )
-                Text(
-                    text = card.skinName,
-                    style = if (compact) {
-                        MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 16.sp)
-                    } else {
-                        MaterialTheme.typography.headlineMedium
-                    },
-                    color = Color.White,
-                    maxLines = if (compact) 1 else 2,
-                    overflow = TextOverflow.Ellipsis
+                drawLine(
+                    color = highlight,
+                    start = Offset(cx, cy - r * 0.45f),
+                    end = Offset(cx + r * 0.4f, cy - r * 0.05f),
+                    strokeWidth = w * 0.08f,
+                    cap = StrokeCap.Round
                 )
+            }
 
-                Spacer(modifier = Modifier.height(if (compact) 3.dp else 6.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = card.serialCode,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = if (compact) 9.sp else 11.sp
-                        ),
-                        color = if (card.isMisprint) StudioGoldBright else Color(0xFFCBD5E1),
-                        maxLines = 1
-                    )
-                    if (!compact) {
-                        Text(
-                            text = card.role,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFCBD5E1)
-                        )
-                    }
+            SkinRarity.SPECIAL -> {
+                val diamond = Path().apply {
+                    moveTo(cx, cy - r)
+                    lineTo(cx + r * 0.85f, cy)
+                    lineTo(cx, cy + r)
+                    lineTo(cx - r * 0.85f, cy)
+                    close()
                 }
+                drawPath(diamond, color = primary.copy(alpha = 0.35f))
+                drawPath(diamond, color = primary, style = Stroke(width = w * 0.09f, join = StrokeJoin.Round))
+                drawCircle(color = highlight, radius = r * 0.25f)
+            }
+
+            SkinRarity.EPIC -> {
+                val star = Path().apply {
+                    moveTo(cx, cy - r)
+                    lineTo(cx + r * 0.28f, cy - r * 0.28f)
+                    lineTo(cx + r, cy)
+                    lineTo(cx + r * 0.28f, cy + r * 0.28f)
+                    lineTo(cx, cy + r)
+                    lineTo(cx - r * 0.28f, cy + r * 0.28f)
+                    lineTo(cx - r, cy)
+                    lineTo(cx - r * 0.28f, cy - r * 0.28f)
+                    close()
+                }
+                drawPath(star, color = primary)
+                drawPath(star, color = highlight, style = Stroke(width = w * 0.06f))
+            }
+
+            SkinRarity.LUCKYBOX -> {
+                val hex = Path().apply {
+                    for (i in 0 until 6) {
+                        val angle = Math.toRadians((60 * i - 90).toDouble())
+                        val px = cx + (r * kotlin.math.cos(angle)).toFloat()
+                        val py = cy + (r * kotlin.math.sin(angle)).toFloat()
+                        if (i == 0) moveTo(px, py) else lineTo(px, py)
+                    }
+                    close()
+                }
+                drawPath(hex, color = primary.copy(alpha = 0.38f))
+                drawPath(hex, color = primary, style = Stroke(width = w * 0.09f, join = StrokeJoin.Round))
+                drawCircle(color = crownGold, radius = r * 0.28f)
+            }
+
+            SkinRarity.COLLECTOR -> {
+                val wing = Path().apply {
+                    moveTo(cx - r, cy - r * 0.45f)
+                    lineTo(cx - r * 0.38f, cy + r * 0.1f)
+                    lineTo(cx, cy - r * 0.9f)
+                    lineTo(cx + r * 0.38f, cy + r * 0.1f)
+                    lineTo(cx + r, cy - r * 0.45f)
+                    lineTo(cx + r * 0.65f, cy + r * 0.72f)
+                    lineTo(cx - r * 0.65f, cy + r * 0.72f)
+                    close()
+                }
+                drawPath(wing, color = primary.copy(alpha = 0.42f))
+                drawPath(wing, color = crownGold, style = Stroke(width = w * 0.08f, join = StrokeJoin.Round))
+                drawCircle(color = highlight, radius = r * 0.24f, center = Offset(cx, cy + r * 0.2f))
+            }
+
+            SkinRarity.LEGEND -> {
+                val crown = Path().apply {
+                    moveTo(cx - r * 0.95f, cy + r * 0.65f)
+                    lineTo(cx - r * 0.95f, cy - r * 0.35f)
+                    lineTo(cx - r * 0.45f, cy + r * 0.05f)
+                    lineTo(cx, cy - r * 0.88f)
+                    lineTo(cx + r * 0.45f, cy + r * 0.05f)
+                    lineTo(cx + r * 0.95f, cy - r * 0.35f)
+                    lineTo(cx + r * 0.95f, cy + r * 0.65f)
+                    close()
+                }
+                drawPath(crown, color = primary)
+                drawPath(crown, color = crownGold, style = Stroke(width = w * 0.08f, join = StrokeJoin.Round))
+                drawCircle(color = crownGold, radius = r * 0.18f, center = Offset(cx, cy - r * 0.88f))
+                drawCircle(color = highlight, radius = r * 0.16f, center = Offset(cx, cy + r * 0.25f))
             }
         }
     }
@@ -424,7 +655,7 @@ fun CardBackView(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "card_back_glow")
     val pulse by infiniteTransition.animateFloat(
-        initialValue = 0.65f,
+        initialValue = 0.68f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = if (isMisprint || rarityHint.tierRank >= 5) 600 else 1200),
@@ -438,34 +669,25 @@ fun CardBackView(
         rarityHint.tierRank >= SkinRarity.EPIC.tierRank -> rarityHint.primaryColor
         else -> StudioGoldBright
     }
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(18.dp)
+    val accent = CollectorTheme.colors.accentPrimary
 
-    // Completely opaque base (CardBackDeep) so underlying UI never bleeds through
     Box(
         modifier = modifier
-            .aspectRatio(0.68f)
+            .aspectRatio(0.665f)
             .shadow(
                 elevation = 14.dp,
                 shape = shape,
-                ambientColor = InkSlate.copy(alpha = 0.3f),
-                spotColor = CardBackDeep.copy(alpha = 0.4f)
+                ambientColor = accent.copy(alpha = 0.25f),
+                spotColor = Color.Black.copy(alpha = 0.55f)
             )
             .clip(shape)
             .background(CardBackDeep)
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        CardBackRoyal,
-                        CardBackEdge,
-                        CardBackDeep
-                    )
-                )
-            )
             .border(
                 width = 3.dp,
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        PureWhiteCard,
+                        MoonlightSilverBlue.copy(alpha = 0.85f),
                         StudioGoldBright,
                         frameColor.copy(alpha = pulse),
                         StudioGoldBright
@@ -475,107 +697,82 @@ fun CardBackView(
             ),
         contentAlignment = Alignment.Center
     ) {
-        // Ornate TCG geometric card-back linework
+        Image(
+            painter = painterResource(id = R.drawable.bg_mlbb_card_art),
+            contentDescription = "Card background artwork",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MoonlightNight.copy(alpha = 0.35f),
+                            MoonlightNight.copy(alpha = 0.72f)
+                        )
+                    )
+                )
+        )
+
+        val trimGold = StudioGoldBright
         Canvas(modifier = Modifier.fillMaxSize().padding(14.dp)) {
             drawRoundRect(
-                color = StudioGoldBright.copy(alpha = 0.35f),
+                color = frameColor.copy(alpha = 0.42f * pulse),
                 cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx()),
-                style = Stroke(width = 2.dp.toPx())
+                style = Stroke(width = 1.8.dp.toPx())
             )
             drawRoundRect(
-                color = frameColor.copy(alpha = 0.25f),
-                topLeft = Offset(8.dp.toPx(), 8.dp.toPx()),
-                size = Size(size.width - 16.dp.toPx(), size.height - 16.dp.toPx()),
+                color = trimGold.copy(alpha = 0.24f),
+                topLeft = Offset(7.dp.toPx(), 7.dp.toPx()),
+                size = Size(size.width - 14.dp.toPx(), size.height - 14.dp.toPx()),
                 cornerRadius = CornerRadius(10.dp.toPx(), 10.dp.toPx()),
                 style = Stroke(width = 1.dp.toPx())
             )
-            // Corner diamonds
-            val pad = 20.dp.toPx()
-            val corners = listOf(
-                Offset(pad, pad),
-                Offset(size.width - pad, pad),
-                Offset(pad, size.height - pad),
-                Offset(size.width - pad, size.height - pad)
-            )
-            corners.forEach { c ->
-                drawCircle(
-                    color = StudioGoldBright.copy(alpha = 0.45f),
-                    radius = 4.dp.toPx(),
-                    center = c
-                )
-            }
         }
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(22.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(88.dp)
-                    .clip(CircleShape)
-                    .background(CardBackDeep)
-                    .border(2.5.dp, frameColor.copy(alpha = pulse), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (isMisprint) Icons.Default.Bolt else Icons.Default.AutoAwesome,
-                    contentDescription = "Hidden card back crest",
-                    tint = if (isMisprint) MisprintNeon else StudioGoldBright,
-                    modifier = Modifier.size(44.dp)
-                )
+        if (showTeaserLabel) {
+            val teaserText = when {
+                isMisprint -> "1/1 ANOMALY PULSE"
+                rarityHint.tierRank >= SkinRarity.COLLECTOR.tierRank -> "MYTHIC AURA DETECTED"
+                rarityHint.tierRank >= SkinRarity.EPIC.tierRank -> "HIGH FOIL RESONANCE"
+                else -> "TAP, SWIPE, OR PINCH"
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "MEGA COLLECTOR",
-                style = MaterialTheme.typography.titleLarge,
-                color = StudioGoldBright
-            )
-            if (showTeaserLabel) {
-                Spacer(modifier = Modifier.height(6.dp))
-                val teaserText = when {
-                    isMisprint -> "1/1 ANOMALY PULSE"
-                    rarityHint.tierRank >= SkinRarity.COLLECTOR.tierRank -> "MYTHIC AURA DETECTED"
-                    rarityHint.tierRank >= SkinRarity.EPIC.tierRank -> "HIGH FOIL RESONANCE"
-                    else -> "TAP, SWIPE, OR PINCH"
-                }
-                Surface(
-                    color = CardBackDeep.copy(alpha = 0.9f),
-                    shape = RoundedCornerShape(999.dp),
-                    border = BorderStroke(1.dp, frameColor.copy(alpha = 0.6f))
-                ) {
-                    Text(
-                        text = teaserText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = frameColor.copy(alpha = pulse),
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
+            Surface(
+                color = MoonlightNight.copy(alpha = 0.9f),
+                shape = RoundedCornerShape(999.dp),
+                border = BorderStroke(1.dp, frameColor.copy(alpha = 0.7f)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 26.dp)
+            ) {
+                Text(
+                    text = teaserText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = frameColor.copy(alpha = pulse),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SkinFallbackArt(card: OwnedCard, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.background(
-            Brush.linearGradient(
-                colors = listOf(
-                    card.rarity.secondaryColor,
-                    CardBackRoyal,
-                    CardBackDeep
-                )
-            )
-        ),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = if (card.rarity.tierRank >= 4) Icons.Default.Star else Icons.Default.Shield,
+private fun SkinFallbackArt(modifier: Modifier = Modifier) {
+    Box(modifier = modifier) {
+        Image(
+            painter = painterResource(id = R.drawable.bg_mlbb_card_art),
             contentDescription = null,
-            tint = SkyFrost.copy(alpha = 0.35f),
-            modifier = Modifier.size(72.dp)
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MoonlightNight.copy(alpha = 0.22f))
         )
     }
 }

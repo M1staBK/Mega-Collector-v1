@@ -54,14 +54,15 @@ import com.example.R
 import com.example.model.OwnedCard
 import com.example.ui.components.HolographicCardView
 import com.example.ui.sensors.rememberCardTiltState
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintNeon
-import com.example.ui.theme.PearlCanvas
+import com.example.ui.theme.MoonlightAbyss
+import com.example.ui.theme.PearlLightInk
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.SkyAzure
-import com.example.ui.theme.SkyFrost
 import com.example.ui.theme.SlateMuted
 import com.example.ui.theme.StudioCrimson
 import com.example.ui.theme.StudioGoldText
@@ -75,19 +76,21 @@ fun CardInspectScreen(
     onMintTradeSlip: (OwnedCard) -> Unit,
     onButtonClickSfx: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     val tiltState = rememberCardTiltState()
     var showRecycleConfirm by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(PearlCanvas)
+            .background(palette.canvas)
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        (card?.rarity?.primaryColor ?: SkyAzure).copy(alpha = 0.22f),
-                        SkyFrost.copy(alpha = 0.9f),
-                        PearlCanvas
+                        (card?.rarity?.primaryColor ?: SkyAzure).copy(alpha = if (palette.isDark) 0.24f else 0.20f),
+                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.12f else 0.25f),
+                        palette.abyss.copy(alpha = 0.84f),
+                        palette.canvas
                     )
                 )
             )
@@ -143,7 +146,7 @@ fun CardInspectScreen(
                 Text(
                     text = "3D FOIL INSPECTOR",
                     style = MaterialTheme.typography.titleLarge,
-                    color = DeepCobalt
+                    color = palette.accentPrimary
                 )
 
                 Surface(
@@ -164,7 +167,7 @@ fun CardInspectScreen(
                         Icon(
                             imageVector = Icons.Default.CenterFocusStrong,
                             contentDescription = "Recenter gyroscope angle",
-                            tint = DeepCobalt
+                            tint = palette.accentPrimary
                         )
                     }
                 }
@@ -206,7 +209,7 @@ fun CardInspectScreen(
                         Icon(
                             imageVector = Icons.Default.ScreenRotation,
                             contentDescription = null,
-                            tint = DeepCobalt,
+                            tint = palette.accentPrimary,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -244,7 +247,7 @@ fun CardInspectScreen(
             // Misprint Anomaly Callout (if 1/1)
             if (card.isMisprint && card.misprintAnomaly != null) {
                 Surface(
-                    color = InkSlate,
+                    color = if (palette.isDark) MoonlightAbyss else PearlLightInk,
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.5.dp, MisprintNeon),
                     modifier = Modifier.fillMaxWidth()
@@ -295,8 +298,8 @@ fun CardInspectScreen(
                     TelemetryRow("Drop Odds", "${card.pullRatePercent}%")
                     TelemetryRow("Serial Stamp", card.serialCode, if (card.isMisprint) StudioGoldText else InkSlate)
                     TelemetryRow("Vault Copies", "x$duplicateCount")
-                    TelemetryRow("Prestige Power", "+${card.prestigeScore}", DeepCobalt)
-                    TelemetryRow("Recycle Value", "+${card.recycleValueGold} Gold", StudioGoldText)
+                    TelemetryRow("Prestige Power", "+${card.prestigeScore}", palette.accentPrimary)
+                    TelemetryRow("Recycle Value", "+${card.recycleValueGold} Coins", StudioGoldText)
                 }
             }
 
@@ -369,9 +372,9 @@ fun CardInspectScreen(
             text = {
                 Text(
                     text = if (card.isMisprint) {
-                        "Warning: ${card.skinName} (${card.serialCode}) is an insanely rare 1-of-1 Misprint! Recycling destroys this copy permanently for +${card.recycleValueGold} Arena Gold."
+                        "Warning: ${card.skinName} (${card.serialCode}) is an insanely rare 1-of-1 Misprint! Recycling destroys this copy permanently for +${card.recycleValueGold} Coins."
                     } else {
-                        "Recycle ${card.heroName} — ${card.skinName} into +${card.recycleValueGold} Arena Gold?"
+                        "Recycle ${card.heroName} — ${card.skinName} into +${card.recycleValueGold} Coins?"
                     },
                     color = SlateMuted
                 )
@@ -384,7 +387,7 @@ fun CardInspectScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = StudioCrimson)
                 ) {
-                    Text("Recycle (+${card.recycleValueGold} Gold)", color = Color.White)
+                    Text("Recycle (+${card.recycleValueGold} Coins)", color = Color.White)
                 }
             },
             dismissButton = {

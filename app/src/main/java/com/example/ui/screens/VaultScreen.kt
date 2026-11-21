@@ -49,16 +49,16 @@ import com.example.model.OwnedCard
 import com.example.model.SkinRarity
 import com.example.ui.components.EmptyVaultState
 import com.example.ui.components.HolographicCardView
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
-import com.example.ui.theme.MisprintNeon
+import com.example.ui.theme.MoonlightNight
 import com.example.ui.theme.PearlCanvas
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.SkyAzure
 import com.example.ui.theme.SkyFrost
 import com.example.ui.theme.SlateMuted
-import com.example.ui.theme.StudioGold
 import com.example.ui.theme.StudioGoldBright
 import com.example.ui.viewmodel.MegaCollectorUiState
 
@@ -83,6 +83,7 @@ fun VaultScreen(
     includeStatusBarPadding: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val palette = CollectorTheme.colors
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(VaultFilter.ALL) }
 
@@ -143,7 +144,7 @@ fun VaultScreen(
                         Text(
                             text = "COLLECTOR VAULT",
                             style = MaterialTheme.typography.headlineMedium,
-                            color = DeepCobalt
+                            color = palette.accentPrimary
                         )
                         Text(
                             text = "${uiState.ownedCards.size} total cards • $uniqueCount unique skins",
@@ -154,7 +155,7 @@ fun VaultScreen(
                     Surface(
                         color = SkyFrost,
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, MisprintNeon.copy(alpha = 0.6f))
+                        border = BorderStroke(1.dp, palette.misprintLabel.copy(alpha = 0.6f))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -163,14 +164,14 @@ fun VaultScreen(
                             Icon(
                                 imageVector = Icons.Default.Bolt,
                                 contentDescription = null,
-                                tint = DeepCobalt,
+                                tint = palette.misprintLabel,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "$misprintCount 1/1",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = DeepCobalt
+                                color = palette.misprintLabel
                             )
                         }
                     }
@@ -181,7 +182,7 @@ fun VaultScreen(
                     val progress = (uniqueCount.toFloat() / uiState.catalog.size.toFloat()).coerceIn(0f, 1f)
                     LinearProgressIndicator(
                         progress = { progress },
-                        color = DeepCobalt,
+                        color = palette.accentPrimary,
                         trackColor = SkyFrost,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -300,12 +301,12 @@ private fun VaultGridCardItem(
 
         if (duplicateCount > 1) {
             Surface(
-                color = InkSlate.copy(alpha = 0.92f),
+                color = MoonlightNight.copy(alpha = 0.92f),
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, StudioGoldBright),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 34.dp, end = 8.dp)
+                    .padding(top = 8.dp, end = 8.dp)
             ) {
                 Text(
                     text = "x$duplicateCount",
@@ -325,7 +326,7 @@ private fun VaultGridCardItem(
                 Text(
                     text = "TRADE LISTED",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
+                    color = MoonlightNight,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                 )
             }

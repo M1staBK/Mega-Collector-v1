@@ -49,6 +49,9 @@ class PackSoundEngine(context: Context) {
     @Volatile
     private var lastCrinkleMs: Long = 0L
 
+    @Volatile
+    private var lastCrinkleStreamId: Int = 0
+
     init {
         ioScope.launch {
             prepareSoundFiles()
@@ -61,21 +64,25 @@ class PackSoundEngine(context: Context) {
 
     fun playClick() {
         if (isMuted || !isLoaded || clickId == 0) return
-        soundPool.play(clickId, 0.42f, 0.42f, 1, 0, 1.0f)
+        soundPool.play(clickId, 0.36f, 0.36f, 1, 0, 1.0f)
     }
 
     fun playPlasticCrinkle() {
         if (isMuted || !isLoaded || plasticCrinkleId == 0) return
         val now = System.currentTimeMillis()
-        if (now - lastCrinkleMs < 200L) return
+        if (now - lastCrinkleMs < 320L) return
         lastCrinkleMs = now
-        val rate = 0.94f + Random.nextFloat() * 0.14f
-        soundPool.play(plasticCrinkleId, 0.65f, 0.65f, 2, 0, rate)
+        val rate = 0.96f + Random.nextFloat() * 0.08f
+        lastCrinkleStreamId = soundPool.play(plasticCrinkleId, 0.32f, 0.32f, 2, 0, rate)
     }
 
     fun playPackTear() {
         if (isMuted || !isLoaded || packTearId == 0) return
-        soundPool.play(packTearId, 0.85f, 0.85f, 3, 0, 1.0f)
+        if (lastCrinkleStreamId != 0) {
+            soundPool.stop(lastCrinkleStreamId)
+            lastCrinkleStreamId = 0
+        }
+        soundPool.play(packTearId, 0.56f, 0.56f, 3, 0, 1.0f)
     }
 
     fun playCardFlip(rarity: SkinRarity, isMisprint: Boolean) {
@@ -108,7 +115,7 @@ class PackSoundEngine(context: Context) {
 
     private fun prepareSoundFiles() {
         try {
-            val sfxDir = File(appContext.cacheDir, "sfx_v2").apply { mkdirs() }
+            val sfxDir = File(appContext.cacheDir, "sfx_v3").apply { mkdirs() }
 
             val clickFile = ensureWav(sfxDir, "sfx_click.wav") { synthSoftClick() }
             val crinkleFile = ensureWav(sfxDir, "sfx_plastic_crinkle.wav") { synthPlasticCrinkle() }
@@ -159,61 +166,59 @@ class PackSoundEngine(context: Context) {
     }
 
     private fun synthPlasticCrinkle(): ShortArray {
-        val durationSec = 0.28
+        val durationSec = 0.22
         val count = (SAMPLE_RATE * durationSec).toInt()
         val out = ShortArray(count)
-        var prev1 = 0.0
-        var prev2 = 0.0
-        val crackleCenters = doubleArrayOf(0.02, 0.06, 0.105, 0.145, 0.195, 0.235)
+        var lp1 = 0.0
+        var lp2 = 0.0
+        var prev = 0.0
         for (i in 0 until count) {
             val t = i.toDouble() / SAMPLE_RATE
+            val progress = t / durationSec
             val white = Random.nextDouble(-1.0, 1.0)
-            // High-pass differentiated noise for crisp plastic foil texture
-            val hp = white - 0.72 * prev1 + 0.18 * prev2
-            prev2 = prev1
-            prev1 = white
+            // Soft band-limited foil rustle without harsh high-frequency whistles
+            val gentleHp = white - 0.55 * prev
+            prev = white
+            lp1 += 0.26 * (gentleHp - lp1)
+            lp2 += 0.34 * (lp1 - lp2)
 
-            var burstEnv = 0.08
-            for (c in crackleCenters) {
-                val dist = (t - c)
-                burstEnv += exp(-dist * dist / 0.00022)
-            }
-            val shimmer = sin(2.0 * PI * 3400.0 * t) * 0.16 * burstEnv
-            val overallEnv = sin(PI * (t / durationSec)).coerceAtLeast(0.0)
-            val valNorm = (hp * 0.42 * burstEnv + shimmer) * overallEnv
-            out[i] = (valNorm.coerceIn(-1.0, 1.0) * 0.65 * Short.MAX_VALUE).toInt().toShort()
+            val hann = sin(PI * progress).pow(2.0)
+            val shimmerRipple = 0.72 + 0.28 * sin(2.0 * PI * 14.0 * t)
+            val valNorm = lp2 * hann * shimmerRipple * 0.85
+            out[i] = (valNorm.coerceIn(-1.0, 1.0) * 0.42 * Short.MAX_VALUE).toInt().toShort()
         }
         return out
     }
 
     private fun synthPackTear(): ShortArray {
-        val durationSec = 0.42
+        val durationSec = 0.38
         val count = (SAMPLE_RATE * durationSec).toInt()
         val out = ShortArray(count)
-        var lp = 0.0
+        var lp1 = 0.0
+        var lp2 = 0.0
         var prev = 0.0
-        var phase = 0.0
+        var airPhase = 0.0
         for (i in 0 until count) {
             val t = i.toDouble() / SAMPLE_RATE
             val progress = t / durationSec
             val white = Random.nextDouble(-1.0, 1.0)
-            // Band-pass rip sweep
-            val hp = white - 0.68 * prev
+            // Smooth silk-like sweep instead of harsh zipper serration
+            val gentleHp = white - 0.42 * prev
             prev = white
-            val cutoff = 0.22 + 0.55 * progress
-            lp += cutoff * (hp - lp)
+            val cutoff = 0.12 + 0.22 * sin(PI * progress)
+            lp1 += cutoff * (gentleHp - lp1)
+            lp2 += (cutoff * 0.85) * (lp1 - lp2)
 
-            // Rapid zipper/foil tear serrations
-            val serration = 0.55 + 0.45 * sin(2.0 * PI * (38.0 + 30.0 * progress) * t)
-            // Pop release near end
-            val popEnv = exp(-((t - 0.34).pow(2)) / 0.0008)
-            phase += 2.0 * PI * (240.0 + 180.0 * progress) / SAMPLE_RATE
-            val popTone = sin(phase) * popEnv * 0.6
+            // Smooth rounded bell envelope (no abrupt clicks or buzz)
+            val env = sin(PI * progress).pow(1.45)
 
-            val attack = (t / 0.025).coerceIn(0.0, 1.0)
-            val release = exp(-((t - 0.30).coerceAtLeast(0.0)) * 16.0)
-            val valNorm = (lp * serration * 1.15 + popTone) * attack * release
-            out[i] = (valNorm.coerceIn(-1.0, 1.0) * 0.85 * Short.MAX_VALUE).toInt().toShort()
+            // Subtle warm air-cushion release near end
+            val airEnv = exp(-((t - 0.26).pow(2)) / 0.0032)
+            airPhase += 2.0 * PI * (150.0 - 45.0 * progress) / SAMPLE_RATE
+            val airThump = sin(airPhase) * airEnv * 0.22
+
+            val valNorm = (lp2 * 1.15 * env + airThump)
+            out[i] = (valNorm.coerceIn(-1.0, 1.0) * 0.52 * Short.MAX_VALUE).toInt().toShort()
         }
         return out
     }

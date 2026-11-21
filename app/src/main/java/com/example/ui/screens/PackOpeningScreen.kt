@@ -80,7 +80,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
@@ -98,19 +97,21 @@ import com.example.model.SkinRarity
 import com.example.ui.components.CardBackView
 import com.example.ui.components.HolographicCardView
 import com.example.ui.components.RarityChip
-import com.example.ui.components.SoundMuteButton
+import com.example.ui.components.SettingsGearButton
 import com.example.ui.sensors.rememberCardTiltState
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintNeon
-import com.example.ui.theme.PearlCanvas
+import com.example.ui.theme.MoonlightNight
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.SkyAzure
 import com.example.ui.theme.SkyFrost
 import com.example.ui.theme.SlateMuted
 import com.example.ui.theme.StudioGold
 import com.example.ui.theme.StudioGoldBright
+import com.example.ui.theme.rememberSafeHapticPerformer
 import com.example.ui.viewmodel.PackOpeningSession
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -121,8 +122,7 @@ import kotlin.math.sin
 @Composable
 fun PackOpeningScreen(
     session: PackOpeningSession,
-    soundMuted: Boolean,
-    onToggleMute: () -> Unit,
+    onOpenSettings: () -> Unit,
     onPlasticCrinkle: () -> Unit,
     onPackTear: () -> Unit,
     onCardFlipSound: (SkinRarity, Boolean) -> Unit,
@@ -134,7 +134,8 @@ fun PackOpeningScreen(
     onInspectCard: (Long) -> Unit,
     onClose: () -> Unit
 ) {
-    val haptic = LocalHapticFeedback.current
+    val palette = CollectorTheme.colors
+    val performHaptic = rememberSafeHapticPerformer()
     val scope = rememberCoroutineScope()
     val tiltState = rememberCardTiltState()
 
@@ -159,7 +160,7 @@ fun PackOpeningScreen(
 
     fun triggerRipSequence() {
         if (session.isRipped) return
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        performHaptic(HapticFeedbackType.LongPress)
         onPackTear()
         playBurstOnce = true
         scope.launch {
@@ -173,7 +174,7 @@ fun PackOpeningScreen(
         val targetCard = session.pulledCards.getOrNull(index) ?: return
         scope.launch {
             isChargingFlip = true
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            performHaptic(HapticFeedbackType.LongPress)
 
             val totalMs = if (targetCard.isMisprint) 850L
             else if (targetCard.rarity.tierRank >= SkinRarity.EPIC.tierRank) (targetCard.rarity.suspenseDelayMs * 0.45f).toLong()
@@ -183,7 +184,7 @@ fun PackOpeningScreen(
             for (s in 1..steps) {
                 suspenseProgress = s.toFloat() / steps.toFloat()
                 if (s % 4 == 0 && (targetCard.rarity.tierRank >= 4 || targetCard.isMisprint)) {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    performHaptic(HapticFeedbackType.TextHandleMove)
                 }
                 delay(45L)
             }
@@ -197,7 +198,7 @@ fun PackOpeningScreen(
                 playBurstOnce = false
                 delay(16L)
                 playBurstOnce = true
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                performHaptic(HapticFeedbackType.LongPress)
             }
         }
     }
@@ -209,17 +210,18 @@ fun PackOpeningScreen(
         else -> SkyAzure
     }
 
-    // 100% opaque PearlCanvas base so underlying screen never bleeds through
+    // 100% opaque reactive studio canvas (Pearl Sky Pocket Light or Moonlight Gloom Dark)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(PearlCanvas)
+            .background(palette.canvas)
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        auraColor.copy(alpha = 0.22f + suspenseProgress * 0.26f),
-                        SkyFrost.copy(alpha = 0.92f),
-                        PearlCanvas
+                        auraColor.copy(alpha = (if (palette.isDark) 0.24f else 0.18f) + suspenseProgress * 0.28f),
+                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.12f else 0.24f),
+                        palette.abyss.copy(alpha = 0.85f),
+                        palette.canvas
                     )
                 )
             )
@@ -248,7 +250,7 @@ fun PackOpeningScreen(
                     Text(
                         text = headerText,
                         style = MaterialTheme.typography.titleLarge,
-                        color = DeepCobalt
+                        color = palette.accentPrimary
                     )
                     val subtitle = when {
                         !session.isRipped -> "Touch wrapper to feel • Swipe seam to tear (${session.pulledCards.size} cards)"
@@ -267,10 +269,7 @@ fun PackOpeningScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SoundMuteButton(
-                        isMuted = soundMuted,
-                        onToggle = onToggleMute
-                    )
+                    SettingsGearButton(onClick = onOpenSettings)
                     Surface(
                         color = PureWhiteCard,
                         shape = CircleShape,
@@ -363,7 +362,7 @@ fun PackOpeningScreen(
                                     .padding(top = 6.dp)
                             ) {
                                 Surface(
-                                    color = InkSlate,
+                                    color = MoonlightNight.copy(alpha = 0.94f),
                                     shape = RoundedCornerShape(999.dp),
                                     border = BorderStroke(1.5.dp, MisprintNeon),
                                     shadowElevation = 6.dp
@@ -436,11 +435,11 @@ fun PackOpeningScreen(
                             Icon(
                                 imageVector = Icons.Default.GridView,
                                 contentDescription = null,
-                                tint = DeepCobalt,
+                                tint = palette.accentPrimary,
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("View All Grid", color = DeepCobalt)
+                            Text("View All Grid", color = palette.accentPrimary)
                         }
                     }
 
@@ -457,7 +456,7 @@ fun PackOpeningScreen(
                                 border = BorderStroke(
                                     width = if (isFocused) 2.dp else 1.dp,
                                     color = when {
-                                        isFocused -> DeepCobalt
+                                        isFocused -> palette.accentPrimary
                                         isRevealed -> card.rarity.primaryColor
                                         else -> IceBorder
                                     }
@@ -557,7 +556,7 @@ fun PackOpeningScreen(
                             onClick = onShowSummaryGrid,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = StudioGold,
-                                contentColor = InkSlate
+                                contentColor = palette.goldButtonContent
                             ),
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
@@ -585,14 +584,14 @@ fun PackOpeningScreen(
                     ) {
                         if (!session.allRevealed) {
                             TextButton(onClick = onShowSummaryGrid) {
-                                Text("Reveal All Cards", color = DeepCobalt)
+                                Text("Reveal All Cards", color = palette.accentPrimary)
                             }
                         } else {
                             OutlinedButton(
                                 onClick = { onInspectCard(focusedCard.instanceId) },
-                                border = BorderStroke(1.dp, DeepCobalt)
+                                border = BorderStroke(1.dp, palette.accentPrimary)
                             ) {
-                                Text("3D Gyro Inspect", color = DeepCobalt)
+                                Text("3D Gyro Inspect", color = palette.accentPrimary)
                             }
                         }
                         Text(
@@ -904,6 +903,7 @@ private fun PackTearStage(
             modifier = Modifier.fillMaxSize()
         )
 
+        val tearGold = StudioGoldBright
         Canvas(modifier = Modifier.fillMaxSize()) {
             val y = size.height * 0.24f
             drawLine(
@@ -914,7 +914,7 @@ private fun PackTearStage(
             )
             if (tearProgress > 0f) {
                 drawLine(
-                    color = StudioGoldBright,
+                    color = tearGold,
                     start = Offset(0f, y),
                     end = Offset(size.width * tearProgress, y),
                     strokeWidth = 10f
@@ -923,7 +923,7 @@ private fun PackTearStage(
         }
 
         Surface(
-            color = InkSlate.copy(alpha = 0.88f),
+            color = MoonlightNight.copy(alpha = 0.92f),
             shape = RoundedCornerShape(999.dp),
             border = BorderStroke(1.dp, StudioGoldBright),
             modifier = Modifier

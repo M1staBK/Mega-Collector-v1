@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -47,11 +49,12 @@ import com.example.model.QuestCategory
 import com.example.model.QuestUiItem
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.DiamondsPill
+import com.example.ui.components.SettingsGearButton
+import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintMagenta
-import com.example.ui.theme.PearlCanvas
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.RarityUncommon
 import com.example.ui.theme.SkyAzure
@@ -65,144 +68,165 @@ import com.example.ui.viewmodel.MegaCollectorUiState
 fun QuestsScreen(
     uiState: MegaCollectorUiState,
     onClaimQuest: (QuestUiItem) -> Unit,
+    onOpenSettings: () -> Unit,
     onButtonClickSfx: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = CollectorTheme.colors
     var selectedCategory by remember { mutableStateOf(QuestCategory.DAILY) }
 
     val filteredQuests = remember(uiState.quests, selectedCategory) {
         uiState.quests.filter { it.definition.category == selectedCategory }
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(PearlCanvas)
+            .background(palette.canvas)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.14f else 0.32f),
+                        palette.canvas
+                    )
+                )
+            )
             .statusBarsPadding()
     ) {
-        // Header Summary Card
-        Surface(
-            color = PureWhiteCard,
-            shape = RoundedCornerShape(22.dp),
-            shadowElevation = 3.dp,
-            border = BorderStroke(1.dp, IceBorder),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.AssignmentTurnedIn,
-                            contentDescription = null,
-                            tint = DeepCobalt,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Collector Quests",
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = InkSlate
-                        )
-                    }
-                    val claimableTotal = uiState.quests.count { it.canClaim }
-                    if (claimableTotal > 0) {
-                        Surface(
-                            color = StudioGold,
-                            shape = RoundedCornerShape(999.dp)
-                        ) {
-                            Text(
-                                text = "$claimableTotal Ready",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = InkSlate,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CoinsPill(coins = uiState.wallet.coins)
-                    DiamondsPill(diamonds = uiState.wallet.diamonds)
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    QuestCategory.entries.forEach { cat ->
-                        val readyInCat = uiState.quests.count { it.definition.category == cat && it.canClaim }
-                        val label = if (readyInCat > 0) {
-                            "${cat.title.substringBefore(" ")} ($readyInCat)"
-                        } else {
-                            cat.title.substringBefore(" ")
-                        }
-                        FilterChip(
-                            selected = selectedCategory == cat,
-                            onClick = {
-                                onButtonClickSfx()
-                                selectedCategory = cat
-                            },
-                            label = { Text(label) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = DeepCobalt,
-                                selectedLabelColor = Color.White,
-                                containerColor = SkyFrost,
-                                labelColor = InkSlate
-                            ),
-                            modifier = Modifier.testTag("quest_tab_${cat.name.lowercase()}")
-                        )
-                    }
-                }
-            }
-        }
-
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            if (selectedCategory == QuestCategory.COMMUNITY) {
-                item {
-                    Surface(
-                        color = SkyFrost,
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, SkyAzure.copy(alpha = 0.5f))
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header Summary Card
+            Surface(
+                color = PureWhiteCard,
+                shape = RoundedCornerShape(22.dp),
+                shadowElevation = 3.dp,
+                border = BorderStroke(1.dp, IceBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Public,
+                                imageVector = Icons.Default.AssignmentTurnedIn,
                                 contentDescription = null,
-                                tint = DeepCobalt,
-                                modifier = Modifier.size(20.dp)
+                                tint = palette.accentPrimary,
+                                modifier = Modifier.size(24.dp)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = stringResource(R.string.community_quest_notice),
-                                style = MaterialTheme.typography.bodyMedium,
+                                text = "Collector Quests",
+                                style = MaterialTheme.typography.headlineMedium,
                                 color = InkSlate
                             )
                         }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val claimableTotal = uiState.quests.count { it.canClaim }
+                            if (claimableTotal > 0) {
+                                Surface(
+                                    color = StudioGold,
+                                    shape = RoundedCornerShape(999.dp)
+                                ) {
+                                    Text(
+                                        text = "$claimableTotal Ready",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = palette.goldButtonContent,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                            SettingsGearButton(onClick = onOpenSettings)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CoinsPill(coins = uiState.wallet.coins)
+                        DiamondsPill(diamonds = uiState.wallet.diamonds)
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        QuestCategory.entries.forEach { cat ->
+                            val readyInCat = uiState.quests.count { it.definition.category == cat && it.canClaim }
+                            val label = if (readyInCat > 0) {
+                                "${cat.title.substringBefore(" ")} ($readyInCat)"
+                            } else {
+                                cat.title.substringBefore(" ")
+                            }
+                            FilterChip(
+                                selected = selectedCategory == cat,
+                                onClick = {
+                                    onButtonClickSfx()
+                                    selectedCategory = cat
+                                },
+                                label = { Text(label) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = DeepCobalt,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = SkyFrost,
+                                    labelColor = InkSlate
+                                ),
+                                modifier = Modifier.testTag("quest_tab_${cat.name.lowercase()}")
+                            )
+                        }
                     }
                 }
             }
 
-            items(filteredQuests, key = { it.definition.id }) { item ->
-                QuestCardRow(
-                    quest = item,
-                    onClaim = { onClaimQuest(item) }
-                )
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                if (selectedCategory == QuestCategory.COMMUNITY) {
+                    item {
+                        Surface(
+                            color = SkyFrost,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, SkyAzure.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Public,
+                                    contentDescription = null,
+                                    tint = palette.accentPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = stringResource(R.string.community_quest_notice),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = InkSlate
+                                )
+                            }
+                        }
+                    }
+                }
+
+                items(filteredQuests, key = { it.definition.id }) { item ->
+                    QuestCardRow(
+                        quest = item,
+                        onClaim = { onClaimQuest(item) }
+                    )
+                }
             }
         }
     }
@@ -213,6 +237,7 @@ private fun QuestCardRow(
     quest: QuestUiItem,
     onClaim: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     val def = quest.definition
     val shownProgress = quest.currentProgress.coerceAtMost(def.targetCount)
 
@@ -282,7 +307,7 @@ private fun QuestCardRow(
                             onClick = onClaim,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = StudioGold,
-                                contentColor = InkSlate
+                                contentColor = palette.goldButtonContent
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.testTag("claim_quest_${def.id}")
@@ -295,7 +320,7 @@ private fun QuestCardRow(
                         Text(
                             text = "$shownProgress/${def.targetCount}",
                             style = MaterialTheme.typography.labelLarge,
-                            color = DeepCobalt
+                            color = palette.accentPrimary
                         )
                     }
                 }
@@ -305,7 +330,7 @@ private fun QuestCardRow(
 
             LinearProgressIndicator(
                 progress = { quest.progressFraction },
-                color = if (quest.isCompleted) RarityUncommon else DeepCobalt,
+                color = if (quest.isCompleted) RarityUncommon else palette.accentPrimary,
                 trackColor = SkyFrost,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -321,7 +346,7 @@ private fun QuestCardRow(
             ) {
                 if (def.coinReward > 0) {
                     Surface(
-                        color = Color(0xFFFFFBEB),
+                        color = palette.goldSurfaceTint,
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
@@ -340,7 +365,7 @@ private fun QuestCardRow(
                         Text(
                             text = "+${def.diamondReward} 💎",
                             style = MaterialTheme.typography.labelSmall,
-                            color = DeepCobalt,
+                            color = palette.accentPrimary,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
