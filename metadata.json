@@ -1,0 +1,6 @@
+{
+  "name": "MEGA COLLECTOR",
+  "description": "MOBA Legends digital trading card game featuring animated pack openings, gyroscope-reactive foil cards, 1-of-1 misprint collectibles, daily rewards, recycling, and real-time multiplayer trading powered by mlbbdex.com.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

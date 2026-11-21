@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">MEGA COLLECTOR</string>
+    <string name="nav_packs">Packs</string>
+    <string name="nav_vault">Vault</string>
+    <string name="nav_forge">Recycle</string>
+    <string name="nav_trade">Trade</string>
+    <string name="nav_profile">Profile</string>
+    <string name="daily_rewards_title">Daily Streak Rewards</string>
+    <string name="claim_daily_reward">Claim Daily Reward</string>
+    <string name="already_claimed_today">Claimed Today</string>
+    <string name="open_pack_cta">RIP PACK OPEN</string>
+    <string name="reveal_next_card">Tap Card to Flip</string>
+    <string name="reveal_all">Reveal All</string>
+    <string name="done_collect">Collect All to Vault</string>
+    <string name="misprint_badge">1 OF 1 • MISPRINT</string>
+    <string name="gyro_hint">Tilt your device or drag card for holographic foil sheen</string>
+    <string name="api_credit_title">Powered by MLBBDex</string>
+    <string name="api_credit_body">Skin catalog, hero names, and artwork metadata provided via mlbbdex.com/api/v1/skins/. All MOBA Legends character names and skin visuals belong to their respective owners.</string>
+    <string name="trade_offline_notice">Firebase cloud sync was declined, so Live Multiplayer Cloud Trading is paused. You can still mint, share, and redeem encrypted Trade Slips directly with friends!</string>
+</resources>
