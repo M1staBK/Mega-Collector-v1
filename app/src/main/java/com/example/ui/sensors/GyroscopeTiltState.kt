@@ -35,6 +35,9 @@ class CardTiltState {
     private var baselineRoll: Float? = null
 
     fun updateFromSensor(rawPitchDeg: Float, rawRollDeg: Float) {
+        // Orientation math can return NaN on some readings. A NaN would stick in the low-pass
+        // filter below forever and crash roundToInt() in the card offsets, so drop the reading.
+        if (!rawPitchDeg.isFinite() || !rawRollDeg.isFinite()) return
         if (baselinePitch == null || baselineRoll == null) {
             baselinePitch = rawPitchDeg
             baselineRoll = rawRollDeg
