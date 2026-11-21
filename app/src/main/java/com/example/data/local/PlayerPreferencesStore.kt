@@ -358,6 +358,7 @@ class PlayerPreferencesStore(private val context: Context) {
     }
 
     companion object {
-        const val CURRENT_CATALOG_SCHEMA_VERSION = 2
+        // 3: hero detail skins now get their art from the hero's illustrations (were blank).
+        const val CURRENT_CATALOG_SCHEMA_VERSION = 3
     }
 }
