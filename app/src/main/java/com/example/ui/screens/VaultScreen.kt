@@ -42,21 +42,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.model.OwnedCard
 import com.example.model.SkinRarity
 import com.example.ui.components.EmptyVaultState
 import com.example.ui.components.HolographicCardView
-import com.example.ui.theme.ArenaGold
+import com.example.ui.theme.DeepCobalt
+import com.example.ui.theme.IceBorder
+import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintNeon
-import com.example.ui.theme.OutlineSubtle
-import com.example.ui.theme.PrismCyan
-import com.example.ui.theme.SurfaceCard
-import com.example.ui.theme.SurfaceElevated
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.VoidObsidian
+import com.example.ui.theme.PearlCanvas
+import com.example.ui.theme.PureWhiteCard
+import com.example.ui.theme.SkyAzure
+import com.example.ui.theme.SkyFrost
+import com.example.ui.theme.SlateMuted
+import com.example.ui.theme.StudioGold
+import com.example.ui.theme.StudioGoldBright
 import com.example.ui.viewmodel.MegaCollectorUiState
 
 private enum class VaultFilter(val label: String) {
@@ -65,9 +68,10 @@ private enum class VaultFilter(val label: String) {
     DUPLICATES("Duplicates"),
     LEGEND("Legend"),
     COLLECTOR("Collector"),
+    LUCKYBOX("Luckybox"),
     EPIC("Epic"),
     SPECIAL("Special"),
-    ELITE("Elite"),
+    UNCOMMON("Uncommon"),
     COMMON("Common")
 }
 
@@ -75,6 +79,8 @@ private enum class VaultFilter(val label: String) {
 fun VaultScreen(
     uiState: MegaCollectorUiState,
     onInspectCard: (Long) -> Unit,
+    onButtonClickSfx: () -> Unit,
+    includeStatusBarPadding: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -101,9 +107,10 @@ fun VaultScreen(
                 VaultFilter.DUPLICATES -> (countByCatalog[card.catalogId] ?: 1) > 1
                 VaultFilter.LEGEND -> card.rarity == SkinRarity.LEGEND
                 VaultFilter.COLLECTOR -> card.rarity == SkinRarity.COLLECTOR
+                VaultFilter.LUCKYBOX -> card.rarity == SkinRarity.LUCKYBOX
                 VaultFilter.EPIC -> card.rarity == SkinRarity.EPIC
                 VaultFilter.SPECIAL -> card.rarity == SkinRarity.SPECIAL
-                VaultFilter.ELITE -> card.rarity == SkinRarity.ELITE
+                VaultFilter.UNCOMMON -> card.rarity == SkinRarity.UNCOMMON
                 VaultFilter.COMMON -> card.rarity == SkinRarity.COMMON
             }
             matchesQuery && matchesFilter
@@ -113,17 +120,18 @@ fun VaultScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(VoidObsidian)
-            .statusBarsPadding()
+            .background(PearlCanvas)
+            .let { if (includeStatusBarPadding) it.statusBarsPadding() else it }
     ) {
         // Header Summary
         Surface(
-            color = SurfaceElevated,
-            border = BorderStroke(1.dp, OutlineSubtle),
+            color = PureWhiteCard,
+            border = BorderStroke(1.dp, IceBorder),
+            shadowElevation = 3.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            shape = RoundedCornerShape(18.dp)
+            shape = RoundedCornerShape(20.dp)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Row(
@@ -135,16 +143,16 @@ fun VaultScreen(
                         Text(
                             text = "COLLECTOR VAULT",
                             style = MaterialTheme.typography.headlineMedium,
-                            color = ArenaGold
+                            color = DeepCobalt
                         )
                         Text(
                             text = "${uiState.ownedCards.size} total cards • $uniqueCount unique skins",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
+                            color = SlateMuted
                         )
                     }
                     Surface(
-                        color = MisprintNeon.copy(alpha = 0.14f),
+                        color = SkyFrost,
                         shape = RoundedCornerShape(10.dp),
                         border = BorderStroke(1.dp, MisprintNeon.copy(alpha = 0.6f))
                     ) {
@@ -155,14 +163,14 @@ fun VaultScreen(
                             Icon(
                                 imageVector = Icons.Default.Bolt,
                                 contentDescription = null,
-                                tint = MisprintNeon,
+                                tint = DeepCobalt,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "$misprintCount 1/1",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MisprintNeon
+                                color = DeepCobalt
                             )
                         }
                     }
@@ -173,8 +181,8 @@ fun VaultScreen(
                     val progress = (uniqueCount.toFloat() / uiState.catalog.size.toFloat()).coerceIn(0f, 1f)
                     LinearProgressIndicator(
                         progress = { progress },
-                        color = PrismCyan,
-                        trackColor = SurfaceCard,
+                        color = DeepCobalt,
+                        trackColor = SkyFrost,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(7.dp)
@@ -184,7 +192,7 @@ fun VaultScreen(
                     Text(
                         text = "Dex Completion: $uniqueCount / ${uiState.catalog.size}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = TextSecondary
+                        color = SlateMuted
                     )
                 }
             }
@@ -194,19 +202,19 @@ fun VaultScreen(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search hero, skin, or serial...", color = TextSecondary) },
+            placeholder = { Text("Search hero, skin, or serial...", color = SlateMuted) },
             leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary)
+                Icon(Icons.Default.Search, contentDescription = null, tint = SlateMuted)
             },
             singleLine = true,
             shape = RoundedCornerShape(14.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = PrismCyan,
-                unfocusedBorderColor = OutlineSubtle,
-                focusedContainerColor = SurfaceElevated,
-                unfocusedContainerColor = SurfaceElevated,
-                focusedTextColor = TextPrimary,
-                unfocusedTextColor = TextPrimary
+                focusedBorderColor = DeepCobalt,
+                unfocusedBorderColor = IceBorder,
+                focusedContainerColor = PureWhiteCard,
+                unfocusedContainerColor = PureWhiteCard,
+                focusedTextColor = InkSlate,
+                unfocusedTextColor = InkSlate
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -216,7 +224,7 @@ fun VaultScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Filter Chips
+        // 7-Tier Filter Chips
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -225,13 +233,16 @@ fun VaultScreen(
                 val selected = selectedFilter == filter
                 FilterChip(
                     selected = selected,
-                    onClick = { selectedFilter = filter },
+                    onClick = {
+                        onButtonClickSfx()
+                        selectedFilter = filter
+                    },
                     label = { Text(filter.label) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ArenaGold,
-                        selectedLabelColor = VoidObsidian,
-                        containerColor = SurfaceElevated,
-                        labelColor = TextSecondary
+                        selectedContainerColor = DeepCobalt,
+                        selectedLabelColor = Color.White,
+                        containerColor = PureWhiteCard,
+                        labelColor = SlateMuted
                     )
                 )
             }
@@ -243,7 +254,7 @@ fun VaultScreen(
             EmptyVaultState(
                 title = if (uiState.ownedCards.isEmpty()) "Your Vault is Empty" else "No Matching Skins",
                 subtitle = if (uiState.ownedCards.isEmpty()) {
-                    "Head to the Packs tab and open your free Starter Arena Pack to pull MOBA Legends skins!"
+                    "Head to the Packs tab and open your free Starter Studio Pack to pull MOBA Legends skins!"
                 } else {
                     "Try clearing your search or selecting another rarity filter."
                 },
@@ -289,9 +300,9 @@ private fun VaultGridCardItem(
 
         if (duplicateCount > 1) {
             Surface(
-                color = VoidObsidian.copy(alpha = 0.9f),
+                color = InkSlate.copy(alpha = 0.92f),
                 shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, ArenaGold),
+                border = BorderStroke(1.dp, StudioGoldBright),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 34.dp, end = 8.dp)
@@ -299,7 +310,7 @@ private fun VaultGridCardItem(
                 Text(
                     text = "x$duplicateCount",
                     style = MaterialTheme.typography.labelSmall,
-                    color = ArenaGold,
+                    color = StudioGoldBright,
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                 )
             }
@@ -307,15 +318,14 @@ private fun VaultGridCardItem(
 
         if (card.isListedForTrade) {
             Surface(
-                color = PrismCyan.copy(alpha = 0.92f),
+                color = SkyAzure,
                 shape = RoundedCornerShape(6.dp),
-                modifier = Modifier
-                    .align(Alignment.Center)
+                modifier = Modifier.align(Alignment.Center)
             ) {
                 Text(
                     text = "TRADE LISTED",
                     style = MaterialTheme.typography.labelSmall,
-                    color = VoidObsidian,
+                    color = Color.White,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                 )
             }

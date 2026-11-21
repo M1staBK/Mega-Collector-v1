@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -53,16 +54,17 @@ import com.example.R
 import com.example.model.OwnedCard
 import com.example.ui.components.HolographicCardView
 import com.example.ui.sensors.rememberCardTiltState
-import com.example.ui.theme.ArenaGold
+import com.example.ui.theme.DeepCobalt
+import com.example.ui.theme.IceBorder
+import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintNeon
-import com.example.ui.theme.MythicCrimson
-import com.example.ui.theme.OutlineSubtle
-import com.example.ui.theme.PrismCyan
-import com.example.ui.theme.SurfaceCard
-import com.example.ui.theme.SurfaceElevated
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.VoidObsidian
+import com.example.ui.theme.PearlCanvas
+import com.example.ui.theme.PureWhiteCard
+import com.example.ui.theme.SkyAzure
+import com.example.ui.theme.SkyFrost
+import com.example.ui.theme.SlateMuted
+import com.example.ui.theme.StudioCrimson
+import com.example.ui.theme.StudioGoldText
 
 @Composable
 fun CardInspectScreen(
@@ -70,7 +72,8 @@ fun CardInspectScreen(
     duplicateCount: Int,
     onBack: () -> Unit,
     onRecycle: (OwnedCard) -> Unit,
-    onMintTradeSlip: (OwnedCard) -> Unit
+    onMintTradeSlip: (OwnedCard) -> Unit,
+    onButtonClickSfx: () -> Unit
 ) {
     val tiltState = rememberCardTiltState()
     var showRecycleConfirm by remember { mutableStateOf(false) }
@@ -78,11 +81,13 @@ fun CardInspectScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(PearlCanvas)
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        (card?.rarity?.primaryColor ?: PrismCyan).copy(alpha = 0.22f),
-                        VoidObsidian
+                        (card?.rarity?.primaryColor ?: SkyAzure).copy(alpha = 0.22f),
+                        SkyFrost.copy(alpha = 0.9f),
+                        PearlCanvas
                     )
                 )
             )
@@ -95,7 +100,7 @@ fun CardInspectScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text("Card no longer in Vault", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+                Text("Card no longer in Vault", style = MaterialTheme.typography.titleLarge, color = InkSlate)
                 Spacer(modifier = Modifier.height(12.dp))
                 Button(onClick = onBack) { Text("Back to Vault") }
             }
@@ -115,36 +120,57 @@ fun CardInspectScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.testTag("inspect_back_button")
+                Surface(
+                    color = PureWhiteCard,
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, IceBorder),
+                    shadowElevation = 2.dp
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = TextPrimary
-                    )
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("inspect_back_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = InkSlate
+                        )
+                    }
                 }
 
                 Text(
                     text = "3D FOIL INSPECTOR",
                     style = MaterialTheme.typography.titleLarge,
-                    color = ArenaGold
+                    color = DeepCobalt
                 )
 
-                IconButton(
-                    onClick = { tiltState.calibrateCenter() },
-                    modifier = Modifier.testTag("inspect_recenter_button")
+                Surface(
+                    color = PureWhiteCard,
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, IceBorder),
+                    shadowElevation = 2.dp
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.CenterFocusStrong,
-                        contentDescription = "Recenter gyroscope angle",
-                        tint = PrismCyan
-                    )
+                    IconButton(
+                        onClick = {
+                            onButtonClickSfx()
+                            tiltState.calibrateCenter()
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("inspect_recenter_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CenterFocusStrong,
+                            contentDescription = "Recenter gyroscope angle",
+                            tint = DeepCobalt
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // 3D Gyroscope Card Showcase
             Box(
@@ -158,17 +184,18 @@ fun CardInspectScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Gyroscope Telemetry Bar
             Surface(
-                color = SurfaceElevated,
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, OutlineSubtle),
+                color = PureWhiteCard,
+                shape = RoundedCornerShape(16.dp),
+                shadowElevation = 2.dp,
+                border = BorderStroke(1.dp, IceBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -179,7 +206,7 @@ fun CardInspectScreen(
                         Icon(
                             imageVector = Icons.Default.ScreenRotation,
                             contentDescription = null,
-                            tint = PrismCyan,
+                            tint = DeepCobalt,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -188,22 +215,25 @@ fun CardInspectScreen(
                                 text = if (tiltState.isGyroAvailable) "Gyroscope Foil Active"
                                 else "Touch-Drag Foil Active",
                                 style = MaterialTheme.typography.labelLarge,
-                                color = TextPrimary
+                                color = InkSlate
                             )
                             Text(
                                 text = stringResource(R.string.gyro_hint),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = TextSecondary
+                                color = SlateMuted
                             )
                         }
                     }
 
                     Switch(
                         checked = tiltState.gyroEnabled,
-                        onCheckedChange = { tiltState.gyroEnabled = it },
+                        onCheckedChange = {
+                            onButtonClickSfx()
+                            tiltState.gyroEnabled = it
+                        },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = VoidObsidian,
-                            checkedTrackColor = PrismCyan
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = DeepCobalt
                         )
                     )
                 }
@@ -214,7 +244,7 @@ fun CardInspectScreen(
             // Misprint Anomaly Callout (if 1/1)
             if (card.isMisprint && card.misprintAnomaly != null) {
                 Surface(
-                    color = SurfaceCard,
+                    color = InkSlate,
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.5.dp, MisprintNeon),
                     modifier = Modifier.fillMaxWidth()
@@ -239,7 +269,7 @@ fun CardInspectScreen(
                             Text(
                                 text = card.misprintAnomaly.description,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = TextPrimary
+                                color = Color.White
                             )
                         }
                     }
@@ -249,9 +279,10 @@ fun CardInspectScreen(
 
             // Card Telemetry Details
             Surface(
-                color = SurfaceElevated,
+                color = PureWhiteCard,
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, OutlineSubtle),
+                shadowElevation = 2.dp,
+                border = BorderStroke(1.dp, IceBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -262,10 +293,10 @@ fun CardInspectScreen(
                     TelemetryRow("Skin Tier (API)", card.rawTier)
                     TelemetryRow("Collector Rarity", card.rarity.displayName, card.rarity.primaryColor)
                     TelemetryRow("Drop Odds", "${card.pullRatePercent}%")
-                    TelemetryRow("Serial Stamp", card.serialCode, if (card.isMisprint) ArenaGold else TextPrimary)
+                    TelemetryRow("Serial Stamp", card.serialCode, if (card.isMisprint) StudioGoldText else InkSlate)
                     TelemetryRow("Vault Copies", "x$duplicateCount")
-                    TelemetryRow("Prestige Power", "+${card.prestigeScore}", PrismCyan)
-                    TelemetryRow("Recycle Value", "+${card.recycleValueGold} Gold", ArenaGold)
+                    TelemetryRow("Prestige Power", "+${card.prestigeScore}", DeepCobalt)
+                    TelemetryRow("Recycle Value", "+${card.recycleValueGold} Gold", StudioGoldText)
                 }
             }
 
@@ -277,8 +308,12 @@ fun CardInspectScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedButton(
-                    onClick = { showRecycleConfirm = true },
-                    border = BorderStroke(1.dp, MythicCrimson),
+                    onClick = {
+                        onButtonClickSfx()
+                        showRecycleConfirm = true
+                    },
+                    border = BorderStroke(1.2.dp, StudioCrimson),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .weight(1f)
                         .height(50.dp)
@@ -287,20 +322,21 @@ fun CardInspectScreen(
                     Icon(
                         imageVector = Icons.Default.Recycling,
                         contentDescription = null,
-                        tint = MythicCrimson,
+                        tint = StudioCrimson,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Recycle", color = MythicCrimson)
+                    Text("Recycle", color = StudioCrimson)
                 }
 
                 Button(
                     onClick = { onMintTradeSlip(card) },
                     enabled = !card.isListedForTrade,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = PrismCyan,
-                        contentColor = VoidObsidian
+                        containerColor = DeepCobalt,
+                        contentColor = Color.White
                     ),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .weight(1f)
                         .height(50.dp)
@@ -323,11 +359,11 @@ fun CardInspectScreen(
     if (showRecycleConfirm && card != null) {
         AlertDialog(
             onDismissRequest = { showRecycleConfirm = false },
-            containerColor = SurfaceElevated,
+            containerColor = PureWhiteCard,
             title = {
                 Text(
                     text = if (card.isMisprint) "Recycle 1-of-1 Misprint?" else "Recycle Card?",
-                    color = if (card.isMisprint) MythicCrimson else ArenaGold
+                    color = if (card.isMisprint) StudioCrimson else InkSlate
                 )
             },
             text = {
@@ -337,7 +373,7 @@ fun CardInspectScreen(
                     } else {
                         "Recycle ${card.heroName} — ${card.skinName} into +${card.recycleValueGold} Arena Gold?"
                     },
-                    color = TextPrimary
+                    color = SlateMuted
                 )
             },
             confirmButton = {
@@ -346,14 +382,19 @@ fun CardInspectScreen(
                         showRecycleConfirm = false
                         onRecycle(card)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MythicCrimson)
+                    colors = ButtonDefaults.buttonColors(containerColor = StudioCrimson)
                 ) {
                     Text("Recycle (+${card.recycleValueGold} Gold)", color = Color.White)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRecycleConfirm = false }) {
-                    Text("Keep Card", color = TextSecondary)
+                TextButton(
+                    onClick = {
+                        onButtonClickSfx()
+                        showRecycleConfirm = false
+                    }
+                ) {
+                    Text("Keep Card", color = SlateMuted)
                 }
             }
         )
@@ -364,13 +405,13 @@ fun CardInspectScreen(
 private fun TelemetryRow(
     label: String,
     value: String,
-    valueColor: Color = TextPrimary
+    valueColor: Color = InkSlate
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = SlateMuted)
         Text(text = value, style = MaterialTheme.typography.labelLarge, color = valueColor)
     }
 }

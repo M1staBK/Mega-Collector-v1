@@ -3,30 +3,31 @@ package com.example.ui.theme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-private val MegaDarkColorScheme = darkColorScheme(
-    primary = ArenaGold,
-    onPrimary = VoidObsidian,
-    primaryContainer = SurfaceCard,
-    onPrimaryContainer = ArenaGold,
-    secondary = PrismCyan,
-    onSecondary = VoidObsidian,
-    secondaryContainer = SurfaceElevated,
-    onSecondaryContainer = PrismCyan,
-    tertiary = MythicCrimson,
-    onTertiary = TextPrimary,
-    background = VoidObsidian,
-    onBackground = TextPrimary,
-    surface = SurfaceAbyss,
-    onSurface = TextPrimary,
-    surfaceVariant = SurfaceElevated,
-    onSurfaceVariant = TextSecondary,
-    outline = OutlineSubtle,
-    error = MythicCrimson,
-    onError = TextPrimary
+private val MegaStudioLightColorScheme = lightColorScheme(
+    primary = DeepCobalt,
+    onPrimary = Color.White,
+    primaryContainer = SkyFrost,
+    onPrimaryContainer = DeepCobalt,
+    secondary = StudioGold,
+    onSecondary = InkSlate,
+    secondaryContainer = Color(0xFFFEF3C7),
+    onSecondaryContainer = StudioGoldText,
+    tertiary = StudioCrimson,
+    onTertiary = Color.White,
+    background = PearlCanvas,
+    onBackground = InkSlate,
+    surface = PureWhiteCard,
+    onSurface = InkSlate,
+    surfaceVariant = SkyFrost,
+    onSurfaceVariant = SlateMuted,
+    outline = IceBorder,
+    error = StudioCrimson,
+    onError = Color.White
 )
 
 private val MegaShapes = Shapes(
@@ -41,7 +42,7 @@ fun MegaCollectorTheme(
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
-        colorScheme = MegaDarkColorScheme,
+        colorScheme = MegaStudioLightColorScheme,
         typography = MegaCollectorTypography,
         shapes = MegaShapes,
         content = content

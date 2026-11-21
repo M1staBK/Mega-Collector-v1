@@ -19,26 +19,36 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SwipeRight
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Button
@@ -61,6 +71,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -74,36 +85,52 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
 import com.example.R
+import com.example.model.MegaPackConfig
+import com.example.model.OwnedCard
 import com.example.model.SkinRarity
 import com.example.ui.components.CardBackView
 import com.example.ui.components.HolographicCardView
+import com.example.ui.components.RarityChip
+import com.example.ui.components.SoundMuteButton
 import com.example.ui.sensors.rememberCardTiltState
-import com.example.ui.theme.ArenaGold
+import com.example.ui.theme.DeepCobalt
+import com.example.ui.theme.IceBorder
+import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintNeon
-import com.example.ui.theme.PrismCyan
-import com.example.ui.theme.SurfaceElevated
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.VoidObsidian
+import com.example.ui.theme.PearlCanvas
+import com.example.ui.theme.PureWhiteCard
+import com.example.ui.theme.SkyAzure
+import com.example.ui.theme.SkyFrost
+import com.example.ui.theme.SlateMuted
+import com.example.ui.theme.StudioGold
+import com.example.ui.theme.StudioGoldBright
 import com.example.ui.viewmodel.PackOpeningSession
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
 @Composable
 fun PackOpeningScreen(
     session: PackOpeningSession,
+    soundMuted: Boolean,
+    onToggleMute: () -> Unit,
+    onPlasticCrinkle: () -> Unit,
+    onPackTear: () -> Unit,
+    onCardFlipSound: (SkinRarity, Boolean) -> Unit,
     onPackRipped: () -> Unit,
     onRevealCard: (Int) -> Unit,
-    onSelectCardIndex: (Int) -> Unit,
-    onRevealAll: () -> Unit,
+    onAdvanceFromReveal: () -> Unit,
+    onShowSummaryGrid: () -> Unit,
+    onFocusRevealedCard: (Int) -> Unit,
     onInspectCard: (Long) -> Unit,
     onClose: () -> Unit
 ) {
@@ -122,43 +149,51 @@ fun PackOpeningScreen(
         restartOnPlay = true
     )
 
-    // Suspense charge-up state when flipping high rarity cards
     var suspenseProgress by remember { mutableFloatStateOf(0f) }
     var isChargingFlip by remember { mutableStateOf(false) }
 
-    val currentCard = session.pulledCards.getOrNull(session.currentCardIndex)
-    val isCurrentRevealed = session.currentCardIndex in session.revealedIndices
+    val focusedIndex = session.focusedRevealedIndex
+    val focusedCard = focusedIndex?.let { session.pulledCards.getOrNull(it) }
+    val nextUnrevealedIndex = session.nextUnrevealedIndex
+    val topFaceDownCard = nextUnrevealedIndex?.let { session.pulledCards.getOrNull(it) }
 
-    // Trigger burst animation when pack rips or when high-rarity card reveals
     fun triggerRipSequence() {
         if (session.isRipped) return
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        onPackTear()
         playBurstOnce = true
         scope.launch {
-            delay(220L)
+            delay(260L)
             onPackRipped()
         }
     }
 
-    fun triggerSuspenseFlip(index: Int) {
+    fun triggerDeckFlip(index: Int) {
         if (isChargingFlip || index in session.revealedIndices) return
         val targetCard = session.pulledCards.getOrNull(index) ?: return
         scope.launch {
             isChargingFlip = true
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            val totalMs = if (targetCard.isMisprint) 2600L else targetCard.rarity.suspenseDelayMs
-            val steps = (totalMs / 50L).toInt().coerceAtLeast(3)
+
+            val totalMs = if (targetCard.isMisprint) 850L
+            else if (targetCard.rarity.tierRank >= SkinRarity.EPIC.tierRank) (targetCard.rarity.suspenseDelayMs * 0.45f).toLong()
+            else 90L
+
+            val steps = (totalMs / 45L).toInt().coerceAtLeast(2)
             for (s in 1..steps) {
                 suspenseProgress = s.toFloat() / steps.toFloat()
-                if (s % 6 == 0 && (targetCard.rarity.tierRank >= 4 || targetCard.isMisprint)) {
+                if (s % 4 == 0 && (targetCard.rarity.tierRank >= 4 || targetCard.isMisprint)) {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
-                delay(50L)
+                delay(45L)
             }
             suspenseProgress = 0f
             isChargingFlip = false
+
+            onCardFlipSound(targetCard.rarity, targetCard.isMisprint)
             onRevealCard(index)
-            if (targetCard.isMisprint || targetCard.rarity.tierRank >= 4) {
+
+            if (targetCard.isMisprint || targetCard.rarity.tierRank >= SkinRarity.EPIC.tierRank) {
                 playBurstOnce = false
                 delay(16L)
                 playBurstOnce = true
@@ -168,21 +203,23 @@ fun PackOpeningScreen(
     }
 
     val auraColor = when {
-        currentCard == null -> PrismCyan
-        currentCard.isMisprint -> MisprintNeon
-        isCurrentRevealed || isChargingFlip -> currentCard.rarity.primaryColor
-        else -> session.pack.accentColor
+        focusedCard != null && focusedCard.isMisprint -> MisprintNeon
+        focusedCard != null -> focusedCard.rarity.primaryColor
+        topFaceDownCard != null && isChargingFlip -> topFaceDownCard.rarity.primaryColor
+        else -> SkyAzure
     }
 
+    // 100% opaque PearlCanvas base so underlying screen never bleeds through
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(PearlCanvas)
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        auraColor.copy(alpha = 0.24f + suspenseProgress * 0.35f),
-                        VoidObsidian,
-                        Color(0xFF04030A)
+                        auraColor.copy(alpha = 0.22f + suspenseProgress * 0.26f),
+                        SkyFrost.copy(alpha = 0.92f),
+                        PearlCanvas
                     )
                 )
             )
@@ -192,152 +229,181 @@ fun PackOpeningScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = 18.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Top Bar
+            // Top Studio Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
+                    val headerText = if (session.bundle.packCount > 1) {
+                        "${MegaPackConfig.PACK_TITLE} (${session.bundle.packCount}x Bundle)"
+                    } else {
+                        MegaPackConfig.PACK_TITLE
+                    }
                     Text(
-                        text = session.pack.title.uppercase(),
+                        text = headerText,
                         style = MaterialTheme.typography.titleLarge,
-                        color = ArenaGold
+                        color = DeepCobalt
                     )
+                    val subtitle = when {
+                        !session.isRipped -> "Touch wrapper to feel • Swipe seam to tear (${session.pulledCards.size} cards)"
+                        session.showSummaryGrid -> "All ${session.pulledCards.size} pulled cards • Tap any card to 3D inspect"
+                        focusedCard != null -> "Revealed ${session.revealedIndices.size} of ${session.pulledCards.size}"
+                        else -> "${session.remainingUnrevealedCount} cards stacked • Tap, swipe, or pinch to flip"
+                    }
                     Text(
-                        text = if (!session.isRipped) "Swipe tear seam or tap to rip open"
-                        else "Card ${session.currentCardIndex + 1} of ${session.pulledCards.size}",
+                        text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
+                        color = SlateMuted
                     )
                 }
 
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.testTag("close_pack_opening_button")
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close pack opening",
-                        tint = TextPrimary
+                    SoundMuteButton(
+                        isMuted = soundMuted,
+                        onToggle = onToggleMute
                     )
+                    Surface(
+                        color = PureWhiteCard,
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, IceBorder),
+                        shadowElevation = 2.dp
+                    ) {
+                        IconButton(
+                            onClick = onClose,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("close_pack_opening_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close pack opening",
+                                tint = InkSlate
+                            )
+                        }
+                    }
                 }
             }
 
-            // Center Stage: Phase 1 (Rip Pack) vs Phase 2 (Card Reveal)
+            // Main Stage
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                if (!session.isRipped) {
-                    PackTearStage(
-                        coverRes = session.pack.coverDrawableRes,
-                        accentColor = session.pack.accentColor,
-                        onRipComplete = ::triggerRipSequence
-                    )
-                } else if (currentCard != null) {
-                    // Rare flare Lottie aura behind Epic+ / Misprints
-                    if ((isCurrentRevealed && (currentCard.rarity.tierRank >= 4 || currentCard.isMisprint)) ||
-                        (isChargingFlip && (currentCard.rarity.tierRank >= 4 || currentCard.isMisprint))
-                    ) {
-                        LottieAnimation(
-                            composition = rareFlareComposition,
-                            iterations = LottieConstants.IterateForever,
-                            modifier = Modifier.size(370.dp)
+                when {
+                    !session.isRipped -> {
+                        PackTearStage(
+                            coverRes = MegaPackConfig.COVER_DRAWABLE_RES,
+                            accentColor = MegaPackConfig.ACCENT_COLOR,
+                            packCount = session.bundle.packCount,
+                            onCrinkle = onPlasticCrinkle,
+                            onRipComplete = ::triggerRipSequence
                         )
                     }
 
-                    val flipAngle by animateFloatAsState(
-                        targetValue = if (isCurrentRevealed) 0f else 180f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessLow
-                        ),
-                        label = "card_flip"
-                    )
+                    session.showSummaryGrid -> {
+                        PulledSummaryGrid(
+                            cards = session.pulledCards,
+                            onInspectCard = onInspectCard,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
 
-                    val shakeOffsetX = if (isChargingFlip) {
-                        sin(suspenseProgress * 45f) * (8f + suspenseProgress * 14f)
-                    } else 0f
-                    val density = LocalDensity.current.density
-
-                    Box(
-                        modifier = Modifier
-                            .width(268.dp)
-                            .offset { IntOffset(shakeOffsetX.roundToInt(), 0) }
-                            .graphicsLayer {
-                                rotationY = flipAngle
-                                cameraDistance = 14f * density
-                                val scaleBoost = if (isChargingFlip) 1f + suspenseProgress * 0.08f else 1f
-                                scaleX = scaleBoost
-                                scaleY = scaleBoost
-                            }
-                            .clickable {
-                                if (!isCurrentRevealed) {
-                                    triggerSuspenseFlip(session.currentCardIndex)
-                                } else {
-                                    onInspectCard(currentCard.instanceId)
-                                }
-                            }
-                            .testTag("pack_reveal_card")
-                    ) {
-                        if (flipAngle > 90f) {
-                            Box(modifier = Modifier.graphicsLayer { rotationY = 180f }) {
-                                CardBackView(
-                                    rarityHint = currentCard.rarity,
-                                    isMisprint = currentCard.isMisprint
+                    focusedCard != null -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (focusedCard.rarity.tierRank >= SkinRarity.EPIC.tierRank || focusedCard.isMisprint) {
+                                LottieAnimation(
+                                    composition = rareFlareComposition,
+                                    iterations = LottieConstants.IterateForever,
+                                    modifier = Modifier.size(370.dp)
                                 )
                             }
-                        } else {
-                            HolographicCardView(
-                                card = currentCard,
-                                tiltState = tiltState,
-                                interactiveTilt = true
+
+                            val flipAngle by animateFloatAsState(
+                                targetValue = 0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                ),
+                                label = "reveal_spotlight"
                             )
+
+                            Box(
+                                modifier = Modifier
+                                    .width(268.dp)
+                                    .graphicsLayer { rotationY = flipAngle }
+                                    .clickable { onInspectCard(focusedCard.instanceId) }
+                                    .testTag("pack_reveal_card")
+                            ) {
+                                HolographicCardView(
+                                    card = focusedCard,
+                                    tiltState = tiltState,
+                                    interactiveTilt = true
+                                )
+                            }
+
+                            this@Column.AnimatedVisibility(
+                                visible = focusedCard.isMisprint,
+                                enter = fadeIn() + scaleIn(),
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 6.dp)
+                            ) {
+                                Surface(
+                                    color = InkSlate,
+                                    shape = RoundedCornerShape(999.dp),
+                                    border = BorderStroke(1.5.dp, MisprintNeon),
+                                    shadowElevation = 6.dp
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Bolt,
+                                            contentDescription = null,
+                                            tint = StudioGoldBright,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "1 OF 1 MISPRINT DISCOVERED!",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MisprintNeon
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    // 1-of-1 Misprint Banner Overlay
-                    this@Column.AnimatedVisibility(
-                        visible = isCurrentRevealed && currentCard.isMisprint,
-                        enter = fadeIn() + scaleIn(),
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 8.dp)
-                    ) {
-                        Surface(
-                            color = VoidObsidian.copy(alpha = 0.92f),
-                            shape = RoundedCornerShape(999.dp),
-                            border = BorderStroke(1.5.dp, MisprintNeon)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Bolt,
-                                    contentDescription = null,
-                                    tint = ArenaGold,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "1 OF 1 MISPRINT DISCOVERED!",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MisprintNeon
-                                )
-                            }
+                    topFaceDownCard != null -> {
+                        val targetIdx = nextUnrevealedIndex
+                        if (targetIdx != null) {
+                            FaceDownCardDeckStage(
+                                remainingCards = session.pulledCards.filterIndexed { idx, _ -> idx !in session.revealedIndices },
+                                topCard = topFaceDownCard,
+                                isChargingFlip = isChargingFlip,
+                                suspenseProgress = suspenseProgress,
+                                onFlipTopCard = { triggerDeckFlip(targetIdx) }
+                            )
                         }
                     }
                 }
 
-                // Foreground Lottie burst explosion
                 if (playBurstOnce && burstProgress < 0.98f) {
                     LottieAnimation(
                         composition = burstComposition,
@@ -347,143 +413,420 @@ fun PackOpeningScreen(
                 }
             }
 
-            // Card Index Pips (after rip)
-            if (session.isRipped) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Bottom Mini-Tray of Revealed Cards
+            if (session.isRipped && !session.showSummaryGrid && session.revealedIndices.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    session.pulledCards.forEachIndexed { idx, card ->
-                        val revealed = idx in session.revealedIndices
-                        val selected = idx == session.currentCardIndex
-                        val dotColor = when {
-                            revealed && card.isMisprint -> MisprintNeon
-                            revealed -> card.rarity.primaryColor
-                            else -> TextSecondary.copy(alpha = 0.35f)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(if (selected) 16.dp else 11.dp)
-                                .clip(CircleShape)
-                                .background(dotColor)
-                                .border(
-                                    width = if (selected) 2.dp else 0.dp,
-                                    color = Color.White,
-                                    shape = CircleShape
-                                )
-                                .clickable { onSelectCardIndex(idx) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "PULLED SO FAR (${session.revealedIndices.size}/${session.pulledCards.size})",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SlateMuted
                         )
+                        TextButton(
+                            onClick = onShowSummaryGrid,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GridView,
+                                contentDescription = null,
+                                tint = DeepCobalt,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("View All Grid", color = DeepCobalt)
+                        }
+                    }
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        itemsIndexed(session.pulledCards) { idx, card ->
+                            val isRevealed = idx in session.revealedIndices
+                            val isFocused = idx == session.focusedRevealedIndex
+                            Surface(
+                                color = if (isRevealed) PureWhiteCard else SkyFrost,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(
+                                    width = if (isFocused) 2.dp else 1.dp,
+                                    color = when {
+                                        isFocused -> DeepCobalt
+                                        isRevealed -> card.rarity.primaryColor
+                                        else -> IceBorder
+                                    }
+                                ),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable(enabled = isRevealed) { onFocusRevealedCard(idx) }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (isRevealed) {
+                                        RarityChip(rarity = card.rarity, compact = true)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = card.skinName,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = InkSlate,
+                                            maxLines = 1
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Card #${idx + 1}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = SlateMuted
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Bottom Action Controls
+            // Bottom Action Bar
             if (!session.isRipped) {
                 Button(
                     onClick = ::triggerRipSequence,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = ArenaGold,
-                        contentColor = VoidObsidian
+                        containerColor = DeepCobalt,
+                        contentColor = Color.White
                     ),
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp)
                         .testTag("rip_pack_button")
                 ) {
                     Text(
-                        text = "RIP PACK OPEN",
+                        text = if (session.bundle.packCount > 1) "Rip ${session.bundle.packCount}x Bundle Open"
+                        else "Rip Pack Open",
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
-            } else {
+            } else if (session.showSummaryGrid) {
+                Button(
+                    onClick = onClose,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DeepCobalt,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp)
+                        .testTag("collect_all_button")
+                ) {
+                    Text("Collect All to Vault", style = MaterialTheme.typography.titleMedium)
+                }
+            } else if (focusedCard != null) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (!isCurrentRevealed) {
+                    if (!session.allRevealed) {
                         Button(
-                            onClick = { triggerSuspenseFlip(session.currentCardIndex) },
-                            enabled = !isChargingFlip,
+                            onClick = onAdvanceFromReveal,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = auraColor,
-                                contentColor = VoidObsidian
+                                containerColor = DeepCobalt,
+                                contentColor = Color.White
                             ),
+                            shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(52.dp)
-                                .testTag("flip_card_button")
+                                .testTag("next_stack_card_button")
+                        ) {
+                            Text(
+                                text = "Next Stacked Card (${session.remainingUnrevealedCount} Left)",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    } else {
+                        Button(
+                            onClick = onShowSummaryGrid,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = StudioGold,
+                                contentColor = InkSlate
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .testTag("view_all_pulled_cards_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.TouchApp,
+                                imageVector = Icons.Default.GridView,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (isChargingFlip) "BUILDING RESONANCE..." else "TAP TO FLIP CARD",
+                                text = "View All ${session.pulledCards.size} Pulled Cards",
                                 style = MaterialTheme.typography.labelLarge
                             )
-                        }
-                    } else if (!session.allRevealed) {
-                        val nextUnrevealed = session.pulledCards.indices.firstOrNull { it !in session.revealedIndices }
-                        Button(
-                            onClick = {
-                                if (nextUnrevealed != null) {
-                                    onSelectCardIndex(nextUnrevealed)
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = PrismCyan,
-                                contentColor = VoidObsidian
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp)
-                        ) {
-                            Text("NEXT CARD", style = MaterialTheme.typography.labelLarge)
-                        }
-                    } else {
-                        Button(
-                            onClick = onClose,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = ArenaGold,
-                                contentColor = VoidObsidian
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp)
-                                .testTag("collect_all_button")
-                        ) {
-                            Text("COLLECT ALL TO VAULT", style = MaterialTheme.typography.labelLarge)
                         }
                     }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (!session.allRevealed) {
-                            TextButton(onClick = onRevealAll) {
-                                Text("Reveal All", color = TextSecondary)
+                            TextButton(onClick = onShowSummaryGrid) {
+                                Text("Reveal All Cards", color = DeepCobalt)
                             }
-                        } else if (currentCard != null) {
+                        } else {
                             OutlinedButton(
-                                onClick = { onInspectCard(currentCard.instanceId) },
-                                border = BorderStroke(1.dp, PrismCyan)
+                                onClick = { onInspectCard(focusedCard.instanceId) },
+                                border = BorderStroke(1.dp, DeepCobalt)
                             ) {
-                                Text("3D Gyro Inspect", color = PrismCyan)
+                                Text("3D Gyro Inspect", color = DeepCobalt)
                             }
                         }
-                        if (isCurrentRevealed && currentCard != null) {
-                            Text(
-                                text = "Tilt phone to shine foil!",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextSecondary,
-                                modifier = Modifier.align(Alignment.CenterVertically)
-                            )
+                        Text(
+                            text = "Tilt phone to shine foil!",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SlateMuted
+                        )
+                    }
+                }
+            } else if (nextUnrevealedIndex != null) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Button(
+                        onClick = { triggerDeckFlip(nextUnrevealedIndex) },
+                        enabled = !isChargingFlip,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = DeepCobalt,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("flip_card_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.TouchApp,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isChargingFlip) "Building Resonance..." else "Flip Top Card (Tap / Swipe / Pinch)",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = onShowSummaryGrid) {
+                            Text("Reveal All Cards", color = SlateMuted)
+                        }
+                        Text(
+                            text = "${session.remainingUnrevealedCount} face-down",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SlateMuted
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FaceDownCardDeckStage(
+    remainingCards: List<OwnedCard>,
+    topCard: OwnedCard,
+    isChargingFlip: Boolean,
+    suspenseProgress: Float,
+    onFlipTopCard: () -> Unit
+) {
+    var dragOffsetX by remember(topCard.instanceId) { mutableFloatStateOf(0f) }
+    var dragOffsetY by remember(topCard.instanceId) { mutableFloatStateOf(0f) }
+    var pinchScale by remember(topCard.instanceId) { mutableFloatStateOf(1f) }
+    var flipTriggered by remember(topCard.instanceId) { mutableStateOf(false) }
+
+    val density = LocalDensity.current.density
+    val shakeOffsetX = if (isChargingFlip) {
+        sin(suspenseProgress * 45f) * (8f + suspenseProgress * 14f)
+    } else 0f
+
+    fun fireOnce() {
+        if (!flipTriggered && !isChargingFlip) {
+            flipTriggered = true
+            onFlipTopCard()
+        }
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        val stackDepth = remainingCards.size.coerceAtMost(5)
+        for (layer in (stackDepth - 1) downTo 1) {
+            val layerCard = remainingCards[layer]
+            val offsetDpY = (layer * 8).dp
+            val offsetDpX = (if (layer % 2 == 0) -layer * 4 else layer * 4).dp
+            val rotZ = if (layer % 2 == 0) -layer * 2.0f else layer * 2.0f
+            val scale = 1f - layer * 0.03f
+
+            Box(
+                modifier = Modifier
+                    .width(256.dp)
+                    .offset(x = offsetDpX, y = offsetDpY)
+                    .graphicsLayer {
+                        rotationZ = rotZ
+                        scaleX = scale
+                        scaleY = scale
+                    }
+            ) {
+                CardBackView(
+                    rarityHint = layerCard.rarity,
+                    isMisprint = layerCard.isMisprint,
+                    showTeaserLabel = false
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .width(262.dp)
+                .zIndex(5f)
+                .offset {
+                    IntOffset(
+                        (dragOffsetX * 0.45f + shakeOffsetX).roundToInt(),
+                        (dragOffsetY * 0.35f).roundToInt()
+                    )
+                }
+                .graphicsLayer {
+                    rotationY = (dragOffsetX * 0.14f).coerceIn(-35f, 35f)
+                    rotationZ = (dragOffsetX * 0.03f).coerceIn(-8f, 8f)
+                    val boost = if (isChargingFlip) 1f + suspenseProgress * 0.08f else pinchScale
+                    scaleX = boost
+                    scaleY = boost
+                    cameraDistance = 14f * density
+                }
+                .pointerInput(topCard.instanceId) {
+                    detectTapGestures(onTap = { fireOnce() })
+                }
+                .pointerInput(topCard.instanceId) {
+                    detectDragGestures(
+                        onDragEnd = {
+                            if (abs(dragOffsetX) > 75f || abs(dragOffsetY) > 75f) {
+                                fireOnce()
+                            } else {
+                                dragOffsetX = 0f
+                                dragOffsetY = 0f
+                            }
+                        },
+                        onDragCancel = {
+                            dragOffsetX = 0f
+                            dragOffsetY = 0f
+                        }
+                    ) { change, dragAmount ->
+                        change.consume()
+                        dragOffsetX += dragAmount.x
+                        dragOffsetY += dragAmount.y
+                        if (abs(dragOffsetX) > 120f || abs(dragOffsetY) > 120f) {
+                            fireOnce()
                         }
                     }
+                }
+                .pointerInput(topCard.instanceId) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        if (zoom != 1f) {
+                            pinchScale = (pinchScale * zoom).coerceIn(0.85f, 1.25f)
+                            if (pinchScale >= 1.12f || pinchScale <= 0.89f) {
+                                fireOnce()
+                            }
+                        }
+                    }
+                }
+                .testTag("pack_reveal_card")
+        ) {
+            CardBackView(
+                rarityHint = topCard.rarity,
+                isMisprint = topCard.isMisprint,
+                showTeaserLabel = true
+            )
+        }
+    }
+}
+
+@Composable
+private fun PulledSummaryGrid(
+    cards: List<OwnedCard>,
+    onInspectCard: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Surface(
+            color = PureWhiteCard,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, IceBorder),
+            shadowElevation = 2.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Pack Pulls (${cards.size} Cards)",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = InkSlate
+                )
+                val bestCard = cards.maxByOrNull {
+                    (if (it.isMisprint) 100 else 0) + it.rarity.tierRank
+                }
+                if (bestCard != null) {
+                    RarityChip(rarity = bestCard.rarity, compact = true)
+                }
+            }
+        }
+
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 146.dp),
+            contentPadding = PaddingValues(top = 6.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .weight(1f)
+                .testTag("pulled_cards_summary_grid")
+        ) {
+            items(cards, key = { it.instanceId }) { card ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onInspectCard(card.instanceId) }
+                        .testTag("summary_card_${card.instanceId}")
+                ) {
+                    HolographicCardView(
+                        card = card,
+                        compact = true
+                    )
                 }
             }
         }
@@ -494,6 +837,8 @@ fun PackOpeningScreen(
 private fun PackTearStage(
     coverRes: Int,
     accentColor: Color,
+    packCount: Int,
+    onCrinkle: () -> Unit,
     onRipComplete: () -> Unit
 ) {
     var tearProgress by remember { mutableFloatStateOf(0f) }
@@ -517,20 +862,22 @@ private fun PackTearStage(
 
     Box(
         modifier = Modifier
-            .width(240.dp)
-            .height(340.dp)
+            .width(244.dp)
+            .height(344.dp)
             .offset { IntOffset(0, floatOffset.roundToInt()) }
             .graphicsLayer {
                 scaleX = scaleAnim.value
                 scaleY = scaleAnim.value
                 rotationZ = tearProgress * 4f
             }
+            .shadow(16.dp, RoundedCornerShape(22.dp))
             .clip(RoundedCornerShape(22.dp))
-            .border(2.5.dp, accentColor, RoundedCornerShape(22.dp))
+            .border(3.dp, accentColor, RoundedCornerShape(22.dp))
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
+                    onDragStart = { onCrinkle() },
                     onDragEnd = {
-                        if (tearProgress > 0.48f) {
+                        if (tearProgress > 0.45f) {
                             onRipComplete()
                         } else {
                             tearProgress = 0f
@@ -538,13 +885,17 @@ private fun PackTearStage(
                     }
                 ) { change, dragAmount ->
                     change.consume()
-                    tearProgress = (tearProgress + kotlin.math.abs(dragAmount) / 360f).coerceIn(0f, 1f)
+                    onCrinkle()
+                    tearProgress = (tearProgress + abs(dragAmount) / 340f).coerceIn(0f, 1f)
                     if (tearProgress >= 0.85f) {
                         onRipComplete()
                     }
                 }
             }
-            .clickable { onRipComplete() }
+            .clickable {
+                onCrinkle()
+                onRipComplete()
+            }
     ) {
         Image(
             painter = painterResource(id = coverRes),
@@ -553,18 +904,17 @@ private fun PackTearStage(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Glowing Tear Seam across top third
         Canvas(modifier = Modifier.fillMaxSize()) {
             val y = size.height * 0.24f
             drawLine(
-                color = Color.White.copy(alpha = 0.35f),
+                color = Color.White.copy(alpha = 0.55f),
                 start = Offset(0f, y),
                 end = Offset(size.width, y),
                 strokeWidth = 4f
             )
             if (tearProgress > 0f) {
                 drawLine(
-                    color = ArenaGold,
+                    color = StudioGoldBright,
                     start = Offset(0f, y),
                     end = Offset(size.width * tearProgress, y),
                     strokeWidth = 10f
@@ -573,9 +923,9 @@ private fun PackTearStage(
         }
 
         Surface(
-            color = VoidObsidian.copy(alpha = 0.85f),
+            color = InkSlate.copy(alpha = 0.88f),
             shape = RoundedCornerShape(999.dp),
-            border = BorderStroke(1.dp, ArenaGold),
+            border = BorderStroke(1.dp, StudioGoldBright),
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 64.dp)
@@ -587,14 +937,14 @@ private fun PackTearStage(
                 Icon(
                     imageVector = Icons.Default.SwipeRight,
                     contentDescription = null,
-                    tint = ArenaGold,
+                    tint = StudioGoldBright,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "SWIPE TO TEAR",
+                    text = if (packCount > 1) "SWIPE TO RIP ${packCount}x PACKS" else "SWIPE TO TEAR",
                     style = MaterialTheme.typography.labelSmall,
-                    color = ArenaGold
+                    color = StudioGoldBright
                 )
             }
         }

@@ -43,8 +43,9 @@ data class OwnedCard(
 
 data class DailyRewardTier(
     val dayIndex: Int, // 1..7
-    val goldAmount: Int,
-    val bonusPack: BoosterPack? = null
+    val coinAmount: Int,
+    val bonusFreePacks: Int = 0,
+    val bonusDiamonds: Int = 0
 )
 
 data class TradeListing(

@@ -8,22 +8,35 @@ import com.example.data.local.PlayerWalletState
 import com.example.data.local.SkinCatalogEntity
 import com.example.data.local.TradeListingEntity
 import com.example.data.remote.MlbbDexClient
+import com.example.data.remote.ParsedHeroRef
 import com.example.data.remote.SkinJsonParser
-import com.example.model.BoosterPack
 import com.example.model.DailyRewardTier
 import com.example.model.DecodedTradeSlip
+import com.example.model.DiamondExchangeOption
+import com.example.model.MegaPackConfig
 import com.example.model.MisprintAnomaly
 import com.example.model.OwnedCard
+import com.example.model.PackBundleOption
+import com.example.model.QuestCatalog
+import com.example.model.QuestCategory
+import com.example.model.QuestDefinition
+import com.example.model.QuestUiItem
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.TradeListing
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.Calendar
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 class CollectorRepository(
@@ -45,35 +58,147 @@ class CollectorRepository(
         dao.observeCardById(instanceId).map { it?.toDomain() }
 
     val dailyRewardTiers: List<DailyRewardTier> = listOf(
-        DailyRewardTier(1, 300),
-        DailyRewardTier(2, 450),
-        DailyRewardTier(3, 600, BoosterPack.STARTER_PACK),
-        DailyRewardTier(4, 800),
-        DailyRewardTier(5, 1000),
-        DailyRewardTier(6, 1250),
-        DailyRewardTier(7, 2000, BoosterPack.MYTHIC_PRISM_PACK)
+        DailyRewardTier(1, coinAmount = 250, bonusDiamonds = 5),
+        DailyRewardTier(2, coinAmount = 350, bonusDiamonds = 5),
+        DailyRewardTier(3, coinAmount = 450, bonusFreePacks = 1),
+        DailyRewardTier(4, coinAmount = 600, bonusDiamonds = 10),
+        DailyRewardTier(5, coinAmount = 800, bonusDiamonds = 10),
+        DailyRewardTier(6, coinAmount = 1000, bonusFreePacks = 1),
+        DailyRewardTier(7, coinAmount = 1800, bonusFreePacks = 2, bonusDiamonds = 25)
     )
 
-    suspend fun syncSkinsFromApi(): Result<Int> = withContext(Dispatchers.IO) {
+    suspend fun syncQuestPeriodsOnLaunch() {
+        prefs.syncQuestPeriodsIfNeeded(currentLocalEpochDay(), currentLocalWeekKey())
+    }
+
+    suspend fun syncSkinsFromApi(
+        onProgress: (syncedCount: Int, stageLabel: String) -> Unit = { _, _ -> }
+    ): Result<Int> = withContext(Dispatchers.IO) {
         try {
-            val rawJson = MlbbDexClient.api.getSkinsRaw().string()
-            val parsed = SkinJsonParser.parseSkins(rawJson)
-            if (parsed.isEmpty()) {
+            val collectedById = LinkedHashMap<String, SkinCatalogItem>(1300)
+
+            onProgress(0, "Connecting to mlbbdex.com/api/v1/skins/...")
+            val page1Raw = MlbbDexClient.api.getSkinsPage(limit = 100, page = 1).string()
+            val page1Parsed = SkinJsonParser.parseSkinsPage(page1Raw)
+            page1Parsed.items.forEach { collectedById[it.id] = it }
+
+            if (collectedById.isNotEmpty()) {
+                dao.replaceCatalog(collectedById.values.map { SkinCatalogEntity.fromDomain(it) })
+                onProgress(collectedById.size, "Indexed ${collectedById.size} skins...")
+            }
+
+            var paginationWorked = false
+            val maxPages = (page1Parsed.totalPages ?: 25).coerceIn(2, 30)
+            for (page in 2..maxPages) {
+                val raw = runCatching {
+                    MlbbDexClient.api.getSkinsPage(limit = 100, page = page).string()
+                }.getOrNull() ?: break
+                val parsed = SkinJsonParser.parseSkinsPage(raw)
+                if (parsed.items.isEmpty()) break
+
+                var added = 0
+                for (item in parsed.items) {
+                    if (collectedById.put(item.id, item) == null) {
+                        added++
+                    }
+                }
+                if (added == 0) break
+                paginationWorked = true
+                dao.upsertCatalog(parsed.items.map { SkinCatalogEntity.fromDomain(it) })
+                onProgress(collectedById.size, "Syncing MLBBDex skins (${collectedById.size})...")
+                if (parsed.hasNextPage == false) break
+            }
+
+            if (!paginationWorked && collectedById.size >= 20) {
+                var offset = collectedById.size
+                for (step in 0 until 25) {
+                    val raw = runCatching {
+                        MlbbDexClient.api.getSkinsPage(limit = 100, offset = offset).string()
+                    }.getOrNull() ?: break
+                    val parsed = SkinJsonParser.parseSkinsPage(raw)
+                    if (parsed.items.isEmpty()) break
+
+                    var added = 0
+                    for (item in parsed.items) {
+                        if (collectedById.put(item.id, item) == null) {
+                            added++
+                        }
+                    }
+                    if (added == 0) break
+                    dao.upsertCatalog(parsed.items.map { SkinCatalogEntity.fromDomain(it) })
+                    onProgress(collectedById.size, "Syncing MLBBDex skins (${collectedById.size})...")
+                    offset += parsed.items.size
+                }
+            }
+
+            if (collectedById.size < 600) {
+                onProgress(collectedById.size, "Expanding full hero rosters from mlbbdex.com...")
+                val allHeroes = LinkedHashMap<String, ParsedHeroRef>()
+                for (heroPage in 1..4) {
+                    val rawHeroes = runCatching {
+                        MlbbDexClient.api.getHeroesPage(limit = 200, page = heroPage).string()
+                    }.getOrNull() ?: break
+                    val refs = SkinJsonParser.parseHeroRefs(rawHeroes)
+                    if (refs.isEmpty()) break
+                    var newHeroes = 0
+                    for (ref in refs) {
+                        if (allHeroes.put(ref.slug, ref) == null) newHeroes++
+                    }
+                    if (newHeroes == 0) break
+                }
+
+                if (allHeroes.isNotEmpty()) {
+                    val semaphore = Semaphore(6)
+                    val chunks = allHeroes.values.chunked(18)
+                    for (chunk in chunks) {
+                        val batchSkins = coroutineScope {
+                            chunk.map { hero ->
+                                async {
+                                    semaphore.withPermit {
+                                        val rawDetail = runCatching {
+                                            MlbbDexClient.api.getHeroDetail(hero.slug).string()
+                                        }.getOrNull() ?: return@withPermit emptyList()
+                                        SkinJsonParser.parseHeroDetailSkins(
+                                            rawJson = rawDetail,
+                                            fallbackHeroName = hero.name,
+                                            fallbackRole = hero.role
+                                        )
+                                    }
+                                }
+                            }.awaitAll().flatten()
+                        }
+                        if (batchSkins.isNotEmpty()) {
+                            batchSkins.forEach { collectedById[it.id] = it }
+                            dao.upsertCatalog(batchSkins.map { SkinCatalogEntity.fromDomain(it) })
+                            onProgress(
+                                collectedById.size,
+                                "Syncing full catalog (${collectedById.size} skins)..."
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (collectedById.isEmpty()) {
                 return@withContext Result.failure(
                     IllegalStateException("MLBBDex returned an empty skin catalog.")
                 )
             }
-            dao.replaceCatalog(parsed.map { SkinCatalogEntity.fromDomain(it) })
-            prefs.markCatalogSynced(System.currentTimeMillis())
-            Result.success(parsed.size)
+
+            prefs.markCatalogSynced(
+                timestampMs = System.currentTimeMillis(),
+                schemaVersion = PlayerPreferencesStore.CURRENT_CATALOG_SCHEMA_VERSION
+            )
+            Result.success(collectedById.size)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun openPack(
-        pack: BoosterPack,
+    suspend fun openPackBundle(
+        bundle: PackBundleOption,
         wallet: PlayerWalletState,
+        payWithDiamonds: Boolean,
         useFreeTicket: Boolean
     ): Result<List<OwnedCard>> = withContext(Dispatchers.IO) {
         try {
@@ -84,41 +209,57 @@ class CollectorRepository(
                 )
             }
 
-            if (useFreeTicket) {
-                val hasTicket = when (pack) {
-                    BoosterPack.STARTER_PACK -> wallet.bonusFreePacksStarter > 0
-                    BoosterPack.MYTHIC_PRISM_PACK -> wallet.bonusFreePacksMythic > 0
-                    BoosterPack.IMPERIAL_LEGEND_VAULT -> false
+            val effectiveBundle = if (useFreeTicket) PackBundleOption.SINGLE else bundle
+
+            when {
+                useFreeTicket -> {
+                    if (wallet.bonusFreePacks <= 0) {
+                        return@withContext Result.failure(IllegalStateException("No free pack ticket available."))
+                    }
                 }
-                if (!hasTicket) {
-                    return@withContext Result.failure(IllegalStateException("No free pack ticket available."))
+                payWithDiamonds -> {
+                    if (wallet.diamonds < effectiveBundle.diamondCost) {
+                        return@withContext Result.failure(
+                            IllegalStateException("Not enough Diamonds. Need ${effectiveBundle.diamondCost} 💎.")
+                        )
+                    }
                 }
-            } else if (wallet.arenaGold < pack.costGold) {
-                return@withContext Result.failure(
-                    IllegalStateException("Not enough Arena Gold. Need ${pack.costGold} Gold.")
-                )
+                else -> {
+                    if (wallet.coins < effectiveBundle.coinCost) {
+                        return@withContext Result.failure(
+                            IllegalStateException("Not enough Coins. Need ${effectiveBundle.coinCost} 🪙.")
+                        )
+                    }
+                }
             }
 
             val groupedByRarity = catalog.groupBy { it.rarity }
             val nowMs = System.currentTimeMillis()
             val pulledEntities = mutableListOf<OwnedCardEntity>()
-            val totalWeight = pack.rarityWeights.values.sum().coerceAtLeast(1.0)
+            val totalCards = effectiveBundle.totalCards
+            val weights = MegaPackConfig.RARITY_WEIGHTS
+            val totalWeight = weights.values.sum().coerceAtLeast(1.0)
 
-            for (slotIndex in 0 until pack.cardsPerPack) {
-                val isFinalSlot = slotIndex == pack.cardsPerPack - 1
-                val minRarity = if (isFinalSlot) pack.guaranteedMinRarity else null
+            var epicPlusCount = 0
+            var luckyboxPlusCount = 0
+            var mythicOrMisprintCount = 0
 
-                val rolledRarity = rollRarity(pack.rarityWeights, minRarity)
-                val pullRatePct = ((pack.rarityWeights[rolledRarity] ?: 1.0) / totalWeight) * 100.0
+            for (slotIndex in 0 until totalCards) {
+                val rolledRarity = rollRarity(weights)
                 val chosenSkin = pickSkinForRarity(rolledRarity, groupedByRarity, catalog)
+                val actualRarity = chosenSkin.rarity
 
-                val isMisprint = Random.nextInt(pack.misprintOneInDenominator) == 0
+                val actualWeight = weights[actualRarity] ?: actualRarity.basePullWeight
+                val pullRatePct = (actualWeight / totalWeight) * 100.0
+                val roundedRatePct = ((pullRatePct * 1000.0).roundToInt() / 1000.0).coerceAtLeast(0.001)
+
+                val isMisprint = Random.nextDouble(100.0) < MegaPackConfig.MISPRINT_CHANCE_PERCENT
                 val anomaly = if (isMisprint) MisprintAnomaly.entries.random() else null
-                val serialCode = if (isMisprint) {
-                    "1/1 • MP-${randomHex4()}"
-                } else {
-                    "STD-${randomHex4()}"
-                }
+                val serialCode = if (isMisprint) "1/1 • MP-${randomHex4()}" else "STD-${randomHex4()}"
+
+                if (actualRarity.tierRank >= SkinRarity.EPIC.tierRank) epicPlusCount++
+                if (actualRarity.tierRank >= SkinRarity.LUCKYBOX.tierRank) luckyboxPlusCount++
+                if (isMisprint || actualRarity.tierRank >= SkinRarity.COLLECTOR.tierRank) mythicOrMisprintCount++
 
                 pulledEntities += OwnedCardEntity(
                     catalogId = chosenSkin.id,
@@ -126,28 +267,33 @@ class CollectorRepository(
                     heroName = chosenSkin.heroName,
                     role = chosenSkin.role,
                     rawTier = chosenSkin.rawTier,
-                    rarityName = rolledRarity.name,
+                    rarityName = actualRarity.name,
                     imageUrl = chosenSkin.imageUrl,
                     isMisprint = isMisprint,
                     misprintAnomalyName = anomaly?.name,
                     serialCode = serialCode,
-                    pullRatePercent = String.format(Locale.US, "%.2f", pullRatePct).toDouble(),
+                    pullRatePercent = roundedRatePct,
                     obtainedAtMs = nowMs + slotIndex,
                     isListedForTrade = false
                 )
             }
 
-            // Sort ascending by hype so the best pull is revealed last!
             val sortedEntities = pulledEntities.sortedWith(
                 compareBy<OwnedCardEntity> { if (it.isMisprint) 1 else 0 }
                     .thenBy { SkinRarity.fromNameSafe(it.rarityName).tierRank }
             )
 
             val insertedIds = dao.insertOwnedCards(sortedEntities)
-            prefs.spendGoldOrTicketAndRecordPack(
-                useTicket = useFreeTicket,
-                isMythicTicket = pack == BoosterPack.MYTHIC_PRISM_PACK,
-                goldCost = pack.costGold
+            prefs.spendForPackBundleAndRecordProgress(
+                packCount = effectiveBundle.packCount,
+                coinCost = if (!useFreeTicket && !payWithDiamonds) effectiveBundle.coinCost else 0,
+                diamondCost = if (!useFreeTicket && payWithDiamonds) effectiveBundle.diamondCost else 0,
+                useFreeTicket = useFreeTicket,
+                epicPlusPulled = epicPlusCount,
+                luckyboxPlusPulled = luckyboxPlusCount,
+                mythicOrMisprintPulled = mythicOrMisprintCount,
+                todayEpochDay = currentLocalEpochDay(),
+                currentWeekKey = currentLocalWeekKey()
             )
 
             val resultCards = sortedEntities.mapIndexed { idx, entity ->
@@ -159,15 +305,10 @@ class CollectorRepository(
         }
     }
 
-    private fun rollRarity(
-        weights: Map<SkinRarity, Double>,
-        minRarity: SkinRarity?
-    ): SkinRarity {
-        val eligible = weights.filter { (rarity, weight) ->
-            weight > 0.0 && (minRarity == null || rarity.tierRank >= minRarity.tierRank)
-        }
+    private fun rollRarity(weights: Map<SkinRarity, Double>): SkinRarity {
+        val eligible = weights.filter { it.value > 0.0 }
         val total = eligible.values.sum()
-        if (total <= 0.0) return minRarity ?: SkinRarity.COMMON
+        if (total <= 0.0) return SkinRarity.COMMON
 
         var roll = Random.nextDouble(total)
         for ((rarity, weight) in eligible) {
@@ -185,18 +326,20 @@ class CollectorRepository(
         val exactPool = grouped[target]
         if (!exactPool.isNullOrEmpty()) return exactPool.random()
 
-        // Find nearest tier in catalog if API lacks a particular exact tier label
-        val nearest = grouped.entries
+        val nearestAny = grouped.entries
             .filter { it.value.isNotEmpty() }
             .minByOrNull { kotlin.math.abs(it.key.tierRank - target.tierRank) }
-        return nearest?.value?.random() ?: fallbackAll.random()
+        return nearestAny?.value?.random() ?: fallbackAll.random()
     }
 
     fun currentLocalEpochDay(): Long {
         val cal = Calendar.getInstance()
-        val year = cal.get(Calendar.YEAR)
-        val dayOfYear = cal.get(Calendar.DAY_OF_YEAR)
-        return (year.toLong() * 366L) + dayOfYear.toLong()
+        return (cal.get(Calendar.YEAR).toLong() * 366L) + cal.get(Calendar.DAY_OF_YEAR).toLong()
+    }
+
+    fun currentLocalWeekKey(): Long {
+        val cal = Calendar.getInstance()
+        return (cal.get(Calendar.YEAR).toLong() * 54L) + cal.get(Calendar.WEEK_OF_YEAR).toLong()
     }
 
     suspend fun claimDailyReward(wallet: PlayerWalletState): Result<DailyRewardTier> =
@@ -219,15 +362,94 @@ class CollectorRepository(
                 prefs.recordDailyRewardClaim(
                     epochDay = today,
                     newStreak = nextStreakIndex,
-                    goldReward = tier.goldAmount,
-                    grantStarterPack = tier.bonusPack == BoosterPack.STARTER_PACK,
-                    grantMythicPack = tier.bonusPack == BoosterPack.MYTHIC_PRISM_PACK
+                    coinReward = tier.coinAmount,
+                    bonusFreePacks = tier.bonusFreePacks,
+                    bonusDiamonds = tier.bonusDiamonds
                 )
                 Result.success(tier)
             } catch (e: Exception) {
                 Result.failure(e)
             }
         }
+
+    suspend fun exchangeDiamondsForCoins(option: DiamondExchangeOption): Result<DiamondExchangeOption> =
+        withContext(Dispatchers.IO) {
+            val ok = prefs.exchangeDiamondsForCoins(option.diamondCost, option.coinReward)
+            if (ok) Result.success(option)
+            else Result.failure(IllegalStateException("Need ${option.diamondCost} 💎 Diamonds."))
+        }
+
+    suspend fun recordDailyScratcherCoinPrize(coinPrize: Int): Result<Int> =
+        withContext(Dispatchers.IO) {
+            val ok = prefs.recordScratcherReward(
+                coinReward = coinPrize,
+                todayEpochDay = currentLocalEpochDay(),
+                currentWeekKey = currentLocalWeekKey()
+            )
+            if (ok) Result.success(coinPrize)
+            else Result.failure(IllegalStateException("No daily scratchers remaining today! Come back tomorrow."))
+        }
+
+    suspend fun awardMinigameDiamonds(diamondsEarned: Int): Result<Int> =
+        withContext(Dispatchers.IO) {
+            prefs.addDiamonds(
+                amount = diamondsEarned,
+                fromMinigameWin = diamondsEarned > 1,
+                todayEpochDay = currentLocalEpochDay(),
+                currentWeekKey = currentLocalWeekKey()
+            )
+            Result.success(diamondsEarned)
+        }
+
+    fun buildQuestItems(wallet: PlayerWalletState): List<QuestUiItem> {
+        val today = currentLocalEpochDay()
+        val week = currentLocalWeekKey()
+        val dailyStale = wallet.questDailyEpochDay < today
+        val weeklyStale = wallet.questWeeklyKey < week
+
+        val allDefs = QuestCatalog.dailyQuests + QuestCatalog.weeklyQuests + QuestCatalog.communityQuests
+        return allDefs.map { def ->
+            val progress = when (def.id) {
+                "d_open_1", "d_open_5" -> if (dailyStale) 0 else wallet.dailyPacksOpened
+                "d_rare_epic" -> if (dailyStale) 0 else wallet.dailyEpicPlusCollected
+                "d_scratch_2" -> if (dailyStale) 0 else wallet.dailyScratchersDone
+                "d_minigame_2" -> if (dailyStale) 0 else wallet.dailyMinigamesWon
+
+                "w_open_15" -> if (weeklyStale) 0 else wallet.weeklyPacksOpened
+                "w_luckybox_3" -> if (weeklyStale) 0 else wallet.weeklyLuckyboxPlusCollected
+                "w_recycle_5" -> if (weeklyStale) 0 else wallet.weeklyCardsRecycled
+                "w_minigame_6" -> if (weeklyStale) 0 else wallet.weeklyMinigamesWon
+
+                "c_packs_25" -> wallet.communityPacksOpened
+                "c_epic_10" -> wallet.communityEpicPlusCollected
+                "c_mythic_1" -> wallet.communityMythicCollected
+                "c_trade_1" -> wallet.communityTradesDone
+                else -> 0
+            }
+            val claimed = when (def.category) {
+                QuestCategory.DAILY -> !dailyStale && def.id in wallet.claimedDailyQuestIds
+                QuestCategory.WEEKLY -> !weeklyStale && def.id in wallet.claimedWeeklyQuestIds
+                QuestCategory.COMMUNITY -> def.id in wallet.claimedCommunityQuestIds
+            }
+            QuestUiItem(definition = def, currentProgress = progress, isClaimed = claimed)
+        }
+    }
+
+    suspend fun claimQuest(quest: QuestUiItem): Result<QuestDefinition> = withContext(Dispatchers.IO) {
+        if (!quest.canClaim) {
+            return@withContext Result.failure(IllegalStateException("Quest not ready to claim."))
+        }
+        prefs.claimQuestReward(
+            questId = quest.definition.id,
+            categoryName = quest.definition.category.name,
+            coinReward = quest.definition.coinReward,
+            diamondReward = quest.definition.diamondReward,
+            freePackReward = quest.definition.freePackReward,
+            todayEpochDay = currentLocalEpochDay(),
+            currentWeekKey = currentLocalWeekKey()
+        )
+        Result.success(quest.definition)
+    }
 
     suspend fun recycleSingleCard(card: OwnedCard): Result<Int> = withContext(Dispatchers.IO) {
         try {
@@ -237,9 +459,14 @@ class CollectorRepository(
                 dao.deleteTradeListingsForCard(existing.instanceId)
             }
             dao.deleteOwnedCardById(existing.instanceId)
-            val goldEarned = card.recycleValueGold
-            prefs.addGold(goldEarned, fromRecycle = true)
-            Result.success(goldEarned)
+            val coinEarned = card.recycleValueGold
+            prefs.addCoins(
+                amount = coinEarned,
+                fromRecycleCount = 1,
+                todayEpochDay = currentLocalEpochDay(),
+                currentWeekKey = currentLocalWeekKey()
+            )
+            Result.success(coinEarned)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -250,12 +477,10 @@ class CollectorRepository(
             val allOwned = dao.getAllOwnedOnce().map { it.toDomain() }
             val byCatalog = allOwned.groupBy { it.catalogId }
             val idsToDelete = mutableListOf<Long>()
-            var totalGold = 0
+            var totalCoins = 0
 
             for ((_, group) in byCatalog) {
                 if (group.size <= 1) continue
-                // Always keep at least 1 card (preferring highest rarity / oldest),
-                // never auto-recycle 1-of-1 Misprints or cards currently listed for trade!
                 val sorted = group.sortedWith(
                     compareByDescending<OwnedCard> { it.isMisprint }
                         .thenByDescending { it.isListedForTrade }
@@ -264,7 +489,7 @@ class CollectorRepository(
                 val extras = sorted.drop(1).filter { !it.isMisprint && !it.isListedForTrade }
                 for (extra in extras) {
                     idsToDelete += extra.instanceId
-                    totalGold += extra.recycleValueGold
+                    totalCoins += extra.recycleValueGold
                 }
             }
 
@@ -275,8 +500,13 @@ class CollectorRepository(
             }
 
             dao.deleteOwnedCardsByIds(idsToDelete)
-            prefs.addGold(totalGold, fromRecycle = true)
-            Result.success(idsToDelete.size to totalGold)
+            prefs.addCoins(
+                amount = totalCoins,
+                fromRecycleCount = idsToDelete.size,
+                todayEpochDay = currentLocalEpochDay(),
+                currentWeekKey = currentLocalWeekKey()
+            )
+            Result.success(idsToDelete.size to totalCoins)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -326,6 +556,7 @@ class CollectorRepository(
             )
             val id = dao.insertTradeListing(entity)
             dao.setCardListedForTrade(card.instanceId, true)
+            prefs.recordTradeQuestProgress()
             Result.success(entity.copy(id = id).toDomain())
         } catch (e: Exception) {
             Result.failure(e)
@@ -403,8 +634,9 @@ class CollectorRepository(
             )
             val insertedId = dao.insertOwnedCard(newEntity)
             if (slip.goldSweetener > 0) {
-                prefs.addGold(slip.goldSweetener, fromRecycle = false)
+                prefs.addCoins(slip.goldSweetener)
             }
+            prefs.recordTradeQuestProgress()
             Result.success(newEntity.copy(instanceId = insertedId).toDomain())
         } catch (e: Exception) {
             Result.failure(e)
@@ -413,6 +645,10 @@ class CollectorRepository(
 
     suspend fun updateAlias(alias: String) {
         prefs.updateCollectorAlias(alias)
+    }
+
+    suspend fun setSoundMuted(muted: Boolean) {
+        prefs.setSoundMuted(muted)
     }
 
     private fun randomHex4(): String =

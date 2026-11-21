@@ -8,89 +8,84 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
-val RajdhaniFontFamily = FontFamily(
-    Font(R.font.rajdhani, FontWeight.Normal),
-    Font(R.font.rajdhani, FontWeight.SemiBold),
-    Font(R.font.rajdhani, FontWeight.Bold)
+val FredokaFontFamily = FontFamily(
+    Font(R.font.fredoka, FontWeight.Normal),
+    Font(R.font.fredoka, FontWeight.Medium),
+    Font(R.font.fredoka, FontWeight.SemiBold),
+    Font(R.font.fredoka, FontWeight.Bold)
 )
 
-val PlusJakartaFontFamily = FontFamily(
-    Font(R.font.plus_jakarta_sans, FontWeight.Normal),
-    Font(R.font.plus_jakarta_sans, FontWeight.Medium),
-    Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
-    Font(R.font.plus_jakarta_sans, FontWeight.Bold)
-)
-
-val JetBrainsMonoFontFamily = FontFamily(
-    Font(R.font.jetbrains_mono, FontWeight.Normal),
-    Font(R.font.jetbrains_mono, FontWeight.Bold)
+val NunitoFontFamily = FontFamily(
+    Font(R.font.nunito, FontWeight.Normal),
+    Font(R.font.nunito, FontWeight.Medium),
+    Font(R.font.nunito, FontWeight.SemiBold),
+    Font(R.font.nunito, FontWeight.Bold),
+    Font(R.font.nunito, FontWeight.ExtraBold)
 )
 
 val MegaCollectorTypography = Typography(
     displayLarge = TextStyle(
-        fontFamily = RajdhaniFontFamily,
+        fontFamily = FredokaFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 36.sp,
+        fontSize = 34.sp,
         lineHeight = 40.sp,
-        letterSpacing = 0.8.sp
+        letterSpacing = 0.2.sp
     ),
     headlineLarge = TextStyle(
-        fontFamily = RajdhaniFontFamily,
+        fontFamily = FredokaFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
+        fontSize = 27.sp,
         lineHeight = 32.sp,
-        letterSpacing = 0.5.sp
+        letterSpacing = 0.1.sp
     ),
     headlineMedium = TextStyle(
-        fontFamily = RajdhaniFontFamily,
-        fontWeight = FontWeight.Bold,
+        fontFamily = FredokaFontFamily,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 22.sp,
-        lineHeight = 26.sp,
-        letterSpacing = 0.4.sp
+        lineHeight = 27.sp
     ),
     titleLarge = TextStyle(
-        fontFamily = RajdhaniFontFamily,
+        fontFamily = FredokaFontFamily,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.3.sp
+        fontSize = 19.sp,
+        lineHeight = 24.sp
     ),
     titleMedium = TextStyle(
-        fontFamily = PlusJakartaFontFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontFamily = NunitoFontFamily,
+        fontWeight = FontWeight.Bold,
         fontSize = 16.sp,
         lineHeight = 22.sp
     ),
     bodyLarge = TextStyle(
-        fontFamily = PlusJakartaFontFamily,
-        fontWeight = FontWeight.Normal,
+        fontFamily = NunitoFontFamily,
+        fontWeight = FontWeight.Medium,
         fontSize = 15.sp,
         lineHeight = 22.sp
     ),
     bodyMedium = TextStyle(
-        fontFamily = PlusJakartaFontFamily,
-        fontWeight = FontWeight.Normal,
-        fontSize = 13.sp,
-        lineHeight = 18.sp
+        fontFamily = NunitoFontFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 13.5.sp,
+        lineHeight = 19.sp
     ),
     labelLarge = TextStyle(
-        fontFamily = PlusJakartaFontFamily,
-        fontWeight = FontWeight.Bold,
+        fontFamily = NunitoFontFamily,
+        fontWeight = FontWeight.ExtraBold,
         fontSize = 13.sp,
         lineHeight = 18.sp,
-        letterSpacing = 0.4.sp
+        letterSpacing = 0.2.sp
     ),
     labelMedium = TextStyle(
-        fontFamily = JetBrainsMonoFontFamily,
+        fontFamily = NunitoFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 11.sp,
-        lineHeight = 14.sp,
-        letterSpacing = 0.5.sp
+        fontSize = 11.5.sp,
+        lineHeight = 15.sp,
+        letterSpacing = 0.2.sp
     ),
     labelSmall = TextStyle(
-        fontFamily = JetBrainsMonoFontFamily,
-        fontWeight = FontWeight.Normal,
-        fontSize = 10.sp,
+        fontFamily = NunitoFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 10.5.sp,
         lineHeight = 13.sp
     )
 )

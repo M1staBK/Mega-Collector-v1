@@ -21,6 +21,9 @@ interface CollectorDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertCatalog(items: List<SkinCatalogEntity>)
 
+    @Query("DELETE FROM skin_catalog")
+    suspend fun clearCatalog()
+
     @Query("SELECT * FROM owned_cards ORDER BY obtainedAtMs DESC, instanceId DESC")
     fun observeOwnedCards(): Flow<List<OwnedCardEntity>>
 
@@ -62,6 +65,7 @@ interface CollectorDao {
 
     @Transaction
     suspend fun replaceCatalog(items: List<SkinCatalogEntity>) {
+        clearCatalog()
         upsertCatalog(items)
     }
 }

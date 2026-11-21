@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
         OwnedCardEntity::class,
         TradeListingEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class MegaCollectorDatabase : RoomDatabase() {
@@ -27,7 +27,10 @@ abstract class MegaCollectorDatabase : RoomDatabase() {
                     context.applicationContext,
                     MegaCollectorDatabase::class.java,
                     "mega_collector_db"
-                ).build().also { INSTANCE = it }
+                )
+                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .build()
+                    .also { INSTANCE = it }
             }
         }
     }

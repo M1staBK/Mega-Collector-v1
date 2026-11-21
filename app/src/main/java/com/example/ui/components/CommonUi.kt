@@ -12,12 +12,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,18 +31,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.SkinRarity
-import com.example.ui.theme.ArenaGold
-import com.example.ui.theme.OutlineSubtle
-import com.example.ui.theme.PrismCyan
-import com.example.ui.theme.SurfaceCard
-import com.example.ui.theme.SurfaceElevated
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.VoidObsidian
+import com.example.ui.theme.DeepCobalt
+import com.example.ui.theme.IceBorder
+import com.example.ui.theme.InkSlate
+import com.example.ui.theme.PureWhiteCard
+import com.example.ui.theme.SkyAzure
+import com.example.ui.theme.SkyFrost
+import com.example.ui.theme.SlateMuted
+import com.example.ui.theme.StudioGold
+import com.example.ui.theme.StudioGoldText
 
 @Composable
 fun RarityChip(
@@ -47,7 +54,7 @@ fun RarityChip(
 ) {
     Surface(
         modifier = modifier,
-        color = VoidObsidian.copy(alpha = 0.85f),
+        color = InkSlate.copy(alpha = 0.88f),
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, rarity.primaryColor)
     ) {
@@ -57,7 +64,7 @@ fun RarityChip(
                 fontWeight = FontWeight.Bold,
                 fontSize = if (compact) 9.sp else 11.sp
             ),
-            color = rarity.primaryColor,
+            color = Color.White,
             modifier = Modifier.padding(
                 horizontal = if (compact) 6.dp else 8.dp,
                 vertical = if (compact) 2.dp else 3.dp
@@ -67,30 +74,103 @@ fun RarityChip(
 }
 
 @Composable
-fun ArenaGoldPill(
-    gold: Int,
+fun CoinsPill(
+    coins: Int,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier,
-        color = SurfaceCard,
+        color = PureWhiteCard,
         shape = RoundedCornerShape(999.dp),
-        border = BorderStroke(1.dp, ArenaGold.copy(alpha = 0.65f))
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.2.dp, StudioGold.copy(alpha = 0.8f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Default.MonetizationOn,
-                contentDescription = "Arena Gold",
-                tint = ArenaGold,
-                modifier = Modifier.size(18.dp)
+                contentDescription = "Coins",
+                tint = StudioGold,
+                modifier = Modifier.size(17.dp)
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = "%,d".format(gold),
-                style = MaterialTheme.typography.labelLarge.copy(color = ArenaGold)
+                text = "%,d".format(coins),
+                style = MaterialTheme.typography.labelLarge.copy(
+                    color = StudioGoldText,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun ArenaGoldPill(
+    gold: Int,
+    modifier: Modifier = Modifier
+) = CoinsPill(coins = gold, modifier = modifier)
+
+@Composable
+fun DiamondsPill(
+    diamonds: Int,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        color = PureWhiteCard,
+        shape = RoundedCornerShape(999.dp),
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.2.dp, SkyAzure.copy(alpha = 0.8f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Diamond,
+                contentDescription = "Diamonds",
+                tint = DeepCobalt,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "%,d".format(diamonds),
+                style = MaterialTheme.typography.labelLarge.copy(
+                    color = DeepCobalt,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun SoundMuteButton(
+    isMuted: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        color = PureWhiteCard,
+        shape = CircleShape,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, if (isMuted) IceBorder else SkyAzure.copy(alpha = 0.5f))
+    ) {
+        IconButton(
+            onClick = onToggle,
+            modifier = Modifier
+                .size(44.dp)
+                .testTag("sound_mute_toggle_button")
+        ) {
+            Icon(
+                imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                contentDescription = if (isMuted) "Unmute sound effects" else "Mute sound effects",
+                tint = if (isMuted) SlateMuted else DeepCobalt,
+                modifier = Modifier.size(20.dp)
             )
         }
     }
@@ -103,9 +183,10 @@ fun MlbbDexCreditCard(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = SurfaceElevated.copy(alpha = 0.9f),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, OutlineSubtle)
+        color = PureWhiteCard,
+        shape = RoundedCornerShape(18.dp),
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, IceBorder)
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -113,9 +194,9 @@ fun MlbbDexCreditCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .background(
-                        Brush.linearGradient(listOf(PrismCyan.copy(alpha = 0.25f), ArenaGold.copy(alpha = 0.2f))),
+                        Brush.linearGradient(listOf(SkyFrost, Color(0xFFDBEAFE))),
                         RoundedCornerShape(12.dp)
                     ),
                 contentAlignment = Alignment.Center
@@ -123,7 +204,7 @@ fun MlbbDexCreditCard(
                 Icon(
                     imageVector = Icons.Default.Public,
                     contentDescription = "MLBBDex API Credit",
-                    tint = PrismCyan,
+                    tint = DeepCobalt,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -132,13 +213,13 @@ fun MlbbDexCreditCard(
                 Text(
                     text = "Data & Skin Catalog by MLBBDex.com",
                     style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary
+                    color = InkSlate
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "Live API: mlbbdex.com/api/v1/skins/ • $skinCount skins indexed",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    color = SlateMuted
                 )
             }
         }
@@ -158,23 +239,31 @@ fun EmptyVaultState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            imageVector = Icons.Default.Style,
-            contentDescription = null,
-            tint = PrismCyan.copy(alpha = 0.5f),
-            modifier = Modifier.size(56.dp)
-        )
-        Spacer(modifier = Modifier.height(12.dp))
+        Surface(
+            color = SkyFrost,
+            shape = CircleShape,
+            modifier = Modifier.size(76.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Style,
+                    contentDescription = null,
+                    tint = DeepCobalt,
+                    modifier = Modifier.size(38.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(14.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.headlineMedium,
-            color = TextPrimary
+            color = InkSlate
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = subtitle,
             style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
+            color = SlateMuted
         )
     }
 }

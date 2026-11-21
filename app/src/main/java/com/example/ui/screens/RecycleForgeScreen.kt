@@ -46,19 +46,20 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.model.OwnedCard
-import com.example.ui.components.ArenaGoldPill
+import com.example.ui.components.CoinsPill
 import com.example.ui.components.EmptyVaultState
 import com.example.ui.components.RarityChip
-import com.example.ui.theme.ArenaGold
+import com.example.ui.theme.DeepCobalt
+import com.example.ui.theme.IceBorder
+import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintNeon
-import com.example.ui.theme.MythicCrimson
-import com.example.ui.theme.OutlineSubtle
-import com.example.ui.theme.PrismCyan
-import com.example.ui.theme.SurfaceCard
-import com.example.ui.theme.SurfaceElevated
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.VoidObsidian
+import com.example.ui.theme.PearlCanvas
+import com.example.ui.theme.PureWhiteCard
+import com.example.ui.theme.SkyFrost
+import com.example.ui.theme.SlateMuted
+import com.example.ui.theme.StudioCrimson
+import com.example.ui.theme.StudioGold
+import com.example.ui.theme.StudioGoldText
 import com.example.ui.viewmodel.MegaCollectorUiState
 
 @Composable
@@ -67,6 +68,8 @@ fun RecycleForgeScreen(
     onRecycleSingle: (OwnedCard) -> Unit,
     onRecycleAllDuplicates: () -> Unit,
     onInspectCard: (Long) -> Unit,
+    onButtonClickSfx: () -> Unit,
+    includeStatusBarPadding: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var pendingConfirmCard by remember { mutableStateOf<OwnedCard?>(null) }
@@ -95,14 +98,14 @@ fun RecycleForgeScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(VoidObsidian)
-            .statusBarsPadding()
+            .background(PearlCanvas)
+            .let { if (includeStatusBarPadding) it.statusBarsPadding() else it }
     ) {
-        // Forge Header
         Surface(
-            color = SurfaceElevated,
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, OutlineSubtle),
+            color = PureWhiteCard,
+            shape = RoundedCornerShape(20.dp),
+            shadowElevation = 3.dp,
+            border = BorderStroke(1.dp, IceBorder),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
@@ -117,24 +120,24 @@ fun RecycleForgeScreen(
                         Icon(
                             imageVector = Icons.Default.Recycling,
                             contentDescription = null,
-                            tint = PrismCyan,
+                            tint = DeepCobalt,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "RECYCLE FORGE",
                             style = MaterialTheme.typography.headlineMedium,
-                            color = TextPrimary
+                            color = InkSlate
                         )
                     }
-                    ArenaGoldPill(gold = uiState.wallet.arenaGold)
+                    CoinsPill(coins = uiState.wallet.coins)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Convert duplicate skins into Arena Gold to buy Mythic & Legend packs. All 1-of-1 Misprints and 1 copy of each skin are protected during batch forge.",
+                    text = "Convert duplicate skins into Coins to buy MEGA Legends Pack bundles. All 1-of-1 Misprints and 1 copy of each skin stay protected during batch forge.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    color = SlateMuted
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -143,9 +146,10 @@ fun RecycleForgeScreen(
                     onClick = onRecycleAllDuplicates,
                     enabled = safeAutoExtras.isNotEmpty(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = ArenaGold,
-                        contentColor = VoidObsidian
+                        containerColor = StudioGold,
+                        contentColor = InkSlate
                     ),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp)
@@ -159,7 +163,7 @@ fun RecycleForgeScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = if (safeAutoExtras.isNotEmpty()) {
-                            "FORGE ${safeAutoExtras.size} DUPLICATES (+%,d GOLD)".format(autoReclaimGold)
+                            "FORGE ${safeAutoExtras.size} DUPLICATES (+%,d COINS)".format(autoReclaimGold)
                         } else {
                             "NO SAFE DUPLICATES TO FORGE"
                         },
@@ -172,7 +176,7 @@ fun RecycleForgeScreen(
         if (uiState.ownedCards.isEmpty()) {
             EmptyVaultState(
                 title = "Nothing to Recycle Yet",
-                subtitle = "Open booster packs in the Shop tab. Any duplicate pulls will appear here ready to forge into Gold!",
+                subtitle = "Open booster packs in the Packs tab. Any duplicate pulls will appear here ready to forge into Coins!",
                 modifier = Modifier.weight(1f)
             )
         } else {
@@ -181,7 +185,7 @@ fun RecycleForgeScreen(
                 text = if (duplicateExtras.isNotEmpty()) "DUPLICATE COPIES (${duplicateExtras.size})"
                 else "ALL VAULT CARDS (INDIVIDUAL RECYCLE)",
                 style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary,
+                color = SlateMuted,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
 
@@ -194,7 +198,10 @@ fun RecycleForgeScreen(
                     RecycleCardRow(
                         card = card,
                         onInspect = { onInspectCard(card.instanceId) },
-                        onRecycleClick = { pendingConfirmCard = card }
+                        onRecycleClick = {
+                            onButtonClickSfx()
+                            pendingConfirmCard = card
+                        }
                     )
                 }
             }
@@ -204,21 +211,21 @@ fun RecycleForgeScreen(
     pendingConfirmCard?.let { card ->
         AlertDialog(
             onDismissRequest = { pendingConfirmCard = null },
-            containerColor = SurfaceElevated,
+            containerColor = PureWhiteCard,
             title = {
                 Text(
                     text = if (card.isMisprint) "Confirm Misprint Recycle" else "Recycle Skin Card?",
-                    color = if (card.isMisprint) MythicCrimson else ArenaGold
+                    color = if (card.isMisprint) StudioCrimson else InkSlate
                 )
             },
             text = {
                 Text(
                     text = if (card.isMisprint) {
-                        "${card.skinName} (${card.serialCode}) is a 1-of-1 Misprint! Are you sure you want to melt it down for +${card.recycleValueGold} Gold?"
+                        "${card.skinName} (${card.serialCode}) is a 1-of-1 Misprint! Are you sure you want to melt it down for +${card.recycleValueGold} Coins?"
                     } else {
-                        "Recycle ${card.heroName} — ${card.skinName} for +${card.recycleValueGold} Arena Gold?"
+                        "Recycle ${card.heroName} — ${card.skinName} for +${card.recycleValueGold} Coins?"
                     },
-                    color = TextPrimary
+                    color = SlateMuted
                 )
             },
             confirmButton = {
@@ -228,14 +235,19 @@ fun RecycleForgeScreen(
                         pendingConfirmCard = null
                         onRecycleSingle(target)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MythicCrimson)
+                    colors = ButtonDefaults.buttonColors(containerColor = StudioCrimson)
                 ) {
-                    Text("Forge +${card.recycleValueGold} Gold", color = Color.White)
+                    Text("Forge +${card.recycleValueGold} Coins", color = Color.White)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingConfirmCard = null }) {
-                    Text("Cancel", color = TextSecondary)
+                TextButton(
+                    onClick = {
+                        onButtonClickSfx()
+                        pendingConfirmCard = null
+                    }
+                ) {
+                    Text("Cancel", color = SlateMuted)
                 }
             }
         )
@@ -249,8 +261,9 @@ private fun RecycleCardRow(
     onRecycleClick: () -> Unit
 ) {
     Surface(
-        color = SurfaceCard,
+        color = PureWhiteCard,
         shape = RoundedCornerShape(16.dp),
+        shadowElevation = 2.dp,
         border = BorderStroke(
             1.dp,
             if (card.isMisprint) MisprintNeon else card.rarity.primaryColor.copy(alpha = 0.45f)
@@ -267,7 +280,7 @@ private fun RecycleCardRow(
                 modifier = Modifier
                     .size(58.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(SurfaceElevated)
+                    .background(SkyFrost)
             ) {
                 if (card.imageUrl.isNotBlank()) {
                     AsyncImage(
@@ -291,7 +304,7 @@ private fun RecycleCardRow(
                         Icon(
                             imageVector = Icons.Default.Bolt,
                             contentDescription = "Misprint",
-                            tint = MisprintNeon,
+                            tint = DeepCobalt,
                             modifier = Modifier.size(14.dp)
                         )
                     }
@@ -300,13 +313,13 @@ private fun RecycleCardRow(
                 Text(
                     text = card.skinName,
                     style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
+                    color = InkSlate,
                     maxLines = 1
                 )
                 Text(
                     text = "${card.heroName} • ${card.serialCode}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
+                    color = SlateMuted,
                     maxLines = 1
                 )
             }
@@ -315,14 +328,15 @@ private fun RecycleCardRow(
 
             OutlinedButton(
                 onClick = onRecycleClick,
-                border = BorderStroke(1.dp, ArenaGold.copy(alpha = 0.7f)),
+                border = BorderStroke(1.2.dp, StudioGold),
+                shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.testTag("recycle_single_${card.instanceId}")
             ) {
                 Text(
                     text = "+${card.recycleValueGold}",
                     style = MaterialTheme.typography.labelLarge,
-                    color = ArenaGold
+                    color = StudioGoldText
                 )
             }
         }

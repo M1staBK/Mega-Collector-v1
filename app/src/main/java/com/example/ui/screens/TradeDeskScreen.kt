@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -64,16 +65,17 @@ import com.example.model.OwnedCard
 import com.example.model.TradeListing
 import com.example.ui.components.EmptyVaultState
 import com.example.ui.components.RarityChip
-import com.example.ui.theme.ArenaGold
+import com.example.ui.theme.DeepCobalt
+import com.example.ui.theme.IceBorder
+import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintNeon
-import com.example.ui.theme.MythicCrimson
-import com.example.ui.theme.OutlineSubtle
-import com.example.ui.theme.PrismCyan
-import com.example.ui.theme.SurfaceCard
-import com.example.ui.theme.SurfaceElevated
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.VoidObsidian
+import com.example.ui.theme.PearlCanvas
+import com.example.ui.theme.PureWhiteCard
+import com.example.ui.theme.SkyFrost
+import com.example.ui.theme.SlateMuted
+import com.example.ui.theme.StudioCrimson
+import com.example.ui.theme.StudioGold
+import com.example.ui.theme.StudioGoldText
 import com.example.ui.viewmodel.MegaCollectorUiState
 
 @Composable
@@ -87,6 +89,8 @@ fun TradeDeskScreen(
     onClearDecodedSlip: () -> Unit,
     onCompleteTrade: (DecodedTradeSlip, OwnedCard) -> Unit,
     onShowToast: (String) -> Unit,
+    onButtonClickSfx: () -> Unit,
+    includeStatusBarPadding: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -102,17 +106,17 @@ fun TradeDeskScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(VoidObsidian)
-            .statusBarsPadding(),
+            .background(PearlCanvas)
+            .let { if (includeStatusBarPadding) it.statusBarsPadding() else it },
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Honest Cloud Sync Notice
+        // Honest Offline P2P Notice
         item {
             Surface(
-                color = SurfaceElevated,
+                color = Color(0xFFFFFBEB),
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, ArenaGold.copy(alpha = 0.45f))
+                border = BorderStroke(1.dp, StudioGold.copy(alpha = 0.55f))
             ) {
                 Row(
                     modifier = Modifier.padding(14.dp),
@@ -121,7 +125,7 @@ fun TradeDeskScreen(
                     Icon(
                         imageVector = Icons.Default.CloudOff,
                         contentDescription = null,
-                        tint = ArenaGold,
+                        tint = StudioGoldText,
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -129,13 +133,13 @@ fun TradeDeskScreen(
                         Text(
                             text = "P2P Trade Slip Mode",
                             style = MaterialTheme.typography.titleMedium,
-                            color = ArenaGold
+                            color = StudioGoldText
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = stringResource(R.string.trade_offline_notice),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
+                            color = SlateMuted
                         )
                     }
                 }
@@ -145,30 +149,31 @@ fun TradeDeskScreen(
         // Section 1: Mint a Shareable Trade Slip
         item {
             Surface(
-                color = SurfaceCard,
-                shape = RoundedCornerShape(18.dp),
-                border = BorderStroke(1.dp, PrismCyan.copy(alpha = 0.45f))
+                color = PureWhiteCard,
+                shape = RoundedCornerShape(20.dp),
+                shadowElevation = 3.dp,
+                border = BorderStroke(1.dp, IceBorder)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.SwapHoriz,
                             contentDescription = null,
-                            tint = PrismCyan,
+                            tint = DeepCobalt,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "MINT TRADE SLIP",
                             style = MaterialTheme.typography.titleLarge,
-                            color = TextPrimary
+                            color = InkSlate
                         )
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "Select a card from your Vault (1-of-1 Misprints included) to generate a shareable trade slip for friends.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
+                        color = SlateMuted
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -177,23 +182,26 @@ fun TradeDeskScreen(
                         Text(
                             text = "No unlisted cards available in your Vault.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
+                            color = SlateMuted
                         )
                     } else {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             items(availableToList, key = { it.instanceId }) { card ->
                                 val isSelected = selectedCard?.instanceId == card.instanceId
                                 Surface(
-                                    color = if (isSelected) SurfaceElevated else VoidObsidian,
+                                    color = if (isSelected) SkyFrost else PearlCanvas,
                                     shape = RoundedCornerShape(12.dp),
                                     border = BorderStroke(
                                         width = if (isSelected) 2.dp else 1.dp,
-                                        color = if (isSelected) ArenaGold else OutlineSubtle
+                                        color = if (isSelected) DeepCobalt else IceBorder
                                     ),
                                     modifier = Modifier
-                                        .width(142.dp)
+                                        .width(146.dp)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .clickable { selectedCard = card }
+                                        .clickable {
+                                            onButtonClickSfx()
+                                            selectedCard = card
+                                        }
                                 ) {
                                     Column(modifier = Modifier.padding(8.dp)) {
                                         Row(
@@ -206,7 +214,7 @@ fun TradeDeskScreen(
                                                 Icon(
                                                     imageVector = Icons.Default.Bolt,
                                                     contentDescription = "Misprint",
-                                                    tint = MisprintNeon,
+                                                    tint = DeepCobalt,
                                                     modifier = Modifier.size(14.dp)
                                                 )
                                             }
@@ -215,14 +223,14 @@ fun TradeDeskScreen(
                                         Text(
                                             text = card.skinName,
                                             style = MaterialTheme.typography.labelLarge,
-                                            color = TextPrimary,
+                                            color = InkSlate,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = card.heroName,
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = TextSecondary,
+                                            color = SlateMuted,
                                             maxLines = 1
                                         )
                                     }
@@ -238,10 +246,10 @@ fun TradeDeskScreen(
                             label = { Text("Seeking (e.g. Legend Gusion or 1/1 Misprint)") },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = PrismCyan,
-                                unfocusedBorderColor = OutlineSubtle,
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary
+                                focusedBorderColor = DeepCobalt,
+                                unfocusedBorderColor = IceBorder,
+                                focusedTextColor = InkSlate,
+                                unfocusedTextColor = InkSlate
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -258,9 +266,10 @@ fun TradeDeskScreen(
                             },
                             enabled = selectedCard != null,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = PrismCyan,
-                                contentColor = VoidObsidian
+                                containerColor = DeepCobalt,
+                                contentColor = Color.White
                             ),
+                            shape = RoundedCornerShape(14.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("mint_trade_slip_button")
@@ -275,34 +284,35 @@ fun TradeDeskScreen(
         // Section 2: Redeem Partner's Trade Slip
         item {
             Surface(
-                color = SurfaceElevated,
-                shape = RoundedCornerShape(18.dp),
-                border = BorderStroke(1.dp, OutlineSubtle)
+                color = PureWhiteCard,
+                shape = RoundedCornerShape(20.dp),
+                shadowElevation = 3.dp,
+                border = BorderStroke(1.dp, IceBorder)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = "REDEEM FRIEND'S TRADE SLIP",
                         style = MaterialTheme.typography.titleLarge,
-                        color = ArenaGold
+                        color = StudioGoldText
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "Paste a MEGA-TRADE-V1:... code sent by another collector to preview and swap.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
+                        color = SlateMuted
                     )
                     Spacer(modifier = Modifier.height(10.dp))
 
                     OutlinedTextField(
                         value = pasteCodeInput,
                         onValueChange = { pasteCodeInput = it },
-                        placeholder = { Text("MEGA-TRADE-V1:...", color = TextSecondary) },
+                        placeholder = { Text("MEGA-TRADE-V1:...", color = SlateMuted) },
                         maxLines = 3,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = ArenaGold,
-                            unfocusedBorderColor = OutlineSubtle,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
+                            focusedBorderColor = StudioGold,
+                            unfocusedBorderColor = IceBorder,
+                            focusedTextColor = InkSlate,
+                            unfocusedTextColor = InkSlate
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -315,9 +325,10 @@ fun TradeDeskScreen(
                         onClick = { onDecodeSlip(pasteCodeInput) },
                         enabled = pasteCodeInput.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = ArenaGold,
-                            contentColor = VoidObsidian
+                            containerColor = StudioGold,
+                            contentColor = InkSlate
                         ),
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("decode_trade_slip_button")
@@ -328,7 +339,7 @@ fun TradeDeskScreen(
                     uiState.decodedSlipPreview?.let { slip ->
                         Spacer(modifier = Modifier.height(12.dp))
                         Surface(
-                            color = SurfaceCard,
+                            color = SkyFrost,
                             shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(
                                 1.5.dp,
@@ -342,25 +353,25 @@ fun TradeDeskScreen(
                                     Text(
                                         text = "From ${slip.senderAlias}",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = TextSecondary
+                                        color = SlateMuted
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = "${slip.heroName} — ${slip.skinName}",
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = TextPrimary
+                                    color = InkSlate
                                 )
                                 Text(
                                     text = "${slip.serialCode}${if (slip.isMisprint) " • 1/1 MISPRINT" else ""}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (slip.isMisprint) MisprintNeon else ArenaGold
+                                    color = if (slip.isMisprint) DeepCobalt else StudioGoldText
                                 )
                                 if (slip.seekingNote.isNotBlank()) {
                                     Text(
                                         text = "Seeking: ${slip.seekingNote}",
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = TextSecondary
+                                        color = SlateMuted
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(10.dp))
@@ -369,14 +380,17 @@ fun TradeDeskScreen(
                                         onClick = onClearDecodedSlip,
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("Dismiss", color = TextSecondary)
+                                        Text("Dismiss", color = SlateMuted)
                                     }
                                     Button(
-                                        onClick = { showPickOfferDialogForSlip = slip },
+                                        onClick = {
+                                            onButtonClickSfx()
+                                            showPickOfferDialogForSlip = slip
+                                        },
                                         enabled = uiState.ownedCards.isNotEmpty(),
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = PrismCyan,
-                                            contentColor = VoidObsidian
+                                            containerColor = DeepCobalt,
+                                            contentColor = Color.White
                                         ),
                                         modifier = Modifier.weight(1f)
                                     ) {
@@ -395,7 +409,7 @@ fun TradeDeskScreen(
             Text(
                 text = "YOUR ACTIVE TRADE LISTINGS (${uiState.tradeListings.size})",
                 style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary
+                color = SlateMuted
             )
         }
 
@@ -411,11 +425,13 @@ fun TradeDeskScreen(
                 TradeListingRow(
                     listing = listing,
                     onCopyCode = {
+                        onButtonClickSfx()
                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("MEGA COLLECTOR Trade Slip", listing.tradeCode))
                         onShowToast("Trade Slip copied to clipboard!")
                     },
                     onShareCode = {
+                        onButtonClickSfx()
                         val sendIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(
@@ -434,9 +450,9 @@ fun TradeDeskScreen(
     showPickOfferDialogForSlip?.let { slip ->
         AlertDialog(
             onDismissRequest = { showPickOfferDialogForSlip = null },
-            containerColor = SurfaceElevated,
+            containerColor = PureWhiteCard,
             title = {
-                Text("Select Card to Swap", color = ArenaGold)
+                Text("Select Card to Swap", color = InkSlate)
             },
             text = {
                 LazyColumn(
@@ -445,7 +461,7 @@ fun TradeDeskScreen(
                 ) {
                     items(uiState.ownedCards, key = { it.instanceId }) { offered ->
                         Surface(
-                            color = SurfaceCard,
+                            color = SkyFrost,
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, offered.rarity.primaryColor.copy(alpha = 0.6f)),
                             modifier = Modifier
@@ -465,12 +481,12 @@ fun TradeDeskScreen(
                                     Text(
                                         text = "${offered.heroName} — ${offered.skinName}",
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = TextPrimary
+                                        color = InkSlate
                                     )
                                     Text(
                                         text = "${offered.rarity.displayName} • ${offered.serialCode}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (offered.isMisprint) MisprintNeon else TextSecondary
+                                        color = if (offered.isMisprint) DeepCobalt else SlateMuted
                                     )
                                 }
                             }
@@ -480,8 +496,13 @@ fun TradeDeskScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { showPickOfferDialogForSlip = null }) {
-                    Text("Cancel", color = TextSecondary)
+                TextButton(
+                    onClick = {
+                        onButtonClickSfx()
+                        showPickOfferDialogForSlip = null
+                    }
+                ) {
+                    Text("Cancel", color = SlateMuted)
                 }
             }
         )
@@ -496,8 +517,9 @@ private fun TradeListingRow(
     onCancel: () -> Unit
 ) {
     Surface(
-        color = SurfaceCard,
+        color = PureWhiteCard,
         shape = RoundedCornerShape(16.dp),
+        shadowElevation = 2.dp,
         border = BorderStroke(
             1.dp,
             if (listing.isMisprint) MisprintNeon else listing.rarity.primaryColor.copy(alpha = 0.55f)
@@ -513,7 +535,7 @@ private fun TradeListingRow(
                 modifier = Modifier
                     .size(54.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(SurfaceElevated)
+                    .background(SkyFrost)
             ) {
                 if (listing.imageUrl.isNotBlank()) {
                     AsyncImage(
@@ -533,27 +555,27 @@ private fun TradeListingRow(
                 Text(
                     text = "${listing.heroName} • ${listing.skinName}",
                     style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
+                    color = InkSlate,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "Seeking: ${listing.seekingNote}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
+                    color = SlateMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
             IconButton(onClick = onCopyCode) {
-                Icon(Icons.Default.ContentCopy, contentDescription = "Copy trade slip", tint = PrismCyan)
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy trade slip", tint = DeepCobalt)
             }
             IconButton(onClick = onShareCode) {
-                Icon(Icons.Default.Share, contentDescription = "Share trade slip", tint = ArenaGold)
+                Icon(Icons.Default.Share, contentDescription = "Share trade slip", tint = StudioGoldText)
             }
             IconButton(onClick = onCancel) {
-                Icon(Icons.Default.DeleteOutline, contentDescription = "Cancel listing", tint = MythicCrimson)
+                Icon(Icons.Default.DeleteOutline, contentDescription = "Cancel listing", tint = StudioCrimson)
             }
         }
     }

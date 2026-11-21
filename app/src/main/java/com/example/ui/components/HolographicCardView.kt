@@ -41,12 +41,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -61,15 +65,17 @@ import com.example.model.MisprintAnomaly
 import com.example.model.OwnedCard
 import com.example.model.SkinRarity
 import com.example.ui.sensors.CardTiltState
-import com.example.ui.theme.ArenaGold
+import com.example.ui.theme.CardBackDeep
+import com.example.ui.theme.CardBackEdge
+import com.example.ui.theme.CardBackRoyal
+import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintMagenta
 import com.example.ui.theme.MisprintNeon
-import com.example.ui.theme.PrismCyan
-import com.example.ui.theme.SurfaceCard
-import com.example.ui.theme.SurfaceElevated
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.VoidObsidian
+import com.example.ui.theme.PureWhiteCard
+import com.example.ui.theme.SkyAzure
+import com.example.ui.theme.SkyFrost
+import com.example.ui.theme.StudioGold
+import com.example.ui.theme.StudioGoldBright
 import kotlin.math.roundToInt
 
 @Composable
@@ -108,7 +114,7 @@ fun HolographicCardView(
         val a = card.misprintAnomaly?.accentA ?: MisprintNeon
         val b = card.misprintAnomaly?.accentB ?: MisprintMagenta
         Brush.linearGradient(
-            colors = listOf(a, ArenaGold, b, PrismCyan, a),
+            colors = listOf(a, StudioGoldBright, b, SkyAzure, a),
             start = Offset(roll * 12f, pitch * 12f),
             end = Offset(420f + roll * 18f, 640f + pitch * 18f)
         )
@@ -116,8 +122,8 @@ fun HolographicCardView(
         Brush.linearGradient(
             colors = listOf(
                 card.rarity.primaryColor,
-                card.rarity.primaryColor.copy(alpha = 0.45f),
-                Color.White.copy(alpha = 0.7f),
+                Color.White,
+                card.rarity.primaryColor.copy(alpha = 0.75f),
                 card.rarity.secondaryColor
             ),
             start = Offset(roll * 10f, pitch * 10f),
@@ -150,10 +156,16 @@ fun HolographicCardView(
                 rotationY = roll
                 cameraDistance = 14f * density
             }
+            .shadow(
+                elevation = if (compact) 6.dp else 14.dp,
+                shape = cardShape,
+                ambientColor = card.rarity.primaryColor.copy(alpha = 0.35f),
+                spotColor = InkSlate.copy(alpha = 0.28f)
+            )
             .clip(cardShape)
-            .background(SurfaceCard)
+            .background(Color(0xFF101935))
             .border(
-                width = if (card.isMisprint) 2.5.dp else if (card.rarity.tierRank >= 4) 2.dp else 1.2.dp,
+                width = if (card.isMisprint) 3.dp else if (card.rarity.tierRank >= 4) 2.5.dp else 1.8.dp,
                 brush = borderBrush,
                 shape = cardShape
             )
@@ -205,17 +217,17 @@ fun HolographicCardView(
             }
         }
 
-        // Layer 2: Atmospheric dark gradient vignette so card typography pops
+        // Layer 2: Crisp studio vignette so typography over artwork always has high contrast
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         colorStops = arrayOf(
-                            0.0f to VoidObsidian.copy(alpha = 0.55f),
+                            0.0f to Color(0xFF0A1124).copy(alpha = 0.48f),
                             0.35f to Color.Transparent,
-                            0.65f to VoidObsidian.copy(alpha = 0.35f),
-                            1.0f to VoidObsidian.copy(alpha = 0.94f)
+                            0.62f to Color(0xFF0A1124).copy(alpha = 0.32f),
+                            1.0f to Color(0xFF091022).copy(alpha = 0.94f)
                         )
                     )
                 )
@@ -230,13 +242,12 @@ fun HolographicCardView(
                     val glareCenterX = size.width * (0.5f + (roll / 36f)).coerceIn(-0.3f, 1.3f)
                     val glareCenterY = size.height * (0.5f - (pitch / 36f)).coerceIn(-0.3f, 1.3f)
                     val glareIntensity = when {
-                        card.isMisprint -> 0.42f
-                        card.rarity.tierRank >= 5 -> 0.34f
+                        card.isMisprint -> 0.44f
+                        card.rarity.tierRank >= 5 -> 0.36f
                         card.rarity.tierRank >= 3 -> 0.25f
                         else -> 0.14f
                     }
 
-                    // Specular gyroscope spotlight reflection
                     drawRect(
                         brush = Brush.radialGradient(
                             colors = listOf(
@@ -250,16 +261,15 @@ fun HolographicCardView(
                         blendMode = BlendMode.Screen
                     )
 
-                    // Diagonal holographic rainbow sweep reacting to tilt + subtle idle motion
                     if (card.rarity.tierRank >= 3 || card.isMisprint) {
                         val sweepOffset = (shimmerShift + roll * 0.025f) * size.width
                         drawRect(
                             brush = Brush.linearGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    PrismCyan.copy(alpha = 0.16f),
-                                    ArenaGold.copy(alpha = 0.20f),
-                                    MisprintMagenta.copy(alpha = 0.16f),
+                                    SkyAzure.copy(alpha = 0.18f),
+                                    StudioGoldBright.copy(alpha = 0.22f),
+                                    MisprintMagenta.copy(alpha = 0.18f),
                                     Color.Transparent
                                 ),
                                 start = Offset(sweepOffset - size.width * 0.45f, 0f),
@@ -271,7 +281,7 @@ fun HolographicCardView(
                 }
         )
 
-        // Layer 4: 1-of-1 Misprint Glitch Scanlines & Diagonal Watermark
+        // Layer 4: 1-of-1 Misprint Glitch Scanlines
         if (card.isMisprint) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val stripeCount = 14
@@ -280,7 +290,7 @@ fun HolographicCardView(
                     if (i % 2 == 0) {
                         val y = i * step + glitchJitter * 1.8f
                         drawLine(
-                            color = MisprintNeon.copy(alpha = 0.14f),
+                            color = MisprintNeon.copy(alpha = 0.16f),
                             start = Offset(0f, y),
                             end = Offset(size.width, y),
                             strokeWidth = 2f
@@ -303,7 +313,6 @@ fun HolographicCardView(
                 .padding(if (compact) 8.dp else 14.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Top Row: Rarity Pill + 1/1 Misprint Stamp
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -312,9 +321,9 @@ fun HolographicCardView(
                 RarityChip(rarity = card.rarity, compact = compact)
                 if (card.isMisprint) {
                     Surface(
-                        color = MisprintMagenta.copy(alpha = 0.92f),
+                        color = MisprintMagenta,
                         shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(1.dp, ArenaGold)
+                        border = BorderStroke(1.dp, StudioGoldBright)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -323,7 +332,7 @@ fun HolographicCardView(
                             Icon(
                                 imageVector = Icons.Default.Bolt,
                                 contentDescription = "Misprint",
-                                tint = ArenaGold,
+                                tint = StudioGoldBright,
                                 modifier = Modifier.size(if (compact) 11.dp else 13.dp)
                             )
                             Spacer(modifier = Modifier.width(2.dp))
@@ -340,13 +349,10 @@ fun HolographicCardView(
                 }
             }
 
-            // Bottom Info Plate
-            Column(
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 if (card.isMisprint && card.misprintAnomaly != null && !compact) {
                     Surface(
-                        color = VoidObsidian.copy(alpha = 0.85f),
+                        color = Color(0xFF0F172A).copy(alpha = 0.9f),
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(1.dp, card.misprintAnomaly.accentA)
                     ) {
@@ -365,7 +371,7 @@ fun HolographicCardView(
                 Text(
                     text = card.heroName.uppercase(),
                     style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
-                    color = card.rarity.primaryColor,
+                    color = StudioGoldBright,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -376,7 +382,7 @@ fun HolographicCardView(
                     } else {
                         MaterialTheme.typography.headlineMedium
                     },
-                    color = TextPrimary,
+                    color = Color.White,
                     maxLines = if (compact) 1 else 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -393,14 +399,14 @@ fun HolographicCardView(
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontSize = if (compact) 9.sp else 11.sp
                         ),
-                        color = if (card.isMisprint) ArenaGold else TextSecondary,
+                        color = if (card.isMisprint) StudioGoldBright else Color(0xFFCBD5E1),
                         maxLines = 1
                     )
                     if (!compact) {
                         Text(
                             text = card.role,
                             style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary
+                            color = Color(0xFFCBD5E1)
                         )
                     }
                 }
@@ -413,65 +419,110 @@ fun HolographicCardView(
 fun CardBackView(
     rarityHint: SkinRarity,
     isMisprint: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showTeaserLabel: Boolean = true
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "card_back_glow")
     val pulse by infiniteTransition.animateFloat(
-        initialValue = 0.55f,
+        initialValue = 0.65f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = if (isMisprint || rarityHint.tierRank >= 5) 550 else 1100),
+            animation = tween(durationMillis = if (isMisprint || rarityHint.tierRank >= 5) 600 else 1200),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulse"
     )
 
-    val frameColor = if (isMisprint) MisprintNeon else rarityHint.primaryColor
+    val frameColor = when {
+        isMisprint -> MisprintNeon
+        rarityHint.tierRank >= SkinRarity.EPIC.tierRank -> rarityHint.primaryColor
+        else -> StudioGoldBright
+    }
     val shape = RoundedCornerShape(22.dp)
 
+    // Completely opaque base (CardBackDeep) so underlying UI never bleeds through
     Box(
         modifier = modifier
             .aspectRatio(0.68f)
+            .shadow(
+                elevation = 14.dp,
+                shape = shape,
+                ambientColor = InkSlate.copy(alpha = 0.3f),
+                spotColor = CardBackDeep.copy(alpha = 0.4f)
+            )
             .clip(shape)
+            .background(CardBackDeep)
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        frameColor.copy(alpha = 0.34f * pulse),
-                        SurfaceElevated,
-                        VoidObsidian
+                        CardBackRoyal,
+                        CardBackEdge,
+                        CardBackDeep
                     )
                 )
             )
             .border(
-                width = 2.5.dp,
+                width = 3.dp,
                 brush = Brush.linearGradient(
                     colors = listOf(
+                        PureWhiteCard,
+                        StudioGoldBright,
                         frameColor.copy(alpha = pulse),
-                        ArenaGold.copy(alpha = 0.7f * pulse),
-                        frameColor.copy(alpha = pulse)
+                        StudioGoldBright
                     )
                 ),
                 shape = shape
             ),
         contentAlignment = Alignment.Center
     ) {
+        // Ornate TCG geometric card-back linework
+        Canvas(modifier = Modifier.fillMaxSize().padding(14.dp)) {
+            drawRoundRect(
+                color = StudioGoldBright.copy(alpha = 0.35f),
+                cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx()),
+                style = Stroke(width = 2.dp.toPx())
+            )
+            drawRoundRect(
+                color = frameColor.copy(alpha = 0.25f),
+                topLeft = Offset(8.dp.toPx(), 8.dp.toPx()),
+                size = Size(size.width - 16.dp.toPx(), size.height - 16.dp.toPx()),
+                cornerRadius = CornerRadius(10.dp.toPx(), 10.dp.toPx()),
+                style = Stroke(width = 1.dp.toPx())
+            )
+            // Corner diamonds
+            val pad = 20.dp.toPx()
+            val corners = listOf(
+                Offset(pad, pad),
+                Offset(size.width - pad, pad),
+                Offset(pad, size.height - pad),
+                Offset(size.width - pad, size.height - pad)
+            )
+            corners.forEach { c ->
+                drawCircle(
+                    color = StudioGoldBright.copy(alpha = 0.45f),
+                    radius = 4.dp.toPx(),
+                    center = c
+                )
+            }
+        }
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(20.dp)
+            modifier = Modifier.padding(22.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(84.dp)
+                    .size(88.dp)
                     .clip(CircleShape)
-                    .background(frameColor.copy(alpha = 0.18f))
-                    .border(2.dp, frameColor.copy(alpha = pulse), CircleShape),
+                    .background(CardBackDeep)
+                    .border(2.5.dp, frameColor.copy(alpha = pulse), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = if (isMisprint) Icons.Default.Bolt else Icons.Default.AutoAwesome,
-                    contentDescription = "Hidden card mystery aura",
-                    tint = if (isMisprint) MisprintNeon else frameColor,
+                    contentDescription = "Hidden card back crest",
+                    tint = if (isMisprint) MisprintNeon else StudioGoldBright,
                     modifier = Modifier.size(44.dp)
                 )
             }
@@ -479,21 +530,29 @@ fun CardBackView(
             Text(
                 text = "MEGA COLLECTOR",
                 style = MaterialTheme.typography.titleLarge,
-                color = ArenaGold
+                color = StudioGoldBright
             )
-            Spacer(modifier = Modifier.height(6.dp))
-            val teaserText = when {
-                isMisprint -> "ANOMALY SIGNAL DETECTED"
-                rarityHint == SkinRarity.LEGEND -> "MYTHIC RESONANCE SURGING"
-                rarityHint == SkinRarity.COLLECTOR -> "GOLD VAULT SIGNATURE"
-                rarityHint == SkinRarity.EPIC -> "HIGH ENERGY AURA"
-                else -> "TAP TO REVEAL"
+            if (showTeaserLabel) {
+                Spacer(modifier = Modifier.height(6.dp))
+                val teaserText = when {
+                    isMisprint -> "1/1 ANOMALY PULSE"
+                    rarityHint.tierRank >= SkinRarity.COLLECTOR.tierRank -> "MYTHIC AURA DETECTED"
+                    rarityHint.tierRank >= SkinRarity.EPIC.tierRank -> "HIGH FOIL RESONANCE"
+                    else -> "TAP, SWIPE, OR PINCH"
+                }
+                Surface(
+                    color = CardBackDeep.copy(alpha = 0.9f),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.dp, frameColor.copy(alpha = 0.6f))
+                ) {
+                    Text(
+                        text = teaserText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = frameColor.copy(alpha = pulse),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
             }
-            Text(
-                text = teaserText,
-                style = MaterialTheme.typography.labelMedium,
-                color = frameColor.copy(alpha = pulse)
-            )
         }
     }
 }
@@ -504,9 +563,9 @@ private fun SkinFallbackArt(card: OwnedCard, modifier: Modifier = Modifier) {
         modifier = modifier.background(
             Brush.linearGradient(
                 colors = listOf(
-                    card.rarity.secondaryColor.copy(alpha = 0.85f),
-                    SurfaceElevated,
-                    VoidObsidian
+                    card.rarity.secondaryColor,
+                    CardBackRoyal,
+                    CardBackDeep
                 )
             )
         ),
@@ -515,7 +574,7 @@ private fun SkinFallbackArt(card: OwnedCard, modifier: Modifier = Modifier) {
         Icon(
             imageVector = if (card.rarity.tierRank >= 4) Icons.Default.Star else Icons.Default.Shield,
             contentDescription = null,
-            tint = card.rarity.primaryColor.copy(alpha = 0.35f),
+            tint = SkyFrost.copy(alpha = 0.35f),
             modifier = Modifier.size(72.dp)
         )
     }
