@@ -185,6 +185,7 @@ class CollectorRepository(
                 )
             }
 
+            dao.backfillOwnedCardImages()
             prefs.markCatalogSynced(
                 timestampMs = System.currentTimeMillis(),
                 schemaVersion = PlayerPreferencesStore.CURRENT_CATALOG_SCHEMA_VERSION

@@ -110,6 +110,7 @@ object SkinJsonParser {
             ?: extractArray(parsed, listOf("skins", "data", "items"))
             ?: return emptyList()
 
+        val heroArt = HeroArt.from(heroContainer)
         val items = ArrayList<SkinCatalogItem>(skinsArray.length())
         for (i in 0 until skinsArray.length()) {
             val obj = skinsArray.optJSONObject(i) ?: continue
@@ -118,9 +119,37 @@ object SkinJsonParser {
                 index = i,
                 defaultHeroName = heroName,
                 defaultRole = heroRole
-            )?.let { items.add(it) }
+            )?.let { items.add(heroArt.fillImage(it)) }
         }
         return items.distinctBy { it.id }
+    }
+
+    /**
+     * Hero detail skins carry no image of their own: mlbbdex lists the art on the hero, in
+     * `illustrations` (skin name -> path). Skins missing from it fall back to the hero portrait.
+     */
+    private class HeroArt(
+        private val illustrationsByName: Map<String, String>,
+        private val portrait: String
+    ) {
+        fun fillImage(item: SkinCatalogItem): SkinCatalogItem {
+            if (item.imageUrl.isNotBlank()) return item
+            val path = illustrationsByName[item.skinName.lowercase()] ?: portrait
+            return item.copy(imageUrl = normalizeImageUrl(path))
+        }
+
+        companion object {
+            fun from(hero: JSONObject): HeroArt {
+                val illustrations = hero.optJSONObject("illustrations")
+                val byName = HashMap<String, String>()
+                illustrations?.keys()?.forEach { name ->
+                    val path = illustrations.optString(name)
+                    if (path.isNotBlank()) byName[name.lowercase()] = path
+                }
+                val portrait = hero.optJSONObject("images")?.optString("portrait").orEmpty()
+                return HeroArt(byName, portrait)
+            }
+        }
     }
 
     private fun extractArray(parsed: Any?, candidateKeys: List<String>): JSONArray? {
