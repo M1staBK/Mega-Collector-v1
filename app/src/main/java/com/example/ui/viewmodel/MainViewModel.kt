@@ -3,20 +3,31 @@ package com.example.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import coil.Coil
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.example.audio.PackSoundEngine
 import com.example.data.local.HourlyChargeStatus
 import com.example.data.local.MegaCollectorDatabase
 import com.example.data.local.PlayerPreferencesStore
 import com.example.data.local.PlayerWalletState
+import com.example.data.remote.AuthenticatedUser
+import com.example.data.remote.FirestoreCollectorService
+import com.example.data.remote.RoneArenaRepository
 import com.example.data.repository.CollectorRepository
 import com.example.model.AchievementBadgeUi
 import com.example.model.AchievementCatalog
-import com.example.model.BazaarMarketCatalog
-import com.example.model.BazaarTraderListing
+import com.example.model.CollectorHistoryEvent
+import com.example.model.CollectorHistoryType
+import com.example.model.CollectorPublicProfile
 import com.example.model.DailyRewardTier
 import com.example.model.DecodedTradeSlip
 import com.example.model.DiamondExchangeOption
+import com.example.model.MetaHeroStats
+import com.example.model.MetaRankFilter
+import com.example.model.MetaSortMode
 import com.example.model.OwnedCard
+import com.example.model.P2PTradeListing
 import com.example.model.PackBundleOption
 import com.example.model.PackSatinTheme
 import com.example.model.QuestUiItem
@@ -24,6 +35,8 @@ import com.example.model.QuizQuestionBank
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.TradeListing
+import com.example.ui.screens.MetaGuidesUiState
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,7 +83,10 @@ data class MegaCollectorUiState(
     val catalog: List<SkinCatalogItem> = emptyList(),
     val ownedCards: List<OwnedCard> = emptyList(),
     val tradeListings: List<TradeListing> = emptyList(),
-    val bazaarListings: List<BazaarTraderListing> = emptyList(),
+    val openP2PListings: List<P2PTradeListing> = emptyList(),
+    val historyEvents: List<CollectorHistoryEvent> = emptyList(),
+    val viewingTraderProfile: CollectorPublicProfile? = null,
+    val metaState: MetaGuidesUiState = MetaGuidesUiState(),
     val quests: List<QuestUiItem> = emptyList(),
     val achievements: List<AchievementBadgeUi> = emptyList(),
     val syncStatus: CatalogSyncStatus = CatalogSyncStatus.Idle,
@@ -91,15 +107,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = PlayerPreferencesStore(application)
     val repository = CollectorRepository(db.collectorDao(), prefs)
     val soundEngine = PackSoundEngine(application)
+    private val firestoreService = FirestoreCollectorService(application)
+    private val roneArenaRepo = RoneArenaRepository(application)
 
+    private val _activeUser = MutableStateFlow<AuthenticatedUser?>(null)
     private val _syncStatus = MutableStateFlow<CatalogSyncStatus>(CatalogSyncStatus.Idle)
     private val _packSession = MutableStateFlow<PackOpeningSession?>(null)
     private val _isOpeningPack = MutableStateFlow(false)
     private val _decodedSlipPreview = MutableStateFlow<DecodedTradeSlip?>(null)
     private val _snackbarMessage = MutableStateFlow<String?>(null)
-    private val _bazaarSeed = MutableStateFlow(0)
+    private val _openP2PListings = MutableStateFlow<List<P2PTradeListing>>(emptyList())
+    private val _historyEvents = MutableStateFlow<List<CollectorHistoryEvent>>(emptyList())
+    private val _viewingTraderProfile = MutableStateFlow<CollectorPublicProfile?>(null)
+    private val _metaState = MutableStateFlow(MetaGuidesUiState())
 
     private var lastSatinThemeId: String? = null
+    private var historyListenerJob: Job? = null
+    private var openP2PJob: Job? = null
+    private var sellerP2PJob: Job? = null
+    private val settlingListingIds = HashSet<String>()
 
     private val clockTickFlow = flow {
         while (true) {
@@ -116,7 +142,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val isOpeningPack: Boolean,
         val decodedSlip: DecodedTradeSlip?,
         val snackbar: String?,
-        val bazaarSeed: Int,
+        val openP2PListings: List<P2PTradeListing>,
+        val historyEvents: List<CollectorHistoryEvent>,
+        val viewingTraderProfile: CollectorPublicProfile?,
+        val metaState: MetaGuidesUiState,
         val nowMs: Long
     )
 
@@ -126,7 +155,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isOpeningPack,
         _decodedSlipPreview,
         _snackbarMessage,
-        _bazaarSeed
+        _openP2PListings,
+        _historyEvents,
+        _viewingTraderProfile,
+        _metaState,
+        clockTickFlow
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         EphemeralState(
@@ -135,11 +168,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isOpeningPack = values[2] as Boolean,
             decodedSlip = values[3] as DecodedTradeSlip?,
             snackbar = values[4] as String?,
-            bazaarSeed = values[5] as Int,
-            nowMs = System.currentTimeMillis()
+            openP2PListings = values[5] as List<P2PTradeListing>,
+            historyEvents = values[6] as List<CollectorHistoryEvent>,
+            viewingTraderProfile = values[7] as CollectorPublicProfile?,
+            metaState = values[8] as MetaGuidesUiState,
+            nowMs = values[9] as Long
         )
-    }.combine(clockTickFlow) { eph, nowMs ->
-        eph.copy(nowMs = nowMs)
     }
 
     val uiState: StateFlow<MegaCollectorUiState> = combine(
@@ -169,11 +203,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             catalog = catalog,
             ownedCards = owned,
             tradeListings = trades,
-            bazaarListings = BazaarMarketCatalog.buildDailyBazaarListings(
-                catalog = catalog,
-                epochDay = today,
-                rotationSeed = eph.bazaarSeed
-            ),
+            openP2PListings = eph.openP2PListings,
+            historyEvents = eph.historyEvents,
+            viewingTraderProfile = eph.viewingTraderProfile,
+            metaState = eph.metaState,
             quests = repository.buildQuestItems(wallet),
             achievements = AchievementCatalog.evaluate(wallet, owned),
             syncStatus = if (catalog.isNotEmpty() && eph.syncStatus is CatalogSyncStatus.Idle) {
@@ -205,22 +238,150 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val wallet = repository.walletFlow.first()
             soundEngine.setMuted(wallet.soundMuted)
 
-            val today = repository.currentLocalEpochDay()
-            val alreadySyncedToday = wallet.catalogSyncedEpochDay >= today &&
+            // True 24-hour auto-sync window — never re-sync on every cold launch!
+            val elapsedSinceSync = System.currentTimeMillis() - wallet.catalogLastSyncedMs
+            val within24h = wallet.catalogLastSyncedMs > 0L &&
+                elapsedSinceSync in 0L until 86_400_000L &&
                 wallet.catalogSchemaVersion >= PlayerPreferencesStore.CURRENT_CATALOG_SCHEMA_VERSION &&
-                count >= 950
+                count > 0
 
-            if (alreadySyncedToday) {
+            if (within24h) {
                 _syncStatus.value = CatalogSyncStatus.Synced(count)
             } else {
                 syncCatalog()
             }
+
+            // Pre-warm Coil disk cache for owned cards so art opens instantaneously
+            val ownedSnapshot = db.collectorDao().getAllOwnedOnce()
+            warmImageUrls(ownedSnapshot.take(24).map { it.imageUrl })
         }
     }
 
     override fun onCleared() {
         super.onCleared()
         soundEngine.release()
+    }
+
+    fun bindAuthenticatedUser(user: AuthenticatedUser?) {
+        val prevUid = _activeUser.value?.uid
+        _activeUser.value = user
+        if (prevUid == user?.uid && historyListenerJob != null) return
+
+        historyListenerJob?.cancel()
+        openP2PJob?.cancel()
+        sellerP2PJob?.cancel()
+        _historyEvents.value = emptyList()
+        _openP2PListings.value = emptyList()
+        _viewingTraderProfile.value = null
+
+        if (user == null) return
+
+        viewModelScope.launch {
+            repository.seedAliasFromGoogleIfDefault(user.displayName)
+            syncCloudProfileNow()
+        }
+
+        historyListenerJob = viewModelScope.launch {
+            firestoreService.observeHistoryEvents(user.uid).collect { events ->
+                _historyEvents.value = events
+            }
+        }
+
+        openP2PJob = viewModelScope.launch {
+            firestoreService.observeOpenP2PListings().collect { list ->
+                _openP2PListings.value = list
+            }
+        }
+
+        sellerP2PJob = viewModelScope.launch {
+            firestoreService.observeSellerP2PListings(user.uid).collect { myListings ->
+                for (listing in myListings) {
+                    if (listing.status == "COMPLETED" && !listing.sellerSettled && settlingListingIds.add(listing.id)) {
+                        repository.settleSoldP2PListing(listing)
+                            .onSuccess { received ->
+                                firestoreService.markListingSellerSettled(listing.id)
+                                recordCloudHistory(
+                                    type = CollectorHistoryType.TRADE,
+                                    title = "P2P Listing Accepted!",
+                                    detail = "Traded ${listing.skinName} with ${listing.acceptedByName} for ${received.skinName}",
+                                    rarityName = received.rarity.name
+                                )
+                                syncCloudProfileNow()
+                                _snackbarMessage.value = "${listing.acceptedByName} swapped for your ${listing.skinName}! Received ${received.skinName}."
+                            }
+                            .onFailure {
+                                settlingListingIds.remove(listing.id)
+                            }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun warmImageUrls(urls: List<String>) {
+        val ctx = getApplication<Application>()
+        val loader = Coil.imageLoader(ctx)
+        urls.asSequence()
+            .filter { it.isNotBlank() }
+            .distinct()
+            .take(24)
+            .forEach { url ->
+                val req = ImageRequest.Builder(ctx)
+                    .data(url)
+                    .size(920, 920)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .build()
+                loader.enqueue(req)
+            }
+    }
+
+    private fun syncCloudProfileNow() {
+        val user = _activeUser.value ?: return
+        viewModelScope.launch {
+            val wallet = repository.walletFlow.first()
+            val owned = db.collectorDao().getAllOwnedOnce().map { it.toDomain() }
+            val prestige = owned.sumOf { it.prestigeScore }
+            val rank = when {
+                prestige >= 15000 -> "Immortal Collector"
+                prestige >= 7500 -> "Mythical Glory"
+                prestige >= 3500 -> "Mythic"
+                prestige >= 1500 -> "Legend"
+                prestige >= 500 -> "Epic"
+                else -> "Warrior"
+            }
+            val pinned = AchievementCatalog.evaluate(wallet, owned)
+                .filter { it.isPinned }
+                .map { it.definition.id }
+            firestoreService.syncUserAndPublicProfile(
+                user = user,
+                wallet = wallet,
+                ownedCards = owned,
+                collectorRank = rank,
+                pinnedBadgeIds = pinned
+            )
+        }
+    }
+
+    private fun recordCloudHistory(
+        type: CollectorHistoryType,
+        title: String,
+        detail: String,
+        rarityName: String = "",
+        coinDelta: Int = 0,
+        diamondDelta: Int = 0
+    ) {
+        val uid = _activeUser.value?.uid ?: return
+        viewModelScope.launch {
+            firestoreService.recordHistoryEvent(
+                uid = uid,
+                eventType = type,
+                title = title,
+                detail = detail,
+                rarityName = rarityName,
+                coinDelta = coinDelta,
+                diamondDelta = diamondDelta
+            )
+        }
     }
 
     fun playClick() = soundEngine.playClick()
@@ -239,24 +400,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val muted = !enabled
             repository.setSoundMuted(muted)
             soundEngine.setMuted(muted)
-            if (enabled) {
-                soundEngine.playClick()
-            }
+            if (enabled) soundEngine.playClick()
         }
     }
 
     fun setDarkModeEnabled(enabled: Boolean) {
         soundEngine.playClick()
-        viewModelScope.launch {
-            repository.setDarkModeEnabled(enabled)
-        }
+        viewModelScope.launch { repository.setDarkModeEnabled(enabled) }
     }
 
     fun setVibrationEnabled(enabled: Boolean) {
         soundEngine.playClick()
-        viewModelScope.launch {
-            repository.setVibrationEnabled(enabled)
-        }
+        viewModelScope.launch { repository.setVibrationEnabled(enabled) }
     }
 
     fun observeOwnedCard(instanceId: Long): Flow<OwnedCard?> =
@@ -271,7 +426,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
                 .onSuccess { count ->
                     _syncStatus.value = CatalogSyncStatus.Synced(count)
-                    _snackbarMessage.value = "Synced $count skins (saved for today)!"
+                    _snackbarMessage.value = "Synced $count skins (cached for 24h)!"
+                    val sampleUrls = db.collectorDao().getAllCatalogOnce().take(20).map { it.imageUrl }
+                    warmImageUrls(sampleUrls)
                 }
                 .onFailure { err ->
                     _syncStatus.value = CatalogSyncStatus.Error(
@@ -281,11 +438,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Stages an un-ripped pack with a randomized satin wrapper theme.
-     * IMPORTANT: No coins/diamonds/tickets are consumed until the user actually rips the pack!
-     * Pressing X (close) before ripping cancels cleanly with 0 currency spent.
-     */
     fun openPackBundle(
         bundle: PackBundleOption,
         payWithDiamonds: Boolean = false,
@@ -336,6 +488,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
                 .onSuccess { cards ->
                     soundEngine.playPackTear()
+                    warmImageUrls(cards.map { it.imageUrl })
                     _packSession.update { current ->
                         current?.copy(
                             pulledCards = cards,
@@ -347,6 +500,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             showSummaryGrid = false
                         )
                     }
+                    val best = cards.maxByOrNull { it.rarity.tierRank + if (it.isMisprint) 10 else 0 }
+                    if (best != null) {
+                        recordCloudHistory(
+                            type = CollectorHistoryType.PULL,
+                            title = "Ripped ${purchase.bundle.packCount}x Booster (${cards.size} cards)",
+                            detail = "Best hit: ${best.heroName} — ${best.skinName} (${best.rarity.displayName}${if (best.isMisprint) " 1/1" else ""})",
+                            rarityName = best.rarity.name
+                        )
+                    }
+                    syncCloudProfileNow()
                 }
                 .onFailure { err ->
                     _snackbarMessage.value = err.localizedMessage ?: "Unable to rip pack"
@@ -362,6 +525,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.exchangeDiamondsForCoins(option)
                 .onSuccess {
                     soundEngine.playRewardChime()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.MINIGAME,
+                        title = "Diamond Exchange",
+                        detail = "Converted ${option.diamondCost} Diamonds",
+                        coinDelta = option.coinReward,
+                        diamondDelta = -option.diamondCost
+                    )
+                    syncCloudProfileNow()
                     _snackbarMessage.value = "Redeemed ${option.diamondCost} 💎 for +${option.coinReward} 🪙 Coins!"
                 }
                 .onFailure { err ->
@@ -375,6 +546,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.consumeScratcherChargeAndAwardCoins(coinPrize)
                 .onSuccess { coins ->
                     soundEngine.playRewardChime()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.MINIGAME,
+                        title = "Dawn Scratcher",
+                        detail = "Scratch ticket reward",
+                        coinDelta = coins
+                    )
+                    syncCloudProfileNow()
                     _snackbarMessage.value = "Scratcher Won +$coins 🪙 Coins!"
                 }
                 .onFailure { err ->
@@ -388,6 +566,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.consumePrismChargeAndAwardDiamonds(diamondsEarned)
                 .onSuccess { earned ->
                     if (earned >= 4) soundEngine.playRewardChime() else soundEngine.playClick()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.MINIGAME,
+                        title = "Prism Strike",
+                        detail = winLabel,
+                        diamondDelta = earned
+                    )
+                    syncCloudProfileNow()
                     _snackbarMessage.value = "$winLabel +$earned 💎 Diamonds!"
                 }
                 .onFailure { err ->
@@ -406,6 +591,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.consumeWheelSpinAndAward(coinReward, diamondReward, freePackReward)
                 .onSuccess {
                     soundEngine.playRewardChime()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.MINIGAME,
+                        title = "Prize Wheel",
+                        detail = "Won $label",
+                        coinDelta = coinReward,
+                        diamondDelta = diamondReward
+                    )
+                    syncCloudProfileNow()
                     _snackbarMessage.value = "Wheel Prize: $label!"
                 }
                 .onFailure { err ->
@@ -419,6 +612,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.completeHourlyQuizAndAwardDiamonds(diamondsEarned)
                 .onSuccess { earned ->
                     soundEngine.playRewardChime()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.MINIGAME,
+                        title = "Hourly MLBB Quiz",
+                        detail = "Scored $score/${QuizQuestionBank.QUIZ_QUESTION_COUNT}",
+                        diamondDelta = earned
+                    )
+                    syncCloudProfileNow()
                     _snackbarMessage.value =
                         "Quiz Complete ($score/${QuizQuestionBank.QUIZ_QUESTION_COUNT}): +$earned 💎 Diamonds!"
                 }
@@ -439,6 +639,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (def.diamondReward > 0) add("+${def.diamondReward} 💎")
                         if (def.freePackReward > 0) add("+${def.freePackReward} Free Pack")
                     }
+                    syncCloudProfileNow()
                     _snackbarMessage.value = "Quest Claimed: ${parts.joinToString(" • ")}"
                 }
                 .onFailure { err ->
@@ -452,6 +653,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         soundEngine.playClick()
         viewModelScope.launch {
             val pinned = repository.togglePinnedBadge(badge.definition.id)
+            syncCloudProfileNow()
             _snackbarMessage.value = if (pinned) {
                 "Pinned \"${badge.definition.title}\" to your Profile showcase!"
             } else {
@@ -514,6 +716,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.claimDailyReward(currentWallet)
                 .onSuccess { tier ->
                     soundEngine.playRewardChime()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.MINIGAME,
+                        title = "Daily Streak Day ${tier.dayIndex}",
+                        detail = "Daily login reward",
+                        coinDelta = tier.coinAmount,
+                        diamondDelta = tier.bonusDiamonds
+                    )
+                    syncCloudProfileNow()
                     val extras = buildList {
                         add("+${tier.coinAmount} 🪙")
                         if (tier.bonusDiamonds > 0) add("+${tier.bonusDiamonds} 💎")
@@ -532,6 +742,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.recycleSingleCard(card)
                 .onSuccess { coins ->
                     soundEngine.playRewardChime()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.RECYCLE,
+                        title = "Forged ${card.skinName}",
+                        detail = "${card.heroName} (${card.rarity.displayName})",
+                        rarityName = card.rarity.name,
+                        coinDelta = coins
+                    )
+                    syncCloudProfileNow()
                     _snackbarMessage.value = "Recycled ${card.skinName} for +$coins 🪙 Coins!"
                     onSuccess()
                 }
@@ -546,29 +764,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.recycleAllDuplicates()
                 .onSuccess { (count, coins) ->
                     soundEngine.playRewardChime()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.RECYCLE,
+                        title = "Bulk Recycled $count Duplicates",
+                        detail = "Vault duplicate forge",
+                        coinDelta = coins
+                    )
+                    syncCloudProfileNow()
                     _snackbarMessage.value = "Forged $count duplicate cards into +$coins 🪙 Coins!"
                 }
                 .onFailure { err ->
                     _snackbarMessage.value = err.localizedMessage ?: "No duplicates to recycle."
-                }
-        }
-    }
-
-    fun refreshBazaar() {
-        soundEngine.playClick()
-        _bazaarSeed.update { it + 1 }
-        _snackbarMessage.value = "Refreshed Collector Bazaar listings!"
-    }
-
-    fun executeBazaarTrade(listing: BazaarTraderListing, offeredCard: OwnedCard) {
-        viewModelScope.launch {
-            repository.executeBazaarTrade(listing, offeredCard)
-                .onSuccess { received ->
-                    soundEngine.playRewardChime()
-                    _snackbarMessage.value = "Swapped with ${listing.trader.alias} for ${received.skinName}!"
-                }
-                .onFailure { err ->
-                    _snackbarMessage.value = err.localizedMessage ?: "Bazaar trade failed."
                 }
         }
     }
@@ -597,13 +803,93 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
                 .onSuccess { listing ->
                     soundEngine.playRewardChime()
-                    _snackbarMessage.value = "Trade Slip minted for ${card.skinName}!"
+                    val user = _activeUser.value
+                    if (user != null) {
+                        firestoreService.publishP2PListing(
+                            user = user,
+                            wallet = currentState.wallet,
+                            card = card,
+                            seekingNote = seekingNote,
+                            tradeCode = listing.tradeCode
+                        )
+                    }
+                    syncCloudProfileNow()
+                    _snackbarMessage.value = "Published live P2P listing & Trade Slip for ${card.skinName}!"
                     onCreated(listing)
                 }
                 .onFailure { err ->
                     _snackbarMessage.value = err.localizedMessage ?: "Could not create Trade Slip."
                 }
         }
+    }
+
+    fun acceptP2PListing(listing: P2PTradeListing, offeredCard: OwnedCard) {
+        val user = _activeUser.value ?: run {
+            _snackbarMessage.value = "Please sign in with Google to accept P2P trades."
+            return
+        }
+        viewModelScope.launch {
+            val wallet = repository.walletFlow.first()
+            val buyerName = wallet.collectorAlias.ifBlank { user.displayName }
+            firestoreService.acceptP2PListingTransaction(
+                listingId = listing.id,
+                buyerUid = user.uid,
+                buyerName = buyerName,
+                offeredCard = offeredCard
+            )
+                .onSuccess {
+                    repository.completeDirectP2PSwap(listing, offeredCard)
+                        .onSuccess { received ->
+                            soundEngine.playRewardChime()
+                            recordCloudHistory(
+                                type = CollectorHistoryType.TRADE,
+                                title = "P2P Swap with ${listing.sellerName}",
+                                detail = "Gave ${offeredCard.skinName}, received ${received.skinName}",
+                                rarityName = received.rarity.name
+                            )
+                            syncCloudProfileNow()
+                            _snackbarMessage.value = "P2P Swap Complete! Received ${received.skinName}!"
+                        }
+                        .onFailure { err ->
+                            _snackbarMessage.value = err.localizedMessage ?: "Local swap failed."
+                        }
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Trade listing is no longer available."
+                }
+        }
+    }
+
+    fun cancelCloudP2PListing(listing: P2PTradeListing) {
+        viewModelScope.launch {
+            firestoreService.cancelP2PListing(listing.id)
+                .onSuccess {
+                    _snackbarMessage.value = "Removed ${listing.skinName} from live P2P marketplace."
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Failed to cancel cloud listing."
+                }
+        }
+    }
+
+    fun viewTraderProfile(targetUid: String) {
+        viewModelScope.launch {
+            firestoreService.fetchPublicProfile(targetUid)
+                .onSuccess { profile ->
+                    if (profile != null) {
+                        _viewingTraderProfile.value = profile
+                    } else {
+                        _snackbarMessage.value = "Collector profile is not published yet."
+                    }
+                }
+                .onFailure {
+                    _snackbarMessage.value = "Could not load collector profile."
+                }
+        }
+    }
+
+    fun dismissViewingProfile() {
+        _viewingTraderProfile.value = null
     }
 
     fun cancelTradeListing(listing: TradeListing) {
@@ -622,12 +908,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun decodeTradeSlip(code: String) {
         soundEngine.playClick()
         repository.decodeTradeSlip(code)
-            .onSuccess { slip ->
-                _decodedSlipPreview.value = slip
-            }
-            .onFailure { err ->
-                _snackbarMessage.value = err.localizedMessage ?: "Invalid Trade Slip code."
-            }
+            .onSuccess { slip -> _decodedSlipPreview.value = slip }
+            .onFailure { err -> _snackbarMessage.value = err.localizedMessage ?: "Invalid Trade Slip code." }
     }
 
     fun clearDecodedSlip() {
@@ -641,6 +923,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess { received ->
                     soundEngine.playRewardChime()
                     _decodedSlipPreview.value = null
+                    recordCloudHistory(
+                        type = CollectorHistoryType.TRADE,
+                        title = "Trade Slip with ${slip.senderAlias}",
+                        detail = "Gave ${offeredCard.skinName}, received ${received.skinName}",
+                        rarityName = received.rarity.name,
+                        coinDelta = slip.goldSweetener
+                    )
+                    syncCloudProfileNow()
                     val bonusMsg = if (slip.goldSweetener > 0) " (+${slip.goldSweetener} 🪙)" else ""
                     _snackbarMessage.value = "Trade Complete! Received ${received.skinName}$bonusMsg"
                 }
@@ -654,7 +944,100 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         soundEngine.playClick()
         viewModelScope.launch {
             repository.updateAlias(newAlias)
+            syncCloudProfileNow()
             _snackbarMessage.value = "Collector tag updated!"
+        }
+    }
+
+    fun updateMlbbAccount(ign: String, serverId: String) {
+        soundEngine.playClick()
+        viewModelScope.launch {
+            repository.updateMlbbAccount(ign, serverId)
+            syncCloudProfileNow()
+            _snackbarMessage.value = "MOBA Legends IGN & Server linked!"
+        }
+    }
+
+    // Rone Arena Meta Hub Actions
+    fun ensureMetaLoaded() {
+        val current = _metaState.value
+        if (current.heroes.isEmpty() && !current.isLoading) {
+            loadMetaHeroes(current.rankFilter, forceRefresh = false)
+        }
+    }
+
+    fun selectMetaRankFilter(rankFilter: MetaRankFilter) {
+        _metaState.update { it.copy(rankFilter = rankFilter) }
+        loadMetaHeroes(rankFilter, forceRefresh = false)
+    }
+
+    fun selectMetaSortMode(sortMode: MetaSortMode) {
+        _metaState.update { it.copy(sortMode = sortMode) }
+    }
+
+    fun refreshMeta() {
+        loadMetaHeroes(_metaState.value.rankFilter, forceRefresh = true)
+    }
+
+    private fun loadMetaHeroes(rankFilter: MetaRankFilter, forceRefresh: Boolean) {
+        viewModelScope.launch {
+            _metaState.update { it.copy(isLoading = true, errorMessage = null) }
+            val catalog = db.collectorDao().getAllCatalogOnce().map { it.toDomain() }
+            roneArenaRepo.fetchMetaHeroStats(rankFilter, catalog, forceRefresh)
+                .onSuccess { list ->
+                    _metaState.update {
+                        it.copy(isLoading = false, heroes = list, errorMessage = null)
+                    }
+                    warmImageUrls(list.take(18).map { it.iconUrl })
+                }
+                .onFailure { err ->
+                    _metaState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = err.localizedMessage ?: "Failed to load MLBB Meta data."
+                        )
+                    }
+                }
+        }
+    }
+
+    fun openHeroMetaDetail(hero: MetaHeroStats) {
+        viewModelScope.launch {
+            _metaState.update {
+                it.copy(
+                    isLoadingDetail = true,
+                    detailError = null,
+                    selectedHeroDetail = com.example.model.HeroMetaDetail(
+                        heroStats = hero,
+                        strongAgainst = emptyList(),
+                        counteredBy = emptyList(),
+                        synergies = emptyList(),
+                        buildGuides = emptyList(),
+                        skillSummary = emptyList()
+                    )
+                )
+            }
+            val catalog = db.collectorDao().getAllCatalogOnce().map { it.toDomain() }
+            roneArenaRepo.fetchHeroMetaDetail(hero, catalog)
+                .onSuccess { detail ->
+                    _metaState.update {
+                        it.copy(isLoadingDetail = false, selectedHeroDetail = detail)
+                    }
+                }
+                .onFailure { err ->
+                    _metaState.update {
+                        it.copy(
+                            isLoadingDetail = false,
+                            detailError = err.localizedMessage ?: "Could not load detailed counters & builds."
+                        )
+                    }
+                }
+        }
+    }
+
+    fun dismissHeroMetaDetail() {
+        _metaState.update {
+            it.copy(isLoadingDetail = false, selectedHeroDetail = null, detailError = null)
         }
     }
 

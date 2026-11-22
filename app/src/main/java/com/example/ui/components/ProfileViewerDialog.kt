@@ -1,12 +1,15 @@
 package com.example.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,10 +30,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -38,17 +48,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
+import com.example.model.AchievementBadgeDefinition
 import com.example.model.AchievementCatalog
-import com.example.model.BazaarCollectorProfile
+import com.example.model.CollectorPublicProfile
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.RarityUncommon
 
 @Composable
 fun ProfileViewerDialog(
-    profile: BazaarCollectorProfile,
+    profile: CollectorPublicProfile,
     onDismiss: () -> Unit
 ) {
     val palette = CollectorTheme.colors
+    var inspectedBadge by remember(profile.traderId) { mutableStateOf<AchievementBadgeDefinition?>(null) }
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             color = palette.cardSurface,
@@ -74,19 +87,30 @@ fun ProfileViewerDialog(
                         color = profile.avatarColor.copy(alpha = 0.18f),
                         shape = CircleShape,
                         border = BorderStroke(1.8.dp, profile.avatarColor),
-                        modifier = Modifier.size(54.dp)
+                        modifier = Modifier.size(56.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
+                        if (profile.photoUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = rememberUserAvatarRequest(profile.photoUrl),
                                 contentDescription = profile.alias,
-                                tint = profile.avatarColor,
-                                modifier = Modifier.size(30.dp)
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(CircleShape)
                             )
+                        } else {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = profile.alias,
+                                    tint = profile.avatarColor,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             text = profile.alias,
                             style = MaterialTheme.typography.titleLarge,
@@ -94,27 +118,60 @@ fun ProfileViewerDialog(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Surface(
-                            color = profile.avatarColor.copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, profile.avatarColor.copy(alpha = 0.55f))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Surface(
+                                color = profile.avatarColor.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, profile.avatarColor.copy(alpha = 0.55f))
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.WorkspacePremium,
-                                    contentDescription = null,
-                                    tint = profile.avatarColor,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = profile.rankTitle,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = profile.avatarColor
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.WorkspacePremium,
+                                        contentDescription = null,
+                                        tint = profile.avatarColor,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = profile.rankTitle,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = profile.avatarColor
+                                    )
+                                }
+                            }
+                            if (profile.mlbbIgn.isNotBlank()) {
+                                Surface(
+                                    color = palette.frostSurface,
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, palette.border)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.SportsEsports,
+                                            contentDescription = null,
+                                            tint = palette.accentPrimary,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        val serverPart = if (profile.mlbbServerId.isNotBlank()) " (${profile.mlbbServerId})" else ""
+                                        Text(
+                                            text = "${profile.mlbbIgn}$serverPart",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = palette.ink,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -172,13 +229,24 @@ fun ProfileViewerDialog(
                     )
                 }
 
-                // Equipped Showcase Badges (up to 3)
+                // Equipped Showcase Badges (Icon-only medallions; tap or hover reveals badge text!)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "EQUIPPED BADGES",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = palette.muted
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "EQUIPPED BADGES",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = palette.muted
+                        )
+                        Text(
+                            text = "Tap / hover icon",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.accentPrimary
+                        )
+                    }
                     val resolvedBadges = profile.badgeIds.mapNotNull { AchievementCatalog.byId(it) }
                     if (resolvedBadges.isEmpty()) {
                         Text(
@@ -188,36 +256,69 @@ fun ProfileViewerDialog(
                         )
                     } else {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             resolvedBadges.take(3).forEach { badge ->
+                                val isSelected = inspectedBadge?.id == badge.id
                                 Surface(
-                                    color = badge.accentColor.copy(alpha = 0.13f),
-                                    shape = RoundedCornerShape(14.dp),
-                                    border = BorderStroke(1.dp, badge.accentColor.copy(alpha = 0.55f)),
-                                    modifier = Modifier.weight(1f)
+                                    color = badge.accentColor.copy(alpha = if (isSelected) 0.24f else 0.13f),
+                                    shape = CircleShape,
+                                    border = BorderStroke(
+                                        width = if (isSelected) 2.dp else 1.2.dp,
+                                        color = badge.accentColor.copy(alpha = if (isSelected) 1f else 0.6f)
+                                    ),
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(CircleShape)
+                                        .pointerInput(badge.id) {
+                                            awaitPointerEventScope {
+                                                while (true) {
+                                                    val event = awaitPointerEvent()
+                                                    when (event.type) {
+                                                        PointerEventType.Enter -> inspectedBadge = badge
+                                                        PointerEventType.Exit -> if (inspectedBadge?.id == badge.id) inspectedBadge = null
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        .clickable {
+                                            inspectedBadge = if (isSelected) null else badge
+                                        }
+                                        .testTag("viewer_badge_icon_${badge.id}")
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
+                                    Box(contentAlignment = Alignment.Center) {
                                         Icon(
                                             imageVector = BadgeIconVector(badge.iconStyle),
                                             contentDescription = badge.title,
                                             tint = badge.accentColor,
-                                            modifier = Modifier.size(22.dp)
+                                            modifier = Modifier.size(25.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        AnimatedVisibility(visible = inspectedBadge != null) {
+                            inspectedBadge?.let { b ->
+                                Surface(
+                                    color = b.accentColor.copy(alpha = 0.12f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, b.accentColor.copy(alpha = 0.48f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("viewer_badge_tooltip")
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text(
+                                            text = b.title,
+                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                            color = palette.ink
                                         )
                                         Text(
-                                            text = badge.title,
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold
-                                            ),
-                                            color = palette.ink,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            text = b.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = palette.muted
                                         )
                                     }
                                 }

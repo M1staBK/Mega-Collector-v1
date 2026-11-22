@@ -1,0 +1,107 @@
+{
+  "databaseId": "ai-studio-android-megacoll-bba60ff8-e417-493d-b73d-41fc9ff83cc2",
+  "collections": {
+    "users": {
+      "path": "users/{userId}",
+      "description": "Private authenticated collector profile, MOBA Legends account credentials (IGN/Server), wallet balances, and lifetime stats.",
+      "fields": {
+        "userId": "string",
+        "email": "string",
+        "displayName": "string",
+        "photoUrl": "string",
+        "mlbbIgn": "string",
+        "mlbbServerId": "string",
+        "collectorRank": "string",
+        "prestigeScore": "int",
+        "coins": "int",
+        "diamonds": "int",
+        "uniqueSkinsCount": "int",
+        "totalSkinsOwned": "int",
+        "misprintCount": "int",
+        "totalPacksOpened": "int",
+        "totalTradesCompleted": "int",
+        "dailyStreakCount": "int",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "subcollections": {
+        "history": {
+          "path": "users/{userId}/history/{eventId}",
+          "description": "Collector pull, P2P trade, recycle, and minigame history events.",
+          "fields": {
+            "userId": "string",
+            "eventType": "string",
+            "title": "string",
+            "detail": "string",
+            "rarityName": "string",
+            "coinDelta": "int",
+            "diamondDelta": "int",
+            "createdAt": "timestamp"
+          }
+        }
+      }
+    },
+    "public_profiles": {
+      "path": "public_profiles/{userId}",
+      "description": "Public collector showcase visible to other signed-in players in P2P trading (zero email PII).",
+      "fields": {
+        "userId": "string",
+        "displayName": "string",
+        "photoUrl": "string",
+        "mlbbIgn": "string",
+        "mlbbServerId": "string",
+        "collectorRank": "string",
+        "motto": "string",
+        "prestigeScore": "int",
+        "uniqueSkinsCount": "int",
+        "totalPacksOpened": "int",
+        "totalTradesCompleted": "int",
+        "misprintCount": "int",
+        "pinnedBadgeIds": "list",
+        "showcaseSkinNames": "list",
+        "showcaseHeroNames": "list",
+        "showcaseRarityNames": "list",
+        "showcaseImageUrls": "list",
+        "updatedAt": "timestamp"
+      }
+    },
+    "trade_listings": {
+      "path": "trade_listings/{listingId}",
+      "description": "Real Player-to-Player (P2P) skin swap marketplace backed exclusively by signed-in users.",
+      "fields": {
+        "sellerUid": "string",
+        "sellerName": "string",
+        "sellerPhotoUrl": "string",
+        "sellerMlbbIgn": "string",
+        "catalogId": "string",
+        "skinName": "string",
+        "heroName": "string",
+        "role": "string",
+        "rawTier": "string",
+        "rarityName": "string",
+        "imageUrl": "string",
+        "isMisprint": "bool",
+        "misprintAnomalyName": "string",
+        "serialCode": "string",
+        "seekingNote": "string",
+        "tradeCode": "string",
+        "status": "string",
+        "acceptedByUid": "string",
+        "acceptedByName": "string",
+        "acceptedCatalogId": "string",
+        "acceptedSkinName": "string",
+        "acceptedHeroName": "string",
+        "acceptedRole": "string",
+        "acceptedRawTier": "string",
+        "acceptedRarityName": "string",
+        "acceptedImageUrl": "string",
+        "acceptedIsMisprint": "bool",
+        "acceptedMisprintAnomalyName": "string",
+        "acceptedSerialCode": "string",
+        "sellerSettled": "bool",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      }
+    }
+  }
+}

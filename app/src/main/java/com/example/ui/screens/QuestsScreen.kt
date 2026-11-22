@@ -69,6 +69,7 @@ fun QuestsScreen(
     onClaimQuest: (QuestUiItem) -> Unit,
     onOpenSettings: () -> Unit,
     onButtonClickSfx: () -> Unit,
+    includeStatusBarPadding: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val palette = CollectorTheme.colors
@@ -90,7 +91,7 @@ fun QuestsScreen(
                     )
                 )
             )
-            .statusBarsPadding()
+            .let { if (includeStatusBarPadding) it.statusBarsPadding() else it }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Header Summary Card

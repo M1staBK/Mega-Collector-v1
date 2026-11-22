@@ -82,6 +82,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import coil.request.CachePolicy
 import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.model.BadgeIconStyle
 import com.example.model.SkinRarity
 import com.example.ui.theme.CollectorTheme
@@ -121,9 +122,13 @@ fun rememberMlbbImageRequest(url: String): ImageRequest {
             .data(url)
             .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) MegaCollector/3.0")
             .addHeader("Accept", "image/webp,image/png,image/jpeg,*/*")
+            .size(920, 1320)
+            .precision(Precision.EXACT)
+            .allowHardware(false)
+            .transformations(CardDetailUpscaleTransformation(url, targetMinPx = 920))
             .diskCachePolicy(CachePolicy.ENABLED)
             .memoryCachePolicy(CachePolicy.ENABLED)
-            .crossfade(true)
+            .crossfade(120)
             .build()
     }
 }
@@ -136,10 +141,27 @@ fun rememberMlbbSquareImageRequest(url: String): ImageRequest {
             .data(url)
             .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) MegaCollector/3.0")
             .addHeader("Accept", "image/webp,image/png,image/jpeg,*/*")
+            .size(920, 920)
+            .precision(Precision.EXACT)
+            .allowHardware(false)
             .transformations(CharacterFocusSquareTransformation(url))
             .diskCachePolicy(CachePolicy.ENABLED)
             .memoryCachePolicy(CachePolicy.ENABLED)
-            .crossfade(true)
+            .crossfade(120)
+            .build()
+    }
+}
+
+@Composable
+fun rememberUserAvatarRequest(url: String): ImageRequest {
+    val context = LocalContext.current
+    return remember(url, context) {
+        ImageRequest.Builder(context)
+            .data(url)
+            .size(256, 256)
+            .diskCachePolicy(CachePolicy.ENABLED)
+            .memoryCachePolicy(CachePolicy.ENABLED)
+            .crossfade(120)
             .build()
     }
 }

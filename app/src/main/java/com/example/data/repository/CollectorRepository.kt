@@ -10,13 +10,13 @@ import com.example.data.local.TradeListingEntity
 import com.example.data.remote.MlbbDexClient
 import com.example.data.remote.ParsedHeroRef
 import com.example.data.remote.SkinJsonParser
-import com.example.model.BazaarTraderListing
 import com.example.model.DailyRewardTier
 import com.example.model.DecodedTradeSlip
 import com.example.model.DiamondExchangeOption
 import com.example.model.MegaPackConfig
 import com.example.model.MisprintAnomaly
 import com.example.model.OwnedCard
+import com.example.model.P2PTradeListing
 import com.example.model.PackBundleOption
 import com.example.model.QuestCatalog
 import com.example.model.QuestCategory
@@ -174,7 +174,19 @@ class CollectorRepository(
                 )
             }
 
-            dao.replaceCatalog(collectedById.values.map { SkinCatalogEntity.fromDomain(it) })
+            // Preserve any previously cached valid image URLs if a skin arrived without an imageUrl on retry
+            val existingById = dao.getAllCatalogOnce().associateBy { it.id }
+            val mergedEntities = collectedById.values.map { incoming ->
+                val prevUrl = existingById[incoming.id]?.imageUrl.orEmpty()
+                val finalItem = if (incoming.imageUrl.isBlank() && prevUrl.isNotBlank()) {
+                    incoming.copy(imageUrl = prevUrl)
+                } else {
+                    incoming
+                }
+                SkinCatalogEntity.fromDomain(finalItem)
+            }
+
+            dao.upsertCatalog(mergedEntities)
             dao.backfillMissingOwnedImages()
 
             prefs.markCatalogSynced(
@@ -719,52 +731,73 @@ class CollectorRepository(
         }
     }
 
-    suspend fun executeBazaarTrade(
-        listing: BazaarTraderListing,
+    suspend fun completeDirectP2PSwap(
+        listing: P2PTradeListing,
         offeredCard: OwnedCard
     ): Result<OwnedCard> = withContext(Dispatchers.IO) {
         try {
-            if (offeredCard.rarity.tierRank < listing.minRequiredRarity.tierRank) {
-                return@withContext Result.failure(
-                    IllegalStateException("Requires at least a ${listing.minRequiredRarity.displayName} card.")
-                )
-            }
             val existing = dao.getCardById(offeredCard.instanceId)
-                ?: return@withContext Result.failure(IllegalStateException("Selected card is no longer in Vault."))
-
-            if (listing.coinFee > 0) {
-                val paid = prefs.tryDeductCoins(listing.coinFee)
-                if (!paid) {
-                    return@withContext Result.failure(
-                        IllegalStateException("Not enough Coins (${listing.coinFee} 🪙 needed).")
-                    )
-                }
-            }
+                ?: return@withContext Result.failure(IllegalStateException("Offered card is no longer in Vault."))
 
             if (existing.isListedForTrade) {
                 dao.deleteTradeListingsForCard(existing.instanceId)
             }
             dao.deleteOwnedCardById(existing.instanceId)
 
-            val skin = listing.offeredSkin
-            val newEntity = OwnedCardEntity(
-                catalogId = skin.id,
-                skinName = skin.skinName,
-                heroName = skin.heroName,
-                role = skin.role,
-                rawTier = skin.rawTier,
-                rarityName = skin.rarity.name,
-                imageUrl = skin.imageUrl,
+            val receivedEntity = OwnedCardEntity(
+                catalogId = listing.catalogId,
+                skinName = listing.skinName,
+                heroName = listing.heroName,
+                role = listing.role,
+                rawTier = listing.rawTier,
+                rarityName = listing.rarity.name,
+                imageUrl = listing.imageUrl,
                 isMisprint = listing.isMisprint,
-                misprintAnomalyName = listing.anomaly?.name,
+                misprintAnomalyName = listing.misprintAnomaly?.name,
                 serialCode = listing.serialCode,
-                pullRatePercent = if (listing.isMisprint) MegaPackConfig.MISPRINT_CHANCE_PERCENT else skin.rarity.basePullWeight,
+                pullRatePercent = listing.rarity.basePullWeight,
                 obtainedAtMs = System.currentTimeMillis(),
                 isListedForTrade = false
             )
-            val insertedId = dao.insertOwnedCard(newEntity)
+            val insertedId = dao.insertOwnedCard(receivedEntity)
             prefs.recordTradeQuestProgress()
-            Result.success(newEntity.copy(instanceId = insertedId).toDomain())
+            Result.success(receivedEntity.copy(instanceId = insertedId).toDomain())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun settleSoldP2PListing(listing: P2PTradeListing): Result<OwnedCard> = withContext(Dispatchers.IO) {
+        try {
+            val allOwned = dao.getAllOwnedOnce()
+            val held = allOwned.firstOrNull {
+                it.serialCode == listing.serialCode && it.catalogId == listing.catalogId
+            }
+            if (held != null) {
+                if (held.isListedForTrade) {
+                    dao.deleteTradeListingsForCard(held.instanceId)
+                }
+                dao.deleteOwnedCardById(held.instanceId)
+            }
+
+            val receivedEntity = OwnedCardEntity(
+                catalogId = listing.acceptedCatalogId,
+                skinName = listing.acceptedSkinName,
+                heroName = listing.acceptedHeroName,
+                role = listing.acceptedRole.ifBlank { "Hero" },
+                rawTier = listing.acceptedRawTier.ifBlank { listing.acceptedRarity.displayName },
+                rarityName = listing.acceptedRarity.name,
+                imageUrl = listing.acceptedImageUrl,
+                isMisprint = listing.acceptedIsMisprint,
+                misprintAnomalyName = listing.acceptedMisprintAnomaly?.name,
+                serialCode = listing.acceptedSerialCode.ifBlank { "P2P-${randomHex4()}" },
+                pullRatePercent = listing.acceptedRarity.basePullWeight,
+                obtainedAtMs = System.currentTimeMillis(),
+                isListedForTrade = false
+            )
+            val insertedId = dao.insertOwnedCard(receivedEntity)
+            prefs.recordTradeQuestProgress()
+            Result.success(receivedEntity.copy(instanceId = insertedId).toDomain())
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -772,6 +805,14 @@ class CollectorRepository(
 
     suspend fun updateAlias(alias: String) {
         prefs.updateCollectorAlias(alias)
+    }
+
+    suspend fun seedAliasFromGoogleIfDefault(googleName: String) {
+        prefs.seedAliasFromGoogleIfDefault(googleName)
+    }
+
+    suspend fun updateMlbbAccount(ign: String, serverId: String) {
+        prefs.updateMlbbAccount(ign, serverId)
     }
 
     suspend fun setSoundMuted(muted: Boolean) {

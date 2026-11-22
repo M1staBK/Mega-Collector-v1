@@ -21,13 +21,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.CollectionsBookmark
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material.icons.outlined.AssignmentTurnedIn
 import androidx.compose.material.icons.outlined.CollectionsBookmark
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material.icons.outlined.Storefront
@@ -50,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -58,15 +59,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.remote.AuthRepository
+import com.example.data.remote.AuthResult
+import com.example.data.remote.AuthenticatedUser
 import com.example.model.OwnedCard
 import com.example.ui.components.CollectorSettingsController
 import com.example.ui.components.ProvideCollectorSettings
+import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.CardInspectScreen
+import com.example.ui.screens.MetaGuidesScreen
 import com.example.ui.screens.PackOpeningScreen
 import com.example.ui.screens.PlayArcadeScreen
 import com.example.ui.screens.ProfileScreen
@@ -88,9 +95,14 @@ private enum class CollectorTab(
 ) {
     PACKS("packs", R.string.nav_packs, Icons.Filled.Storefront, Icons.Outlined.Storefront),
     PLAY("play", R.string.nav_play, Icons.Filled.SportsEsports, Icons.Outlined.SportsEsports),
-    QUESTS("quests", R.string.nav_quests, Icons.Filled.AssignmentTurnedIn, Icons.Outlined.AssignmentTurnedIn),
+    META("meta", R.string.nav_meta, Icons.Filled.Insights, Icons.Outlined.Insights),
     VAULT("vault", R.string.nav_vault, Icons.Filled.CollectionsBookmark, Icons.Outlined.CollectionsBookmark),
     PROFILE("profile", R.string.nav_profile, Icons.Filled.Person, Icons.Outlined.Person)
+}
+
+private enum class PlaySubTab(val label: String) {
+    ARCADE("Arcade"),
+    QUESTS("Quests")
 }
 
 private enum class VaultSubTab(val label: String) {
@@ -132,28 +144,82 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MegaCollectorRoot(
-    viewModel: MainViewModel = viewModel(),
     onThemeChanged: (Boolean) -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val darkMode = uiState.wallet.darkModeEnabled
-    val vibrationEnabled = uiState.wallet.vibrationEnabled
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val authRepo = remember(context) { AuthRepository(context.applicationContext) }
+    val currentUser by authRepo.authStateFlow.collectAsStateWithLifecycle(initialValue = authRepo.currentUser())
 
-    LaunchedEffect(darkMode) {
-        onThemeChanged(darkMode)
+    var isSigningIn by remember { mutableStateOf(false) }
+    var authError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        if (authRepo.currentUser() == null) {
+            isSigningIn = true
+            authRepo.attemptSilentSignIn()
+            isSigningIn = false
+        }
     }
 
-    MegaCollectorTheme(
-        darkTheme = darkMode,
-        vibrationEnabled = vibrationEnabled
-    ) {
-        MegaCollectorApp(viewModel = viewModel)
+    val user = currentUser
+    if (user == null) {
+        MegaCollectorTheme(darkTheme = false, vibrationEnabled = true) {
+            AuthScreen(
+                isSigningIn = isSigningIn,
+                errorMessage = authError,
+                onGoogleSignInClick = { activityCtx ->
+                    scope.launch {
+                        isSigningIn = true
+                        authError = null
+                        when (val result = authRepo.signInWithGoogle(activityCtx)) {
+                            is AuthResult.Success -> authError = null
+                            is AuthResult.Cancelled -> authError = "Google Sign-In cancelled."
+                            is AuthResult.Error -> authError = result.message
+                        }
+                        isSigningIn = false
+                    }
+                }
+            )
+        }
+    } else {
+        key(user.uid) {
+            val viewModel: MainViewModel = viewModel(key = user.uid)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val darkMode = uiState.wallet.darkModeEnabled
+            val vibrationEnabled = uiState.wallet.vibrationEnabled
+
+            LaunchedEffect(user) {
+                viewModel.bindAuthenticatedUser(user)
+            }
+
+            LaunchedEffect(darkMode) {
+                onThemeChanged(darkMode)
+            }
+
+            MegaCollectorTheme(
+                darkTheme = darkMode,
+                vibrationEnabled = vibrationEnabled
+            ) {
+                MegaCollectorApp(
+                    viewModel = viewModel,
+                    currentUser = user,
+                    onSignOut = {
+                        scope.launch {
+                            authRepo.signOut()
+                        }
+                    }
+                )
+            }
+        }
     }
 }
 
 @Composable
 fun MegaCollectorApp(
-    viewModel: MainViewModel = viewModel()
+    viewModel: MainViewModel,
+    currentUser: AuthenticatedUser?,
+    onSignOut: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val palette = CollectorTheme.colors
@@ -161,12 +227,19 @@ fun MegaCollectorApp(
     val scope = rememberCoroutineScope()
 
     var activeTab by rememberSaveable { mutableStateOf(CollectorTab.PACKS) }
+    var playSubTab by rememberSaveable { mutableStateOf(PlaySubTab.ARCADE) }
     var vaultSubTab by rememberSaveable { mutableStateOf(VaultSubTab.COLLECTION) }
     var inspectingCardId by rememberSaveable { mutableStateOf<Long?>(null) }
     var preselectedTradeCard by remember { mutableStateOf<OwnedCard?>(null) }
 
     val claimableQuestCount = remember(uiState.quests) {
         uiState.quests.count { it.canClaim }
+    }
+
+    LaunchedEffect(activeTab) {
+        if (activeTab == CollectorTab.META) {
+            viewModel.ensureMetaLoaded()
+        }
     }
 
     LaunchedEffect(uiState.snackbarMessage) {
@@ -190,314 +263,385 @@ fun MegaCollectorApp(
             onCogOpened = viewModel::playClick
         )
     ) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val useRail = maxWidth >= 600.dp
+        Box(modifier = Modifier.fillMaxSize()) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val useRail = maxWidth >= 600.dp
 
-            Scaffold(
-                containerColor = palette.canvas,
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-                bottomBar = {
-                    if (!useRail && packSession == null && inspectingCardId == null) {
-                        NavigationBar(
-                            containerColor = palette.navBar,
-                            tonalElevation = 2.dp
-                        ) {
-                            CollectorTab.entries.forEach { tab ->
-                                val selected = activeTab == tab
-                                val badgeCount = when (tab) {
-                                    CollectorTab.QUESTS -> claimableQuestCount
-                                    CollectorTab.PLAY -> uiState.scratcherStatus.charges +
-                                        uiState.prismStatus.charges +
-                                        uiState.wheelStatus.charges +
-                                        if (uiState.quizCooldownRemainingMs <= 0L) 1 else 0
-                                    else -> 0
-                                }
-                                NavigationBarItem(
-                                    selected = selected,
-                                    onClick = {
-                                        viewModel.playClick()
-                                        activeTab = tab
-                                    },
-                                    icon = {
-                                        BadgedBox(
-                                            badge = {
-                                                if (badgeCount > 0) {
-                                                    Badge(
-                                                        containerColor = palette.gold,
-                                                        contentColor = palette.goldButtonContent
-                                                    ) {
-                                                        Text("$badgeCount")
+                Scaffold(
+                    containerColor = palette.canvas,
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+                    bottomBar = {
+                        if (!useRail && packSession == null && inspectingCardId == null) {
+                            NavigationBar(
+                                containerColor = palette.navBar,
+                                tonalElevation = 2.dp
+                            ) {
+                                CollectorTab.entries.forEach { tab ->
+                                    val selected = activeTab == tab
+                                    val badgeCount = when (tab) {
+                                        CollectorTab.PLAY -> claimableQuestCount +
+                                            uiState.scratcherStatus.charges +
+                                            uiState.prismStatus.charges +
+                                            uiState.wheelStatus.charges +
+                                            if (uiState.quizCooldownRemainingMs <= 0L) 1 else 0
+                                        else -> 0
+                                    }
+                                    NavigationBarItem(
+                                        selected = selected,
+                                        onClick = {
+                                            viewModel.playClick()
+                                            activeTab = tab
+                                        },
+                                        icon = {
+                                            BadgedBox(
+                                                badge = {
+                                                    if (badgeCount > 0) {
+                                                        Badge(
+                                                            containerColor = palette.gold,
+                                                            contentColor = palette.goldButtonContent
+                                                        ) {
+                                                            Text("$badgeCount")
+                                                        }
                                                     }
                                                 }
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                                    contentDescription = stringResource(tab.labelRes)
+                                                )
                                             }
-                                        ) {
+                                        },
+                                        label = { Text(stringResource(tab.labelRes)) },
+                                        colors = NavigationBarItemDefaults.colors(
+                                            selectedIconColor = palette.accentPrimary,
+                                            selectedTextColor = palette.accentPrimary,
+                                            indicatorColor = palette.frostSurface,
+                                            unselectedIconColor = palette.muted,
+                                            unselectedTextColor = palette.muted
+                                        ),
+                                        modifier = Modifier.testTag("nav_${tab.route}")
+                                    )
+                                }
+                            }
+                        }
+                    }
+                ) { innerPadding ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        if (useRail && packSession == null && inspectingCardId == null) {
+                            NavigationRail(
+                                containerColor = palette.navBar,
+                                modifier = Modifier.fillMaxHeight()
+                            ) {
+                                CollectorTab.entries.forEach { tab ->
+                                    val selected = activeTab == tab
+                                    NavigationRailItem(
+                                        selected = selected,
+                                        onClick = {
+                                            viewModel.playClick()
+                                            activeTab = tab
+                                        },
+                                        icon = {
                                             Icon(
                                                 imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
                                                 contentDescription = stringResource(tab.labelRes)
                                             )
-                                        }
-                                    },
-                                    label = { Text(stringResource(tab.labelRes)) },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = palette.accentPrimary,
-                                        selectedTextColor = palette.accentPrimary,
-                                        indicatorColor = palette.frostSurface,
-                                        unselectedIconColor = palette.muted,
-                                        unselectedTextColor = palette.muted
-                                    ),
-                                    modifier = Modifier.testTag("nav_${tab.route}")
-                                )
+                                        },
+                                        label = { Text(stringResource(tab.labelRes)) },
+                                        colors = NavigationRailItemDefaults.colors(
+                                            selectedIconColor = palette.accentPrimary,
+                                            selectedTextColor = palette.accentPrimary,
+                                            indicatorColor = palette.frostSurface,
+                                            unselectedIconColor = palette.muted,
+                                            unselectedTextColor = palette.muted
+                                        ),
+                                        modifier = Modifier.testTag("rail_${tab.route}")
+                                    )
+                                }
                             }
                         }
-                    }
-                }
-            ) { innerPadding ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) {
-                    if (useRail && packSession == null && inspectingCardId == null) {
-                        NavigationRail(
-                            containerColor = palette.navBar,
-                            modifier = Modifier.fillMaxHeight()
-                        ) {
-                            CollectorTab.entries.forEach { tab ->
-                                val selected = activeTab == tab
-                                NavigationRailItem(
-                                    selected = selected,
-                                    onClick = {
+
+                        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                            when (activeTab) {
+                                CollectorTab.PACKS -> ShopPacksScreen(
+                                    uiState = uiState,
+                                    dailyRewardTiers = viewModel.dailyRewardTiers,
+                                    onClaimDailyReward = {
                                         viewModel.playClick()
-                                        activeTab = tab
+                                        viewModel.claimDailyReward()
                                     },
-                                    icon = {
-                                        Icon(
-                                            imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                            contentDescription = stringResource(tab.labelRes)
-                                        )
-                                    },
-                                    label = { Text(stringResource(tab.labelRes)) },
-                                    colors = NavigationRailItemDefaults.colors(
-                                        selectedIconColor = palette.accentPrimary,
-                                        selectedTextColor = palette.accentPrimary,
-                                        indicatorColor = palette.frostSurface,
-                                        unselectedIconColor = palette.muted,
-                                        unselectedTextColor = palette.muted
-                                    ),
-                                    modifier = Modifier.testTag("rail_${tab.route}")
+                                    onOpenPackBundle = viewModel::openPackBundle,
+                                    onExchangeDiamondsForCoins = viewModel::exchangeDiamondsForCoins,
+                                    onOpenSettings = {},
+                                    onButtonClickSfx = viewModel::playClick
                                 )
-                            }
-                        }
-                    }
 
-                    Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                        when (activeTab) {
-                            CollectorTab.PACKS -> ShopPacksScreen(
-                                uiState = uiState,
-                                dailyRewardTiers = viewModel.dailyRewardTiers,
-                                onClaimDailyReward = {
-                                    viewModel.playClick()
-                                    viewModel.claimDailyReward()
-                                },
-                                onOpenPackBundle = viewModel::openPackBundle,
-                                onExchangeDiamondsForCoins = viewModel::exchangeDiamondsForCoins,
-                                onOpenSettings = {},
-                                onButtonClickSfx = viewModel::playClick
-                            )
-
-                            CollectorTab.PLAY -> PlayArcadeScreen(
-                                uiState = uiState,
-                                onClaimScratcherPrize = viewModel::claimScratcherPrize,
-                                onAwardPrismDiamonds = viewModel::awardPrismDiamonds,
-                                onSpinWheelPrize = viewModel::spinWheelPrize,
-                                onWheelTickSfx = viewModel::playWheelTick,
-                                onCompleteHourlyQuiz = viewModel::completeHourlyQuiz,
-                                onPlasticCrinkle = viewModel::playPlasticCrinkle,
-                                onOpenSettings = {},
-                                onButtonClickSfx = viewModel::playClick
-                            )
-
-                            CollectorTab.QUESTS -> QuestsScreen(
-                                uiState = uiState,
-                                onClaimQuest = viewModel::claimQuest,
-                                onOpenSettings = {},
-                                onButtonClickSfx = viewModel::playClick
-                            )
-
-                            CollectorTab.VAULT -> Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(palette.canvas)
-                                    .statusBarsPadding()
-                            ) {
-                                Surface(
-                                    color = palette.cardSurface,
-                                    shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.dp, palette.border),
-                                    shadowElevation = 2.dp,
+                                CollectorTab.PLAY -> Column(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                        .fillMaxSize()
+                                        .background(palette.canvas)
+                                        .statusBarsPadding()
                                 ) {
-                                    Row(
+                                    Surface(
+                                        color = palette.cardSurface,
+                                        shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.dp, palette.border),
+                                        shadowElevation = 2.dp,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            .padding(horizontal = 16.dp, vertical = 8.dp)
                                     ) {
-                                        VaultSubTab.entries.forEach { sub ->
-                                            val selected = vaultSubTab == sub
-                                            FilterChip(
-                                                selected = selected,
-                                                onClick = {
-                                                    viewModel.playClick()
-                                                    vaultSubTab = sub
-                                                },
-                                                label = { Text(sub.label) },
-                                                colors = FilterChipDefaults.filterChipColors(
-                                                    selectedContainerColor = palette.buttonPrimary,
-                                                    selectedLabelColor = Color.White,
-                                                    containerColor = palette.frostSurface,
-                                                    labelColor = palette.muted
-                                                ),
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .testTag("vault_subtab_${sub.name.lowercase()}")
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            PlaySubTab.entries.forEach { sub ->
+                                                val selected = playSubTab == sub
+                                                val labelText = if (sub == PlaySubTab.QUESTS && claimableQuestCount > 0) {
+                                                    "${sub.label} ($claimableQuestCount)"
+                                                } else {
+                                                    sub.label
+                                                }
+                                                FilterChip(
+                                                    selected = selected,
+                                                    onClick = {
+                                                        viewModel.playClick()
+                                                        playSubTab = sub
+                                                    },
+                                                    label = { Text(labelText) },
+                                                    colors = FilterChipDefaults.filterChipColors(
+                                                        selectedContainerColor = palette.buttonPrimary,
+                                                        selectedLabelColor = Color.White,
+                                                        containerColor = palette.frostSurface,
+                                                        labelColor = palette.muted
+                                                    ),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .testTag("play_subtab_${sub.name.lowercase()}")
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                        when (playSubTab) {
+                                            PlaySubTab.ARCADE -> PlayArcadeScreen(
+                                                uiState = uiState,
+                                                onClaimScratcherPrize = viewModel::claimScratcherPrize,
+                                                onAwardPrismDiamonds = viewModel::awardPrismDiamonds,
+                                                onSpinWheelPrize = viewModel::spinWheelPrize,
+                                                onWheelTickSfx = viewModel::playWheelTick,
+                                                onCompleteHourlyQuiz = viewModel::completeHourlyQuiz,
+                                                onPlasticCrinkle = viewModel::playPlasticCrinkle,
+                                                onOpenSettings = {},
+                                                onButtonClickSfx = viewModel::playClick,
+                                                includeStatusBarPadding = false
+                                            )
+                                            PlaySubTab.QUESTS -> QuestsScreen(
+                                                uiState = uiState,
+                                                onClaimQuest = viewModel::claimQuest,
+                                                onOpenSettings = {},
+                                                onButtonClickSfx = viewModel::playClick,
+                                                includeStatusBarPadding = false
                                             )
                                         }
                                     }
                                 }
 
-                                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                                    when (vaultSubTab) {
-                                        VaultSubTab.COLLECTION -> VaultScreen(
-                                            uiState = uiState,
-                                            onInspectCard = { id ->
-                                                viewModel.playClick()
-                                                inspectingCardId = id
-                                            },
-                                            onButtonClickSfx = viewModel::playClick,
-                                            includeStatusBarPadding = false
-                                        )
-                                        VaultSubTab.RECYCLE -> RecycleForgeScreen(
-                                            uiState = uiState,
-                                            onRecycleSingle = { card -> viewModel.recycleSingleCard(card) },
-                                            onRecycleAllDuplicates = {
-                                                viewModel.playClick()
-                                                viewModel.recycleAllDuplicates()
-                                            },
-                                            onInspectCard = { id ->
-                                                viewModel.playClick()
-                                                inspectingCardId = id
-                                            },
-                                            onButtonClickSfx = viewModel::playClick,
-                                            includeStatusBarPadding = false
-                                        )
-                                        VaultSubTab.TRADE -> TradeDeskScreen(
-                                            uiState = uiState,
-                                            preselectedCardForTrade = preselectedTradeCard,
-                                            onClearPreselectedCard = { preselectedTradeCard = null },
-                                            onExecuteBazaarTrade = viewModel::executeBazaarTrade,
-                                            onRefreshBazaar = viewModel::refreshBazaar,
-                                            onCreateTradeListing = { card, seeking, gold ->
-                                                viewModel.createTradeListing(card, seeking, gold)
-                                            },
-                                            onCancelListing = viewModel::cancelTradeListing,
-                                            onDecodeSlip = viewModel::decodeTradeSlip,
-                                            onClearDecodedSlip = viewModel::clearDecodedSlip,
-                                            onCompleteTrade = viewModel::completeTradeWithSlip,
-                                            onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
-                                            onButtonClickSfx = viewModel::playClick,
-                                            includeStatusBarPadding = false
-                                        )
+                                CollectorTab.META -> MetaGuidesScreen(
+                                    metaState = uiState.metaState,
+                                    onSelectRankFilter = viewModel::selectMetaRankFilter,
+                                    onSelectSortMode = viewModel::selectMetaSortMode,
+                                    onRefreshMeta = viewModel::refreshMeta,
+                                    onOpenHeroDetail = viewModel::openHeroMetaDetail,
+                                    onDismissHeroDetail = viewModel::dismissHeroMetaDetail,
+                                    onOpenSettings = {},
+                                    onButtonClickSfx = viewModel::playClick
+                                )
+
+                                CollectorTab.VAULT -> Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(palette.canvas)
+                                        .statusBarsPadding()
+                                ) {
+                                    Surface(
+                                        color = palette.cardSurface,
+                                        shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.dp, palette.border),
+                                        shadowElevation = 2.dp,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            VaultSubTab.entries.forEach { sub ->
+                                                val selected = vaultSubTab == sub
+                                                FilterChip(
+                                                    selected = selected,
+                                                    onClick = {
+                                                        viewModel.playClick()
+                                                        vaultSubTab = sub
+                                                    },
+                                                    label = { Text(sub.label) },
+                                                    colors = FilterChipDefaults.filterChipColors(
+                                                        selectedContainerColor = palette.buttonPrimary,
+                                                        selectedLabelColor = Color.White,
+                                                        containerColor = palette.frostSurface,
+                                                        labelColor = palette.muted
+                                                    ),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .testTag("vault_subtab_${sub.name.lowercase()}")
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                        when (vaultSubTab) {
+                                            VaultSubTab.COLLECTION -> VaultScreen(
+                                                uiState = uiState,
+                                                onInspectCard = { id ->
+                                                    viewModel.playClick()
+                                                    inspectingCardId = id
+                                                },
+                                                onButtonClickSfx = viewModel::playClick,
+                                                includeStatusBarPadding = false
+                                            )
+                                            VaultSubTab.RECYCLE -> RecycleForgeScreen(
+                                                uiState = uiState,
+                                                onRecycleSingle = { card -> viewModel.recycleSingleCard(card) },
+                                                onRecycleAllDuplicates = {
+                                                    viewModel.playClick()
+                                                    viewModel.recycleAllDuplicates()
+                                                },
+                                                onInspectCard = { id ->
+                                                    viewModel.playClick()
+                                                    inspectingCardId = id
+                                                },
+                                                onButtonClickSfx = viewModel::playClick,
+                                                includeStatusBarPadding = false
+                                            )
+                                            VaultSubTab.TRADE -> TradeDeskScreen(
+                                                uiState = uiState,
+                                                currentUserUid = currentUser?.uid,
+                                                preselectedCardForTrade = preselectedTradeCard,
+                                                onClearPreselectedCard = { preselectedTradeCard = null },
+                                                onAcceptP2PListing = viewModel::acceptP2PListing,
+                                                onCancelCloudP2PListing = viewModel::cancelCloudP2PListing,
+                                                onViewTraderProfile = viewModel::viewTraderProfile,
+                                                onDismissViewingProfile = viewModel::dismissViewingProfile,
+                                                onCreateTradeListing = { card, seeking, gold ->
+                                                    viewModel.createTradeListing(card, seeking, gold)
+                                                },
+                                                onCancelListing = viewModel::cancelTradeListing,
+                                                onDecodeSlip = viewModel::decodeTradeSlip,
+                                                onClearDecodedSlip = viewModel::clearDecodedSlip,
+                                                onCompleteTrade = viewModel::completeTradeWithSlip,
+                                                onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                                                onButtonClickSfx = viewModel::playClick,
+                                                includeStatusBarPadding = false
+                                            )
+                                        }
                                     }
                                 }
-                            }
 
-                            CollectorTab.PROFILE -> ProfileScreen(
-                                uiState = uiState,
-                                onUpdateAlias = viewModel::updateAlias,
-                                onSyncCatalog = {
-                                    viewModel.playClick()
-                                    viewModel.syncCatalog()
-                                },
-                                onTogglePinnedBadge = viewModel::togglePinnedBadge,
-                                onOpenSettings = {},
-                                onButtonClickSfx = viewModel::playClick
-                            )
+                                CollectorTab.PROFILE -> ProfileScreen(
+                                    uiState = uiState,
+                                    currentUser = currentUser,
+                                    onUpdateAlias = viewModel::updateAlias,
+                                    onUpdateMlbbAccount = viewModel::updateMlbbAccount,
+                                    onSignOut = onSignOut,
+                                    onSyncCatalog = {
+                                        viewModel.playClick()
+                                        viewModel.syncCatalog()
+                                    },
+                                    onTogglePinnedBadge = viewModel::togglePinnedBadge,
+                                    onOpenSettings = {},
+                                    onButtonClickSfx = viewModel::playClick
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // Fullscreen Pack Opening Overlay
-        if (packSession != null && inspectingCardId == null) {
-            BackHandler {
-                if (!packSession.isRipped || packSession.allRevealed) {
-                    viewModel.closePackSession()
-                }
-            }
-            PackOpeningScreen(
-                session = packSession,
-                onOpenSettings = {},
-                onPlasticCrinkle = viewModel::playPlasticCrinkle,
-                onPackTear = viewModel::playPackTear,
-                onCardFlipSound = viewModel::playCardFlipSfx,
-                onPackRipped = viewModel::ripAndCommitPack,
-                onRevealCard = viewModel::revealCardAt,
-                onAdvanceFromReveal = viewModel::advanceToNextFaceDownCard,
-                onShowSummaryGrid = viewModel::showPulledSummaryGrid,
-                onFocusRevealedCard = viewModel::focusRevealedCard,
-                onInspectCard = { cardId ->
-                    viewModel.playClick()
-                    inspectingCardId = cardId
-                },
-                onClose = viewModel::closePackSession
-            )
-        }
-
-        // Fullscreen 3D Gyroscope Card Inspector Overlay
-        val currentInspectId = inspectingCardId
-        if (currentInspectId != null) {
-            BackHandler {
-                viewModel.playClick()
-                inspectingCardId = null
-            }
-            val inspectedCard by viewModel.observeOwnedCard(currentInspectId)
-                .collectAsStateWithLifecycle(initialValue = null)
-            val dupCount = remember(uiState.ownedCards, inspectedCard) {
-                inspectedCard?.let { target ->
-                    uiState.ownedCards.count { it.catalogId == target.catalogId }
-                } ?: 1
-            }
-
-            CardInspectScreen(
-                card = inspectedCard,
-                duplicateCount = dupCount,
-                onBack = {
-                    viewModel.playClick()
-                    inspectingCardId = null
-                },
-                onRecycle = { card ->
-                    viewModel.recycleSingleCard(card) {
-                        inspectingCardId = null
+            // Fullscreen Pack Opening Overlay
+            if (packSession != null && inspectingCardId == null) {
+                BackHandler {
+                    if (!packSession.isRipped || packSession.allRevealed) {
+                        viewModel.closePackSession()
                     }
-                },
-                onMintTradeSlip = { card ->
-                    viewModel.playClick()
-                    preselectedTradeCard = card
-                    inspectingCardId = null
-                    viewModel.closePackSession()
-                    activeTab = CollectorTab.VAULT
-                    vaultSubTab = VaultSubTab.TRADE
-                },
-                onButtonClickSfx = viewModel::playClick
-            )
-        }
+                }
+                PackOpeningScreen(
+                    session = packSession,
+                    onOpenSettings = {},
+                    onPlasticCrinkle = viewModel::playPlasticCrinkle,
+                    onPackTear = viewModel::playPackTear,
+                    onCardFlipSound = viewModel::playCardFlipSfx,
+                    onPackRipped = viewModel::ripAndCommitPack,
+                    onRevealCard = viewModel::revealCardAt,
+                    onAdvanceFromReveal = viewModel::advanceToNextFaceDownCard,
+                    onShowSummaryGrid = viewModel::showPulledSummaryGrid,
+                    onFocusRevealedCard = viewModel::focusRevealedCard,
+                    onInspectCard = { cardId ->
+                        viewModel.playClick()
+                        inspectingCardId = cardId
+                    },
+                    onClose = viewModel::closePackSession
+                )
+            }
 
-    }
+            // Fullscreen 3D Gyroscope Card Inspector Overlay
+            val currentInspectId = inspectingCardId
+            if (currentInspectId != null) {
+                BackHandler {
+                    viewModel.playClick()
+                    inspectingCardId = null
+                }
+                val inspectedCard by viewModel.observeOwnedCard(currentInspectId)
+                    .collectAsStateWithLifecycle(initialValue = null)
+                val dupCount = remember(uiState.ownedCards, inspectedCard) {
+                    inspectedCard?.let { target ->
+                        uiState.ownedCards.count { it.catalogId == target.catalogId }
+                    } ?: 1
+                }
+
+                CardInspectScreen(
+                    card = inspectedCard,
+                    duplicateCount = dupCount,
+                    onBack = {
+                        viewModel.playClick()
+                        inspectingCardId = null
+                    },
+                    onRecycle = { card ->
+                        viewModel.recycleSingleCard(card) {
+                            inspectingCardId = null
+                        }
+                    },
+                    onMintTradeSlip = { card ->
+                        viewModel.playClick()
+                        preselectedTradeCard = card
+                        inspectingCardId = null
+                        viewModel.closePackSession()
+                        activeTab = CollectorTab.VAULT
+                        vaultSubTab = VaultSubTab.TRADE
+                    },
+                    onButtonClickSfx = viewModel::playClick
+                )
+            }
+        }
     }
 }

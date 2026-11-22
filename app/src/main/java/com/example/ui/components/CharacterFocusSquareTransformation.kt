@@ -20,13 +20,12 @@ class CharacterFocusSquareTransformation(
     imageKey: String
 ) : Transformation {
 
-    override val cacheKey: String = "char_focus_sq_v1_$imageKey"
+    override val cacheKey: String = "char_focus_sq_sr_v2_$imageKey"
 
     override suspend fun transform(input: Bitmap, size: Size): Bitmap {
         val w = input.width
         val h = input.height
         if (w <= 0 || h <= 0) return input
-        if (w == h) return input
 
         val safeInput: Bitmap = if (input.config == Bitmap.Config.HARDWARE) {
             input.copy(Bitmap.Config.ARGB_8888, false) ?: input
@@ -34,28 +33,36 @@ class CharacterFocusSquareTransformation(
             input
         }
 
-        val faceCenter = detectPrimaryFaceNormalized(safeInput)
-        val cropRect = computeFocusCropRect(
-            width = safeInput.width,
-            height = safeInput.height,
-            faceNormX = faceCenter?.first,
-            faceNormY = faceCenter?.second,
-            energyProvider = { gridW, gridH ->
-                sampleVisualEnergyGrid(safeInput, gridW, gridH)
-            }
-        )
+        val cropped = if (w == h) {
+            safeInput
+        } else {
+            val faceCenter = detectPrimaryFaceNormalized(safeInput)
+            val cropRect = computeFocusCropRect(
+                width = safeInput.width,
+                height = safeInput.height,
+                faceNormX = faceCenter?.first,
+                faceNormY = faceCenter?.second,
+                energyProvider = { gridW, gridH ->
+                    sampleVisualEnergyGrid(safeInput, gridW, gridH)
+                }
+            )
+            Bitmap.createBitmap(
+                safeInput,
+                cropRect.left,
+                cropRect.top,
+                cropRect.width(),
+                cropRect.height()
+            )
+        }
 
-        val cropped = Bitmap.createBitmap(
-            safeInput,
-            cropRect.left,
-            cropRect.top,
-            cropRect.width(),
-            cropRect.height()
-        )
-        if (safeInput !== input && !safeInput.isRecycled) {
+        val enhanced = CardDetailUpscaleTransformation.upscaleAndSharpen(cropped, targetMinPx = 920)
+        if (cropped !== safeInput && cropped !== enhanced && !cropped.isRecycled) {
+            cropped.recycle()
+        }
+        if (safeInput !== input && safeInput !== enhanced && !safeInput.isRecycled) {
             safeInput.recycle()
         }
-        return cropped
+        return enhanced
     }
 
     private fun detectPrimaryFaceNormalized(bitmap: Bitmap): Pair<Float, Float>? {

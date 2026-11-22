@@ -26,6 +26,8 @@ data class PlayerWalletState(
     val totalCoinsRecycled: Int = 0,
     val bonusFreePacks: Int = 1,
     val collectorAlias: String = "Mythic Ace",
+    val mlbbIgn: String = "",
+    val mlbbServerId: String = "",
     val catalogLastSyncedMs: Long = 0L,
     val catalogSyncedEpochDay: Long = -1L,
     val catalogSchemaVersion: Int = 0,
@@ -126,6 +128,8 @@ class PlayerPreferencesStore(private val context: Context) {
         val TOTAL_COINS_RECYCLED = intPreferencesKey("total_gold_recycled")
         val BONUS_FREE_PACKS = intPreferencesKey("bonus_starter_packs")
         val COLLECTOR_ALIAS = stringPreferencesKey("collector_alias")
+        val MLBB_IGN = stringPreferencesKey("mlbb_ign")
+        val MLBB_SERVER_ID = stringPreferencesKey("mlbb_server_id")
         val CATALOG_LAST_SYNCED_MS = longPreferencesKey("catalog_last_synced_ms")
         val CATALOG_SYNCED_EPOCH_DAY = longPreferencesKey("catalog_synced_epoch_day")
         val CATALOG_SCHEMA_VERSION = intPreferencesKey("catalog_schema_version")
@@ -178,6 +182,8 @@ class PlayerPreferencesStore(private val context: Context) {
             totalCoinsRecycled = prefs[Keys.TOTAL_COINS_RECYCLED] ?: 0,
             bonusFreePacks = prefs[Keys.BONUS_FREE_PACKS] ?: 1,
             collectorAlias = prefs[Keys.COLLECTOR_ALIAS] ?: "Mythic Ace",
+            mlbbIgn = prefs[Keys.MLBB_IGN] ?: "",
+            mlbbServerId = prefs[Keys.MLBB_SERVER_ID] ?: "",
             catalogLastSyncedMs = prefs[Keys.CATALOG_LAST_SYNCED_MS] ?: 0L,
             catalogSyncedEpochDay = prefs[Keys.CATALOG_SYNCED_EPOCH_DAY] ?: -1L,
             catalogSchemaVersion = prefs[Keys.CATALOG_SCHEMA_VERSION] ?: 0,
@@ -538,11 +544,29 @@ class PlayerPreferencesStore(private val context: Context) {
     }
 
     suspend fun updateCollectorAlias(alias: String) {
-        val cleaned = alias.trim().take(24)
+        val cleaned = alias.trim().take(32)
         if (cleaned.isNotEmpty()) {
             context.collectorDataStore.edit { prefs ->
                 prefs[Keys.COLLECTOR_ALIAS] = cleaned
             }
+        }
+    }
+
+    suspend fun seedAliasFromGoogleIfDefault(googleName: String) {
+        val cleaned = googleName.trim().take(32)
+        if (cleaned.isEmpty()) return
+        context.collectorDataStore.edit { prefs ->
+            val current = prefs[Keys.COLLECTOR_ALIAS]
+            if (current.isNullOrBlank() || current == "Mythic Ace") {
+                prefs[Keys.COLLECTOR_ALIAS] = cleaned
+            }
+        }
+    }
+
+    suspend fun updateMlbbAccount(ign: String, serverId: String) {
+        context.collectorDataStore.edit { prefs ->
+            prefs[Keys.MLBB_IGN] = ign.trim().take(40)
+            prefs[Keys.MLBB_SERVER_ID] = serverId.trim().filter { it.isDigit() }.take(12)
         }
     }
 

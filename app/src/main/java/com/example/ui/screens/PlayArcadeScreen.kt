@@ -120,6 +120,7 @@ fun PlayArcadeScreen(
     onPlasticCrinkle: () -> Unit,
     onOpenSettings: () -> Unit,
     onButtonClickSfx: () -> Unit,
+    includeStatusBarPadding: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val palette = CollectorTheme.colors
@@ -135,7 +136,7 @@ fun PlayArcadeScreen(
                     )
                 )
             )
-            .statusBarsPadding()
+            .let { if (includeStatusBarPadding) it.statusBarsPadding() else it }
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),

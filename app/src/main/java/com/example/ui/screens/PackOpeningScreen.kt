@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SwipeRight
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -108,6 +109,7 @@ import com.example.ui.components.CardBackView
 import com.example.ui.components.HolographicCardView
 import com.example.ui.components.RarityChip
 import com.example.ui.components.SettingsGearButton
+import com.example.ui.sensors.CardTiltState
 import com.example.ui.sensors.rememberCardTiltState
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
@@ -227,8 +229,8 @@ fun PackOpeningScreen(
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        auraColor.copy(alpha = (if (palette.isDark) 0.16f else 0.15f) + suspenseProgress * 0.22f),
-                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.10f else 0.22f),
+                        auraColor.copy(alpha = (if (palette.isDark) 0.11f else 0.12f) + suspenseProgress * 0.10f),
+                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.08f else 0.16f),
                         palette.abyss.copy(alpha = 0.85f),
                         palette.canvas
                     )
@@ -314,6 +316,7 @@ fun PackOpeningScreen(
                             coverRes = MegaPackConfig.COVER_DRAWABLE_RES,
                             satinTheme = session.wrapperTheme,
                             packCount = session.bundle.packCount,
+                            tiltState = tiltState,
                             isCommitting = session.isCommittingRip,
                             onCrinkle = onPlasticCrinkle,
                             onRipComplete = ::triggerRipSequence
@@ -417,7 +420,9 @@ fun PackOpeningScreen(
                     LottieAnimation(
                         composition = burstComposition,
                         progress = { burstProgress },
-                        modifier = Modifier.size(390.dp)
+                        modifier = Modifier
+                            .size(340.dp)
+                            .alpha(0.36f)
                     )
                 }
             }
@@ -966,95 +971,353 @@ private fun PackTearStage(
     coverRes: Int,
     satinTheme: PackSatinTheme,
     packCount: Int,
+    tiltState: CardTiltState,
     isCommitting: Boolean,
     onCrinkle: () -> Unit,
     onRipComplete: () -> Unit
 ) {
-    var tearProgress by remember { mutableFloatStateOf(0f) }
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current.density
+    val tearAnim = remember { Animatable(0f) }
+    val yawAnim = remember { Animatable(0f) }
+    val pitchAnim = remember { Animatable(0f) }
+    var tornCommitted by remember { mutableStateOf(false) }
+
     val pulseTransition = rememberInfiniteTransition(label = "pack_float")
     val floatOffset by pulseTransition.animateFloat(
-        initialValue = -7f,
-        targetValue = 7f,
+        initialValue = -6f,
+        targetValue = 6f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1600, easing = FastOutSlowInEasing),
+            animation = tween(1800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "float_y"
     )
-    val scaleAnim = remember { Animatable(0.92f) }
+    val entryScale = remember { Animatable(0.92f) }
     LaunchedEffect(Unit) {
-        scaleAnim.animateTo(
+        entryScale.animateTo(
             targetValue = 1f,
             animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
         )
     }
 
-    Box(
-        modifier = Modifier
-            .width(246.dp)
-            .height(348.dp)
-            .offset { IntOffset(0, floatOffset.roundToInt()) }
-            .graphicsLayer {
-                scaleX = scaleAnim.value
-                scaleY = scaleAnim.value
-                rotationZ = tearProgress * 3.5f
-            }
-            .shadow(14.dp, RoundedCornerShape(22.dp))
-            .clip(RoundedCornerShape(22.dp))
-            .background(satinTheme.baseColor)
-            .border(2.5.dp, satinTheme.logoAccent.copy(alpha = 0.85f), RoundedCornerShape(22.dp))
-            .pointerInput(isCommitting) {
-                if (!isCommitting) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { onCrinkle() },
-                        onDragEnd = {
-                            if (tearProgress > 0.45f) {
-                                onRipComplete()
-                            } else {
-                                tearProgress = 0f
+    val totalYaw = yawAnim.value + tiltState.rollDegrees * 0.45f
+    val normalizedYaw = ((totalYaw % 360f) + 360f) % 360f
+    val showingBack = normalizedYaw in 90f..270f
+    val tearProgress = tearAnim.value.coerceIn(0f, 1f)
+
+    fun commitTear() {
+        if (tornCommitted || isCommitting) return
+        tornCommitted = true
+        scope.launch {
+            tearAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing)
+            )
+            onRipComplete()
+        }
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(250.dp)
+                .height(352.dp)
+                .offset { IntOffset(0, floatOffset.roundToInt()) }
+                .graphicsLayer {
+                    scaleX = entryScale.value
+                    scaleY = entryScale.value
+                    rotationY = totalYaw
+                    rotationX = (pitchAnim.value - tiltState.pitchDegrees * 0.35f).coerceIn(-18f, 18f)
+                    rotationZ = tearProgress * 2.5f
+                    cameraDistance = 18f * density
+                }
+        ) {
+            // Lower Pack Body (Rotates 3D on drag; shows Front Art or Back Foil Seal)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .shadow(16.dp, RoundedCornerShape(22.dp))
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(satinTheme.baseColor)
+                    .border(
+                        width = 2.dp,
+                        color = satinTheme.logoAccent.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(22.dp)
+                    )
+                    .pointerInput(isCommitting) {
+                        if (!isCommitting) {
+                            detectDragGestures(
+                                onDragStart = { onCrinkle() },
+                                onDragEnd = {
+                                    scope.launch {
+                                        val mod = ((yawAnim.value % 360f) + 360f) % 360f
+                                        val snapTarget = if (mod in 90f..270f) 180f else 0f
+                                        launch {
+                                            yawAnim.animateTo(
+                                                targetValue = snapTarget,
+                                                animationSpec = spring(
+                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                    stiffness = Spring.StiffnessMediumLow
+                                                )
+                                            )
+                                        }
+                                        launch {
+                                            pitchAnim.animateTo(0f, spring(stiffness = Spring.StiffnessLow))
+                                        }
+                                    }
+                                },
+                                onDragCancel = {
+                                    scope.launch {
+                                        yawAnim.animateTo(if (((yawAnim.value % 360f) + 360f) % 360f in 90f..270f) 180f else 0f)
+                                        pitchAnim.animateTo(0f)
+                                    }
+                                }
+                            ) { change, dragAmount ->
+                                change.consume()
+                                scope.launch {
+                                    yawAnim.snapTo(yawAnim.value + dragAmount.x * 0.45f)
+                                    pitchAnim.snapTo((pitchAnim.value - dragAmount.y * 0.14f).coerceIn(-16f, 16f))
+                                }
                             }
                         }
-                    ) { change, dragAmount ->
-                        change.consume()
-                        onCrinkle()
-                        tearProgress = (tearProgress + abs(dragAmount) / 340f).coerceIn(0f, 1f)
-                        if (tearProgress >= 0.85f) {
-                            onRipComplete()
+                    }
+                    .pointerInput(isCommitting) {
+                        if (!isCommitting) {
+                            detectTapGestures(
+                                onDoubleTap = {
+                                    onCrinkle()
+                                    scope.launch {
+                                        val target = if (showingBack) 0f else 180f
+                                        yawAnim.animateTo(
+                                            target,
+                                            spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    }
+            ) {
+                if (showingBack) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { rotationY = 180f }
+                    ) {
+                        PackBackSealFace(satinTheme = satinTheme, packCount = packCount)
+                    }
+                } else {
+                    PackFrontArtFace(
+                        coverRes = coverRes,
+                        satinTheme = satinTheme,
+                        tearProgress = tearProgress
+                    )
+                }
+
+                // Perforated Foil Tear Strip Overlay (Top 24% of wrapper)
+                if (!showingBack) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(82.dp)
+                            .align(Alignment.TopCenter)
+                            .graphicsLayer {
+                                translationX = tearProgress * 72f
+                                translationY = -tearProgress * 36f
+                                rotationZ = tearProgress * -11f
+                                rotationX = tearProgress * 22f
+                                alpha = (1f - tearProgress * 0.55f).coerceIn(0.35f, 1f)
+                            }
+                            .pointerInput(isCommitting, tornCommitted) {
+                                if (!isCommitting && !tornCommitted) {
+                                    detectHorizontalDragGestures(
+                                        onDragStart = { onCrinkle() },
+                                        onDragEnd = {
+                                            if (tearAnim.value >= 0.62f) {
+                                                commitTear()
+                                            } else {
+                                                scope.launch {
+                                                    tearAnim.animateTo(
+                                                        0f,
+                                                        spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            scope.launch { tearAnim.animateTo(0f) }
+                                        }
+                                    ) { change, dragAmount ->
+                                        change.consume()
+                                        onCrinkle()
+                                        val next = (tearAnim.value + abs(dragAmount) / 360f).coerceIn(0f, 1f)
+                                        scope.launch { tearAnim.snapTo(next) }
+                                        if (next >= 0.68f) {
+                                            commitTear()
+                                        }
+                                    }
+                                }
+                            }
+                    ) {
+                        // Top Foil Cap Gradient
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            satinTheme.sheenHighlight.copy(alpha = 0.28f),
+                                            satinTheme.baseColor.copy(alpha = 0.85f)
+                                        )
+                                    )
+                                )
+                        )
+
+                        // Tear Cue Badge
+                        Surface(
+                            color = MoonlightNight.copy(alpha = 0.86f),
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, satinTheme.crestTint.copy(alpha = 0.78f)),
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(top = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SwipeRight,
+                                    contentDescription = null,
+                                    tint = satinTheme.crestTint,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (packCount > 1) "SWIPE TOP TO RIP ${packCount}x" else "SWIPE TOP FOIL TO TEAR",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = satinTheme.crestTint
+                                )
+                            }
+                        }
+                    }
+
+                    // Dynamic Foil Tear Zip Line & Metallic Inner Foil Opening
+                    val tearGoldColor = StudioGoldBright
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val y = size.height * 0.235f
+                        val splitX = size.width * tearProgress
+
+                        // Perforation dashes along un-ripped portion
+                        val dashCount = 18
+                        val step = size.width / dashCount
+                        for (i in 0 until dashCount) {
+                            val startX = i * step + 4f
+                            val endX = (i + 0.65f) * step
+                            if (endX > splitX) {
+                                drawLine(
+                                    color = satinTheme.sheenHighlight.copy(alpha = 0.72f),
+                                    start = Offset(startX.coerceAtLeast(splitX), y),
+                                    end = Offset(endX, y),
+                                    strokeWidth = 3f
+                                )
+                            }
+                        }
+
+                        // Exposed metallic silver inner foil gap along ripped length
+                        if (tearProgress > 0.01f) {
+                            drawLine(
+                                brush = Brush.horizontalGradient(
+                                    listOf(
+                                        Color(0xFFE2E8F0),
+                                        tearGoldColor,
+                                        Color(0xFFF8FAFC)
+                                    )
+                                ),
+                                start = Offset(0f, y),
+                                end = Offset(splitX, y),
+                                strokeWidth = 10f + tearProgress * 6f
+                            )
                         }
                     }
                 }
             }
-            .clickable(enabled = !isCommitting) {
-                onCrinkle()
-                onRipComplete()
+        }
+
+        // Turn Pack / Hint Row
+        Surface(
+            color = PureWhiteCard.copy(alpha = 0.90f),
+            shape = RoundedCornerShape(999.dp),
+            border = BorderStroke(1.dp, IceBorder),
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .clickable(enabled = !isCommitting) {
+                    onCrinkle()
+                    scope.launch {
+                        val target = if (showingBack) 0f else 180f
+                        yawAnim.animateTo(
+                            target,
+                            spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                        )
+                    }
+                }
+                .testTag("turn_pack_button")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Autorenew,
+                    contentDescription = "Turn pack",
+                    tint = DeepCobalt,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (showingBack) "Flip to Front  •  Drag to Rotate" else "Turn to Back Seal  •  Drag to Rotate",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = InkSlate
+                )
             }
-    ) {
-        // Subtle base cover texture blended into the satin wrapper colorway
+        }
+    }
+}
+
+@Composable
+private fun PackFrontArtFace(
+    coverRes: Int,
+    satinTheme: PackSatinTheme,
+    tearProgress: Float
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
         Image(
             painter = painterResource(id = coverRes),
-            contentDescription = "Booster pack ready to rip",
+            contentDescription = "Booster pack front artwork",
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxSize()
                 .alpha(0.32f)
         )
 
-        // Smooth satin finish diagonal silk sheen overlay
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.linearGradient(
                         0.0f to satinTheme.baseColor.copy(alpha = 0.92f),
-                        0.32f to satinTheme.sheenHighlight.copy(alpha = 0.34f),
-                        0.50f to Color.White.copy(alpha = 0.24f),
+                        0.32f to satinTheme.sheenHighlight.copy(alpha = 0.34f + tearProgress * 0.12f),
+                        0.50f to Color.White.copy(alpha = 0.22f),
                         0.68f to satinTheme.logoAccent.copy(alpha = 0.36f),
                         1.0f to satinTheme.baseColor.copy(alpha = 0.95f)
                     )
                 )
         )
 
-        // Satin-Finish Custom Color Pack Crest & Logo in Center
         Surface(
             color = satinTheme.baseColor.copy(alpha = 0.78f),
             shape = RoundedCornerShape(18.dp),
@@ -1099,51 +1362,131 @@ private fun PackTearStage(
                 }
             }
         }
+    }
+}
 
-        // Top Tear Seam
-        val tearGold = StudioGoldBright
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val y = size.height * 0.22f
-            drawLine(
-                color = satinTheme.sheenHighlight.copy(alpha = 0.68f),
-                start = Offset(0f, y),
-                end = Offset(size.width, y),
-                strokeWidth = 3.5f
+@Composable
+private fun PackBackSealFace(
+    satinTheme: PackSatinTheme,
+    packCount: Int
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        satinTheme.baseColor.copy(alpha = 0.96f),
+                        satinTheme.logoAccent.copy(alpha = 0.30f),
+                        satinTheme.baseColor.copy(alpha = 0.98f)
+                    )
+                )
             )
-            if (tearProgress > 0f) {
-                drawLine(
-                    color = tearGold,
-                    start = Offset(0f, y),
-                    end = Offset(size.width * tearProgress, y),
-                    strokeWidth = 9f
-                )
-            }
-        }
-
-        Surface(
-            color = MoonlightNight.copy(alpha = 0.88f),
-            shape = RoundedCornerShape(999.dp),
-            border = BorderStroke(1.dp, satinTheme.crestTint.copy(alpha = 0.78f)),
+    ) {
+        // Center Crimped Foil Spine
+        Box(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 24.dp)
+                .width(12.dp)
+                .height(352.dp)
+                .align(Alignment.Center)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            satinTheme.sheenHighlight.copy(alpha = 0.40f),
+                            Color.White.copy(alpha = 0.28f),
+                            satinTheme.sheenHighlight.copy(alpha = 0.40f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 18.dp, vertical = 22.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Text(
+                text = "SEALED BOOSTER SPECS • ${packCount * MegaPackConfig.CARDS_PER_PACK} CARDS",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.8.sp,
+                    fontSize = 9.sp
+                ),
+                color = satinTheme.crestTint
+            )
+
+            Surface(
+                color = MoonlightNight.copy(alpha = 0.84f),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, satinTheme.sheenHighlight.copy(alpha = 0.55f)),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    imageVector = Icons.Default.SwipeRight,
-                    contentDescription = null,
-                    tint = satinTheme.crestTint,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "CERTIFIED PULL ODDS",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        ),
+                        color = StudioGoldBright
+                    )
+                    val oddsRows = listOf(
+                        "1-of-1 Misprint" to "0.005%",
+                        "Legend Tier" to "0.01%",
+                        "Collector Tier" to "1.0%",
+                        "Luckybox Tier" to "3.0%",
+                        "Epic Tier" to "8.0%",
+                        "Special Tier" to "19.0%",
+                        "Uncommon Tier" to "36.0%",
+                        "Common Tier" to "32.99%"
+                    )
+                    oddsRows.forEach { (label, pct) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = Color.White.copy(alpha = 0.88f)
+                            )
+                            Text(
+                                text = pct,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = satinTheme.crestTint
+                            )
+                        }
+                    }
+                }
+            }
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = if (packCount > 1) "SWIPE TO RIP ${packCount}x" else "SWIPE TO TEAR",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = satinTheme.crestTint
+                    text = "MLBBDEX ARCHIVE EDITION • ${satinTheme.label.uppercase()}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                    color = Color.White.copy(alpha = 0.72f)
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    listOf(2, 4, 1, 3, 2, 5, 1, 2, 4, 1, 3, 2, 1, 4, 2).forEach { w ->
+                        Box(
+                            modifier = Modifier
+                                .width(w.dp)
+                                .height(16.dp)
+                                .background(Color.White.copy(alpha = 0.65f))
+                        )
+                    }
+                }
             }
         }
     }

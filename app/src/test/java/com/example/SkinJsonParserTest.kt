@@ -1,10 +1,13 @@
 package com.example
 
+import android.view.Surface
 import com.example.data.local.PlayerWalletState
+import com.example.data.remote.RoneArenaParser
 import com.example.data.remote.SkinJsonParser
 import com.example.model.AchievementCatalog
-import com.example.model.BazaarMarketCatalog
 import com.example.model.MegaPackConfig
+import com.example.model.MetaRankFilter
+import com.example.model.MetaTierGrade
 import com.example.model.MisprintAnomaly
 import com.example.model.PackBundleOption
 import com.example.model.PackSatinTheme
@@ -14,7 +17,9 @@ import com.example.model.QuizQuestionType
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.SkinVoiceLines
+import com.example.ui.components.CardDetailUpscaleTransformation
 import com.example.ui.components.CharacterFocusSquareTransformation
+import com.example.ui.sensors.mapTiltForDisplayRotation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -219,21 +224,6 @@ class SkinJsonParserTest {
         assertEquals(12, badges.size)
         assertTrue(badges.first { it.definition.id == "badge_first_rip" }.isUnlocked)
         assertTrue(badges.first { it.definition.id == "badge_streak_3" }.isUnlocked)
-
-        val sampleSkins = SkinRarity.entries.mapIndexed { idx, rarity ->
-            SkinCatalogItem(
-                id = "bz_skin_$idx",
-                skinName = "Royal ${rarity.displayName}",
-                heroName = "Hero$idx",
-                role = "Mage",
-                rawTier = rarity.displayName,
-                rarity = rarity,
-                imageUrl = "https://mlbbdex.com/visuels/$idx.webp"
-            )
-        }
-        val listings = BazaarMarketCatalog.buildDailyBazaarListings(sampleSkins, epochDay = 20000L, rotationSeed = 1)
-        assertEquals(6, listings.size)
-        assertTrue(listings.all { it.trader.showcaseSkins.size == 3 })
     }
 
     @Test
@@ -303,5 +293,114 @@ class SkinJsonParserTest {
     fun `handles empty payload gracefully`() {
         assertTrue(SkinJsonParser.parseSkins("").isEmpty())
         assertTrue(SkinJsonParser.parseSkins("{}").isEmpty())
+    }
+
+    @Test
+    fun `parses Rone Arena OpenAPI discovery, hero rank stats, counters, and build guides`() {
+        val openApi = """
+            {
+              "paths": {
+                "/api/v1/academy/hero-rank": {},
+                "/api/v1/heroes": {},
+                "/api/v1/heroes/{hero_id_or_name}": {},
+                "/api/v1/heroes/{hero_id_or_name}/counters": {},
+                "/api/v1/heroes/{hero_id_or_name}/builds": {}
+              }
+            }
+        """.trimIndent()
+        val discovery = RoneArenaParser.discoverEndpoints(openApi)
+        assertEquals("api/v1/academy/hero-rank", discovery.heroRankPaths.first())
+        assertEquals("api/v1/heroes/{hero_id_or_name}/counters", discovery.heroCounterTemplates.first())
+        assertEquals("api/v1/heroes/{hero_id_or_name}/builds", discovery.heroBuildTemplates.first())
+
+        val rankJson = """
+            {
+              "data": {
+                "records": [
+                  {
+                    "hero_id": 101,
+                    "hero_name": "Fanny",
+                    "roles": ["Assassin"],
+                    "lane": "Jungle",
+                    "win_rate": 0.548,
+                    "pick_rate": 0.145,
+                    "ban_rate": 0.625,
+                    "icon": "/assets/fanny.png"
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+        val heroes = RoneArenaParser.parseHeroRankList(rankJson, MetaRankFilter.MYTHIC)
+        assertEquals(1, heroes.size)
+        val fanny = heroes[0]
+        assertEquals("Fanny", fanny.heroName)
+        assertEquals(54.8, fanny.winRatePct, 0.05)
+        assertEquals(14.5, fanny.pickRatePct, 0.05)
+        assertEquals(62.5, fanny.banRatePct, 0.05)
+        assertEquals(MetaTierGrade.S_PLUS, fanny.tierGrade)
+        assertEquals("https://arena.rone.dev/assets/fanny.png", fanny.iconUrl)
+
+        val countersJson = """
+            {
+              "countered_by": [
+                { "hero_name": "Khufra", "win_rate": 56.2, "delta_win_rate": 4.1 }
+              ],
+              "strong_against": [
+                { "hero_name": "Layla", "win_rate": 61.0 }
+              ]
+            }
+        """.trimIndent()
+        val buildsJson = """
+            {
+              "builds": [
+                {
+                  "title": "Jungle Burst",
+                  "lane": "Jungle",
+                  "win_rate": 57.5,
+                  "emblem": "Assassin",
+                  "battle_spell": "Retribution",
+                  "items": ["Tough Boots", "Heptaseas", "Malefic Roar"]
+                }
+              ]
+            }
+        """.trimIndent()
+        val detail = RoneArenaParser.mergeDetailPayloads(fanny, null, countersJson, buildsJson)
+        assertEquals(1, detail.counteredBy.size)
+        assertEquals("Khufra", detail.counteredBy[0].heroName)
+        assertEquals(1, detail.strongAgainst.size)
+        assertEquals(1, detail.buildGuides.size)
+        assertEquals(3, detail.buildGuides[0].items.size)
+    }
+
+    @Test
+    fun `card detail luminance enhancement preserves channels and boosts high-frequency edge contrast`() {
+        val width = 5
+        val height = 5
+        val pixels = IntArray(width * height) { idx ->
+            val x = idx % width
+            if (x == 2) 0xFFFFFFFF.toInt() else 0xFF404040.toInt()
+        }
+        val out = CardDetailUpscaleTransformation.enhanceLuminanceDetail(pixels, width, height, amount = 0.6f, threshold = 2f)
+        assertEquals(pixels.size, out.size)
+        // Edge pixel remains brighter/crisp and alpha remains opaque 255
+        val centerAlpha = (out[2 * width + 2] ushr 24) and 0xFF
+        assertEquals(255, centerAlpha)
+        assertTrue((out[2 * width + 2] and 0xFF) >= 0xF0)
+    }
+
+    @Test
+    fun `display rotation remaps gyroscope pitch and roll accurately`() {
+        val (p0, r0) = mapTiltForDisplayRotation(10f, -5f, Surface.ROTATION_0)
+        assertEquals(10f, p0, 0.01f)
+        assertEquals(-5f, r0, 0.01f)
+
+        val (p90, r90) = mapTiltForDisplayRotation(10f, -5f, Surface.ROTATION_90)
+        assertEquals(5f, p90, 0.01f)
+        assertEquals(10f, r90, 0.01f)
+
+        val (p180, r180) = mapTiltForDisplayRotation(10f, -5f, Surface.ROTATION_180)
+        assertEquals(-10f, p180, 0.01f)
+        assertEquals(5f, r180, 0.01f)
     }
 }

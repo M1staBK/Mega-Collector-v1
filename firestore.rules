@@ -1,0 +1,255 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isNonEmptyString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isBoundedString(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isNonNegativeInt(val) {
+      return val is int && val >= 0;
+    }
+
+    function isValidUserPayload(data, userId) {
+      return data.keys().hasAll([
+          'userId', 'email', 'displayName', 'photoUrl', 'mlbbIgn', 'mlbbServerId',
+          'collectorRank', 'prestigeScore', 'coins', 'diamonds', 'uniqueSkinsCount',
+          'totalSkinsOwned', 'misprintCount', 'totalPacksOpened', 'totalTradesCompleted',
+          'dailyStreakCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'email', 'displayName', 'photoUrl', 'mlbbIgn', 'mlbbServerId',
+          'collectorRank', 'prestigeScore', 'coins', 'diamonds', 'uniqueSkinsCount',
+          'totalSkinsOwned', 'misprintCount', 'totalPacksOpened', 'totalTradesCompleted',
+          'dailyStreakCount', 'createdAt', 'updatedAt'
+        ])
+        && data.userId == userId
+        && isBoundedString(data.email, 200)
+        && isNonEmptyString(data.displayName, 1, 60)
+        && isBoundedString(data.photoUrl, 512)
+        && isBoundedString(data.mlbbIgn, 40)
+        && isBoundedString(data.mlbbServerId, 16)
+        && isNonEmptyString(data.collectorRank, 1, 40)
+        && isNonNegativeInt(data.prestigeScore)
+        && isNonNegativeInt(data.coins)
+        && isNonNegativeInt(data.diamonds)
+        && isNonNegativeInt(data.uniqueSkinsCount)
+        && isNonNegativeInt(data.totalSkinsOwned)
+        && isNonNegativeInt(data.misprintCount)
+        && isNonNegativeInt(data.totalPacksOpened)
+        && isNonNegativeInt(data.totalTradesCompleted)
+        && isNonNegativeInt(data.dailyStreakCount)
+        && data.createdAt is timestamp
+        && data.createdAt <= request.time
+        && data.updatedAt is timestamp
+        && data.updatedAt <= request.time;
+    }
+
+    function isValidHistoryPayload(data, userId) {
+      return data.keys().hasAll([
+          'userId', 'eventType', 'title', 'detail', 'rarityName',
+          'coinDelta', 'diamondDelta', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'eventType', 'title', 'detail', 'rarityName',
+          'coinDelta', 'diamondDelta', 'createdAt'
+        ])
+        && data.userId == userId
+        && data.eventType in ['PULL', 'TRADE', 'RECYCLE', 'MINIGAME', 'PROFILE']
+        && isNonEmptyString(data.title, 1, 100)
+        && isBoundedString(data.detail, 240)
+        && isBoundedString(data.rarityName, 32)
+        && data.coinDelta is int
+        && data.diamondDelta is int
+        && data.createdAt is timestamp
+        && data.createdAt <= request.time;
+    }
+
+    function isValidPublicProfile(data, userId) {
+      return data.keys().hasAll([
+          'userId', 'displayName', 'photoUrl', 'mlbbIgn', 'mlbbServerId',
+          'collectorRank', 'motto', 'prestigeScore', 'uniqueSkinsCount',
+          'totalPacksOpened', 'totalTradesCompleted', 'misprintCount',
+          'pinnedBadgeIds', 'showcaseSkinNames', 'showcaseHeroNames',
+          'showcaseRarityNames', 'showcaseImageUrls', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'displayName', 'photoUrl', 'mlbbIgn', 'mlbbServerId',
+          'collectorRank', 'motto', 'prestigeScore', 'uniqueSkinsCount',
+          'totalPacksOpened', 'totalTradesCompleted', 'misprintCount',
+          'pinnedBadgeIds', 'showcaseSkinNames', 'showcaseHeroNames',
+          'showcaseRarityNames', 'showcaseImageUrls', 'updatedAt'
+        ])
+        && data.userId == userId
+        && isNonEmptyString(data.displayName, 1, 60)
+        && isBoundedString(data.photoUrl, 512)
+        && isBoundedString(data.mlbbIgn, 40)
+        && isBoundedString(data.mlbbServerId, 16)
+        && isNonEmptyString(data.collectorRank, 1, 40)
+        && isBoundedString(data.motto, 180)
+        && isNonNegativeInt(data.prestigeScore)
+        && isNonNegativeInt(data.uniqueSkinsCount)
+        && isNonNegativeInt(data.totalPacksOpened)
+        && isNonNegativeInt(data.totalTradesCompleted)
+        && isNonNegativeInt(data.misprintCount)
+        && data.pinnedBadgeIds is list && data.pinnedBadgeIds.size() <= 3
+        && data.showcaseSkinNames is list && data.showcaseSkinNames.size() <= 3
+        && data.showcaseHeroNames is list && data.showcaseHeroNames.size() <= 3
+        && data.showcaseRarityNames is list && data.showcaseRarityNames.size() <= 3
+        && data.showcaseImageUrls is list && data.showcaseImageUrls.size() <= 3
+        && data.updatedAt is timestamp
+        && data.updatedAt <= request.time;
+    }
+
+    function isValidTradeListingCreate(data) {
+      return data.keys().hasAll([
+          'sellerUid', 'sellerName', 'sellerPhotoUrl', 'sellerMlbbIgn',
+          'catalogId', 'skinName', 'heroName', 'role', 'rawTier', 'rarityName',
+          'imageUrl', 'isMisprint', 'misprintAnomalyName', 'serialCode',
+          'seekingNote', 'tradeCode', 'status', 'acceptedByUid', 'acceptedByName',
+          'acceptedCatalogId', 'acceptedSkinName', 'acceptedHeroName',
+          'acceptedRole', 'acceptedRawTier', 'acceptedRarityName',
+          'acceptedImageUrl', 'acceptedIsMisprint', 'acceptedMisprintAnomalyName',
+          'acceptedSerialCode', 'sellerSettled', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'sellerUid', 'sellerName', 'sellerPhotoUrl', 'sellerMlbbIgn',
+          'catalogId', 'skinName', 'heroName', 'role', 'rawTier', 'rarityName',
+          'imageUrl', 'isMisprint', 'misprintAnomalyName', 'serialCode',
+          'seekingNote', 'tradeCode', 'status', 'acceptedByUid', 'acceptedByName',
+          'acceptedCatalogId', 'acceptedSkinName', 'acceptedHeroName',
+          'acceptedRole', 'acceptedRawTier', 'acceptedRarityName',
+          'acceptedImageUrl', 'acceptedIsMisprint', 'acceptedMisprintAnomalyName',
+          'acceptedSerialCode', 'sellerSettled', 'createdAt', 'updatedAt'
+        ])
+        && data.sellerUid == request.auth.uid
+        && isNonEmptyString(data.sellerName, 1, 60)
+        && isBoundedString(data.sellerPhotoUrl, 512)
+        && isBoundedString(data.sellerMlbbIgn, 40)
+        && isNonEmptyString(data.catalogId, 1, 80)
+        && isNonEmptyString(data.skinName, 1, 100)
+        && isNonEmptyString(data.heroName, 1, 60)
+        && isNonEmptyString(data.role, 1, 40)
+        && isNonEmptyString(data.rawTier, 1, 40)
+        && data.rarityName in ['COMMON', 'UNCOMMON', 'SPECIAL', 'EPIC', 'LUCKYBOX', 'COLLECTOR', 'LEGEND']
+        && isBoundedString(data.imageUrl, 512)
+        && data.isMisprint is bool
+        && isBoundedString(data.misprintAnomalyName, 60)
+        && isNonEmptyString(data.serialCode, 1, 40)
+        && isNonEmptyString(data.seekingNote, 1, 160)
+        && isBoundedString(data.tradeCode, 1500)
+        && data.status == 'OPEN'
+        && data.acceptedByUid == ''
+        && data.acceptedByName == ''
+        && data.acceptedCatalogId == ''
+        && data.acceptedSkinName == ''
+        && data.acceptedHeroName == ''
+        && data.acceptedRole == ''
+        && data.acceptedRawTier == ''
+        && data.acceptedRarityName == ''
+        && data.acceptedImageUrl == ''
+        && data.acceptedIsMisprint == false
+        && data.acceptedMisprintAnomalyName == ''
+        && data.acceptedSerialCode == ''
+        && data.sellerSettled == false
+        && data.createdAt is timestamp
+        && data.createdAt <= request.time
+        && data.updatedAt is timestamp
+        && data.updatedAt <= request.time;
+    }
+
+    function isValidListingAccept(incoming, existing) {
+      return existing.sellerUid != request.auth.uid
+        && existing.status == 'OPEN'
+        && incoming.status == 'COMPLETED'
+        && incoming.acceptedByUid == request.auth.uid
+        && isNonEmptyString(incoming.acceptedByName, 1, 60)
+        && isNonEmptyString(incoming.acceptedCatalogId, 1, 80)
+        && isNonEmptyString(incoming.acceptedSkinName, 1, 100)
+        && isNonEmptyString(incoming.acceptedHeroName, 1, 60)
+        && isNonEmptyString(incoming.acceptedRole, 1, 40)
+        && isNonEmptyString(incoming.acceptedRawTier, 1, 40)
+        && incoming.acceptedRarityName in ['COMMON', 'UNCOMMON', 'SPECIAL', 'EPIC', 'LUCKYBOX', 'COLLECTOR', 'LEGEND']
+        && isBoundedString(incoming.acceptedImageUrl, 512)
+        && incoming.acceptedIsMisprint is bool
+        && isBoundedString(incoming.acceptedMisprintAnomalyName, 60)
+        && isNonEmptyString(incoming.acceptedSerialCode, 1, 40)
+        && incoming.updatedAt is timestamp
+        && incoming.updatedAt <= request.time
+        && incoming.diff(existing).affectedKeys().hasOnly([
+          'status', 'acceptedByUid', 'acceptedByName',
+          'acceptedCatalogId', 'acceptedSkinName', 'acceptedHeroName',
+          'acceptedRole', 'acceptedRawTier', 'acceptedRarityName',
+          'acceptedImageUrl', 'acceptedIsMisprint', 'acceptedMisprintAnomalyName',
+          'acceptedSerialCode', 'updatedAt'
+        ]);
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserPayload(request.resource.data, userId);
+      allow update: if isOwner(userId)
+        && isValidUserPayload(request.resource.data, userId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+
+      match /history/{eventId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidHistoryPayload(request.resource.data, userId);
+        allow update: if false;
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    match /public_profiles/{userId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if isOwner(userId) && isValidPublicProfile(request.resource.data, userId);
+      allow delete: if false;
+    }
+
+    match /trade_listings/{listingId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.status == 'OPEN'
+        || resource.data.sellerUid == request.auth.uid
+        || resource.data.acceptedByUid == request.auth.uid
+      );
+      allow create: if isSignedIn() && isValidTradeListingCreate(request.resource.data);
+      allow update: if isSignedIn() && (
+        (
+          resource.data.sellerUid == request.auth.uid
+          && resource.data.status == 'OPEN'
+          && request.resource.data.status == 'CANCELLED'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+          && request.resource.data.updatedAt is timestamp
+          && request.resource.data.updatedAt <= request.time
+        )
+        || (
+          resource.data.sellerUid == request.auth.uid
+          && resource.data.status == 'COMPLETED'
+          && resource.data.sellerSettled == false
+          && request.resource.data.sellerSettled == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sellerSettled', 'updatedAt'])
+          && request.resource.data.updatedAt is timestamp
+          && request.resource.data.updatedAt <= request.time
+        )
+        || isValidListingAccept(request.resource.data, resource.data)
+      );
+      allow delete: if isSignedIn()
+        && resource.data.sellerUid == request.auth.uid
+        && resource.data.status != 'COMPLETED';
+    }
+  }
+}
