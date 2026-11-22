@@ -10,6 +10,7 @@ import com.example.data.local.TradeListingEntity
 import com.example.data.remote.MlbbDexClient
 import com.example.data.remote.ParsedHeroRef
 import com.example.data.remote.SkinJsonParser
+import com.example.model.BazaarTraderListing
 import com.example.model.DailyRewardTier
 import com.example.model.DecodedTradeSlip
 import com.example.model.DiamondExchangeOption
@@ -24,6 +25,7 @@ import com.example.model.QuestUiItem
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.TradeListing
+import org.json.JSONArray
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -59,13 +61,13 @@ class CollectorRepository(
         dao.observeCardById(instanceId).map { it?.toDomain() }
 
     val dailyRewardTiers: List<DailyRewardTier> = listOf(
-        DailyRewardTier(1, coinAmount = 250, bonusDiamonds = 5),
-        DailyRewardTier(2, coinAmount = 350, bonusDiamonds = 5),
-        DailyRewardTier(3, coinAmount = 450, bonusFreePacks = 1),
-        DailyRewardTier(4, coinAmount = 600, bonusDiamonds = 10),
-        DailyRewardTier(5, coinAmount = 800, bonusDiamonds = 10),
-        DailyRewardTier(6, coinAmount = 1000, bonusFreePacks = 1),
-        DailyRewardTier(7, coinAmount = 1800, bonusFreePacks = 2, bonusDiamonds = 25)
+        DailyRewardTier(1, coinAmount = 50, bonusDiamonds = 2),
+        DailyRewardTier(2, coinAmount = 75, bonusDiamonds = 2),
+        DailyRewardTier(3, coinAmount = 100, bonusFreePacks = 1),
+        DailyRewardTier(4, coinAmount = 125, bonusDiamonds = 4),
+        DailyRewardTier(5, coinAmount = 150, bonusDiamonds = 4),
+        DailyRewardTier(6, coinAmount = 200, bonusFreePacks = 1),
+        DailyRewardTier(7, coinAmount = 350, bonusFreePacks = 2, bonusDiamonds = 8)
     )
 
     suspend fun syncQuestPeriodsOnLaunch() {
@@ -186,6 +188,37 @@ class CollectorRepository(
         }
     }
 
+    suspend fun verifyPackReadyToRip(
+        bundle: PackBundleOption,
+        wallet: PlayerWalletState,
+        payWithDiamonds: Boolean,
+        useFreeTicket: Boolean
+    ): Result<PackBundleOption> = withContext(Dispatchers.IO) {
+        val count = dao.getCatalogCount()
+        if (count <= 0) {
+            return@withContext Result.failure(
+                IllegalStateException("Skin catalog is still syncing. Check progress in Profile.")
+            )
+        }
+        val effectiveBundle = if (useFreeTicket) PackBundleOption.SINGLE else bundle
+        when {
+            useFreeTicket && wallet.bonusFreePacks <= 0 -> {
+                Result.failure(IllegalStateException("No free pack ticket available."))
+            }
+            !useFreeTicket && payWithDiamonds && wallet.diamonds < effectiveBundle.diamondCost -> {
+                Result.failure(
+                    IllegalStateException("Not enough Diamonds. Need ${effectiveBundle.diamondCost} 💎.")
+                )
+            }
+            !useFreeTicket && !payWithDiamonds && wallet.coins < effectiveBundle.coinCost -> {
+                Result.failure(
+                    IllegalStateException("Not enough Coins. Need ${effectiveBundle.coinCost} 🪙.")
+                )
+            }
+            else -> Result.success(effectiveBundle)
+        }
+    }
+
     suspend fun openPackBundle(
         bundle: PackBundleOption,
         wallet: PlayerWalletState,
@@ -196,7 +229,7 @@ class CollectorRepository(
             val catalog = dao.getAllCatalogOnce().map { it.toDomain() }
             if (catalog.isEmpty()) {
                 return@withContext Result.failure(
-                    IllegalStateException("Skin catalog not synced yet. Tap Refresh above.")
+                    IllegalStateException("Skin catalog not synced yet. Refresh in Profile.")
                 )
             }
 
@@ -406,6 +439,26 @@ class CollectorRepository(
             else Result.failure(IllegalStateException("Quiz is on 1-hour cooldown."))
         }
 
+    suspend fun consumeWheelSpinAndAward(
+        coinReward: Int,
+        diamondReward: Int,
+        freePackReward: Int
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val ok = prefs.consumeWheelSpinAndAward(
+            coinReward = coinReward,
+            diamondReward = diamondReward,
+            freePackReward = freePackReward,
+            nowMs = System.currentTimeMillis(),
+            todayEpochDay = currentLocalEpochDay(),
+            currentWeekKey = currentLocalWeekKey()
+        )
+        if (ok) Result.success(Unit)
+        else Result.failure(IllegalStateException("Prize Wheel recharging! +1 spin every hour (max 3)."))
+    }
+
+    suspend fun togglePinnedBadge(badgeId: String): Boolean =
+        prefs.togglePinnedBadge(badgeId)
+
     fun buildQuestItems(wallet: PlayerWalletState): List<QuestUiItem> {
         val today = currentLocalEpochDay()
         val week = currentLocalWeekKey()
@@ -521,13 +574,19 @@ class CollectorRepository(
         card: OwnedCard,
         seekingNote: String,
         senderAlias: String,
-        goldSweetener: Int = 0
+        goldSweetener: Int = 0,
+        senderPrestige: Int = 0,
+        senderCardCount: Int = 0,
+        senderBadgeIds: List<String> = emptyList()
     ): Result<TradeListing> = withContext(Dispatchers.IO) {
         try {
             val slipJson = JSONObject().apply {
                 put("v", 1)
                 put("slipId", "TS-${randomHex4()}-${randomHex4()}")
                 put("sender", senderAlias.ifBlank { "Collector" })
+                put("prestige", senderPrestige)
+                put("cards", senderCardCount)
+                put("badges", JSONArray(senderBadgeIds.take(3)))
                 put("catalogId", card.catalogId)
                 put("skinName", card.skinName)
                 put("heroName", card.heroName)
@@ -587,6 +646,15 @@ class CollectorRepository(
             val payload = cleaned.removePrefix("MEGA-TRADE-V1:")
             val jsonStr = String(Base64.decode(payload, Base64.DEFAULT), Charsets.UTF_8)
             val obj = JSONObject(jsonStr)
+            val badgeArray = obj.optJSONArray("badges")
+            val parsedBadges = buildList {
+                if (badgeArray != null) {
+                    for (i in 0 until badgeArray.length()) {
+                        val b = badgeArray.optString(i)
+                        if (b.isNotBlank()) add(b)
+                    }
+                }
+            }
             val slip = DecodedTradeSlip(
                 senderAlias = obj.optString("sender", "Partner"),
                 catalogId = obj.optString("catalogId", "unknown"),
@@ -601,7 +669,10 @@ class CollectorRepository(
                 serialCode = obj.optString("serial", "STD-0000"),
                 goldSweetener = obj.optInt("gold", 0).coerceAtLeast(0),
                 seekingNote = obj.optString("seeking", ""),
-                slipId = obj.optString("slipId", "TS-0000")
+                slipId = obj.optString("slipId", "TS-0000"),
+                senderPrestige = obj.optInt("prestige", 1850),
+                senderCardCount = obj.optInt("cards", 24),
+                senderBadgeIds = parsedBadges
             )
             Result.success(slip)
         } catch (e: Exception) {
@@ -641,6 +712,57 @@ class CollectorRepository(
             if (slip.goldSweetener > 0) {
                 prefs.addCoins(slip.goldSweetener)
             }
+            prefs.recordTradeQuestProgress()
+            Result.success(newEntity.copy(instanceId = insertedId).toDomain())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun executeBazaarTrade(
+        listing: BazaarTraderListing,
+        offeredCard: OwnedCard
+    ): Result<OwnedCard> = withContext(Dispatchers.IO) {
+        try {
+            if (offeredCard.rarity.tierRank < listing.minRequiredRarity.tierRank) {
+                return@withContext Result.failure(
+                    IllegalStateException("Requires at least a ${listing.minRequiredRarity.displayName} card.")
+                )
+            }
+            val existing = dao.getCardById(offeredCard.instanceId)
+                ?: return@withContext Result.failure(IllegalStateException("Selected card is no longer in Vault."))
+
+            if (listing.coinFee > 0) {
+                val paid = prefs.tryDeductCoins(listing.coinFee)
+                if (!paid) {
+                    return@withContext Result.failure(
+                        IllegalStateException("Not enough Coins (${listing.coinFee} 🪙 needed).")
+                    )
+                }
+            }
+
+            if (existing.isListedForTrade) {
+                dao.deleteTradeListingsForCard(existing.instanceId)
+            }
+            dao.deleteOwnedCardById(existing.instanceId)
+
+            val skin = listing.offeredSkin
+            val newEntity = OwnedCardEntity(
+                catalogId = skin.id,
+                skinName = skin.skinName,
+                heroName = skin.heroName,
+                role = skin.role,
+                rawTier = skin.rawTier,
+                rarityName = skin.rarity.name,
+                imageUrl = skin.imageUrl,
+                isMisprint = listing.isMisprint,
+                misprintAnomalyName = listing.anomaly?.name,
+                serialCode = listing.serialCode,
+                pullRatePercent = if (listing.isMisprint) MegaPackConfig.MISPRINT_CHANCE_PERCENT else skin.rarity.basePullWeight,
+                obtainedAtMs = System.currentTimeMillis(),
+                isListedForTrade = false
+            )
+            val insertedId = dao.insertOwnedCard(newEntity)
             prefs.recordTradeQuestProgress()
             Result.success(newEntity.copy(instanceId = insertedId).toDomain())
         } catch (e: Exception) {

@@ -37,7 +37,7 @@ object QuestCatalog {
             title = "Pack Opener",
             description = "Open 1 Booster Pack today",
             targetCount = 1,
-            coinReward = 150
+            coinReward = 35
         ),
         QuestDefinition(
             id = "d_open_5",
@@ -45,8 +45,8 @@ object QuestCatalog {
             title = "5-Pack Bundle Fever",
             description = "Open 5 Booster Packs today",
             targetCount = 5,
-            coinReward = 450,
-            diamondReward = 5
+            coinReward = 100,
+            diamondReward = 3
         ),
         QuestDefinition(
             id = "d_rare_epic",
@@ -54,8 +54,8 @@ object QuestCatalog {
             title = "Epic+ Hunter",
             description = "Collect 1 Epic, Luckybox, Collector, or Legend card",
             targetCount = 1,
-            coinReward = 300,
-            diamondReward = 8
+            coinReward = 75,
+            diamondReward = 4
         ),
         QuestDefinition(
             id = "d_scratch_2",
@@ -63,16 +63,16 @@ object QuestCatalog {
             title = "Lucky Fingers",
             description = "Scratch 2 Daily Coin Scratchers",
             targetCount = 2,
-            coinReward = 180
+            coinReward = 45
         ),
         QuestDefinition(
             id = "d_minigame_2",
             category = QuestCategory.DAILY,
             title = "Diamond Challenger",
-            description = "Win 2 Arcade Minigame rounds",
+            description = "Complete 2 Arcade Minigame rounds",
             targetCount = 2,
-            coinReward = 200,
-            diamondReward = 6
+            coinReward = 50,
+            diamondReward = 3
         )
     )
 
@@ -83,7 +83,7 @@ object QuestCatalog {
             title = "Weekly Ripper",
             description = "Open 15 Booster Packs this week",
             targetCount = 15,
-            coinReward = 1200,
+            coinReward = 250,
             freePackReward = 1
         ),
         QuestDefinition(
@@ -92,8 +92,8 @@ object QuestCatalog {
             title = "High-Tier Vault",
             description = "Collect 3 Luckybox+ rarity cards this week",
             targetCount = 3,
-            coinReward = 1500,
-            diamondReward = 20
+            coinReward = 300,
+            diamondReward = 8
         ),
         QuestDefinition(
             id = "w_recycle_5",
@@ -101,16 +101,16 @@ object QuestCatalog {
             title = "Forge Crafter",
             description = "Recycle 5 cards in the Forge this week",
             targetCount = 5,
-            coinReward = 600
+            coinReward = 120
         ),
         QuestDefinition(
             id = "w_minigame_6",
             category = QuestCategory.WEEKLY,
             title = "Arcade MVP",
-            description = "Complete 6 Minigame wins this week",
+            description = "Complete 6 Arcade Minigame plays this week",
             targetCount = 6,
-            coinReward = 500,
-            diamondReward = 25
+            coinReward = 150,
+            diamondReward = 10
         )
     )
 
@@ -121,8 +121,8 @@ object QuestCatalog {
             title = "Season Pack Drive",
             description = "Rip 25 Booster Packs toward the Season Pack goal",
             targetCount = 25,
-            coinReward = 2000,
-            diamondReward = 25,
+            coinReward = 450,
+            diamondReward = 10,
             freePackReward = 1
         ),
         QuestDefinition(
@@ -131,8 +131,8 @@ object QuestCatalog {
             title = "Rarity Showcase",
             description = "Pull 10 Epic+ skins for the Collector Showcase",
             targetCount = 10,
-            coinReward = 1800,
-            diamondReward = 30
+            coinReward = 400,
+            diamondReward = 12
         ),
         QuestDefinition(
             id = "c_mythic_1",
@@ -140,17 +140,17 @@ object QuestCatalog {
             title = "Mythic Trophy Hunt",
             description = "Pull 1 Collector, Legend, or 1/1 Misprint card",
             targetCount = 1,
-            coinReward = 2500,
-            diamondReward = 50
+            coinReward = 550,
+            diamondReward = 20
         ),
         QuestDefinition(
             id = "c_trade_1",
             category = QuestCategory.COMMUNITY,
             title = "Bazaar Contributor",
-            description = "Mint or complete 1 P2P Trade Slip",
+            description = "Complete or list 1 Collector Trade",
             targetCount = 1,
-            coinReward = 750,
-            diamondReward = 15
+            coinReward = 150,
+            diamondReward = 5
         )
     )
 }

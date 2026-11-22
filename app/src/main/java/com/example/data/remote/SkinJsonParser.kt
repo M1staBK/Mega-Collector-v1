@@ -2,9 +2,8 @@ package com.example.data.remote
 
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
-import org.json.JSONArray
-import org.json.JSONObject
-import org.json.JSONTokener
+import com.squareup.moshi.Moshi
+import java.io.IOException
 
 data class ParsedSkinsPage(
     val items: List<SkinCatalogItem>,
@@ -22,34 +21,52 @@ data class ParsedHeroRef(
 object SkinJsonParser {
     private const val BASE_DOMAIN = "https://mlbbdex.com"
 
+    private val moshi: Moshi = Moshi.Builder().build()
+    private val anyAdapter = moshi.adapter(Any::class.java)
+
+    private fun parseRoot(rawJson: String): Any? {
+        val trimmed = rawJson.trim()
+        if (trimmed.isEmpty()) return null
+        return try {
+            anyAdapter.fromJson(trimmed)
+        } catch (_: IOException) {
+            null
+        } catch (_: RuntimeException) {
+            null
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun Any?.asJsonMap(): Map<String, Any?>? =
+        (this as? Map<*, *>)?.entries?.associate { (k, v) -> k.toString() to v }
+
+    private fun Any?.asJsonList(): List<Any?>? = this as? List<*>
+
     fun parseSkins(rawJson: String): List<SkinCatalogItem> =
         parseSkinsPage(rawJson).items
 
     fun parseSkinsPage(rawJson: String): ParsedSkinsPage {
-        val trimmed = rawJson.trim()
-        if (trimmed.isEmpty()) return ParsedSkinsPage(emptyList())
-
-        val parsed = JSONTokener(trimmed).nextValue()
+        val parsed = parseRoot(rawJson) ?: return ParsedSkinsPage(emptyList())
         val array = extractArray(
             parsed,
             listOf("data", "skins", "results", "items", "records", "list")
         ) ?: return ParsedSkinsPage(emptyList())
 
-        val items = ArrayList<SkinCatalogItem>(array.length())
-        for (i in 0 until array.length()) {
-            val obj = array.optJSONObject(i) ?: continue
+        val items = ArrayList<SkinCatalogItem>(array.size)
+        for (i in array.indices) {
+            val obj = array[i].asJsonMap() ?: continue
             parseSkinObject(obj, i)?.let { items.add(it) }
         }
 
-        val rootObj = parsed as? JSONObject
-        val metaObj = rootObj?.optJSONObject("meta")
-            ?: rootObj?.optJSONObject("pagination")
-            ?: rootObj?.optJSONObject("pageInfo")
+        val rootObj = parsed.asJsonMap()
+        val metaObj = rootObj?.get("meta").asJsonMap()
+            ?: rootObj?.get("pagination").asJsonMap()
+            ?: rootObj?.get("pageInfo").asJsonMap()
 
         val totalCount = extractOptionalInt(rootObj, metaObj, listOf("total", "totalCount", "total_count", "count"))
         val totalPages = extractOptionalInt(rootObj, metaObj, listOf("totalPages", "total_pages", "pages", "last_page"))
         val hasNext = extractOptionalBoolean(rootObj, metaObj, listOf("hasNext", "has_next", "hasMore", "has_more"))
-            ?: (rootObj?.optString("next", "")?.isNotBlank() == true)
+            ?: ((rootObj?.get("next") as? String)?.isNotBlank() == true)
 
         return ParsedSkinsPage(
             items = items.distinctBy { it.id },
@@ -60,18 +77,15 @@ object SkinJsonParser {
     }
 
     fun parseHeroRefs(rawJson: String): List<ParsedHeroRef> {
-        val trimmed = rawJson.trim()
-        if (trimmed.isEmpty()) return emptyList()
-
-        val parsed = JSONTokener(trimmed).nextValue()
+        val parsed = parseRoot(rawJson) ?: return emptyList()
         val array = extractArray(
             parsed,
             listOf("data", "heroes", "results", "items", "records", "list")
         ) ?: return emptyList()
 
-        val heroes = ArrayList<ParsedHeroRef>(array.length())
-        for (i in 0 until array.length()) {
-            val obj = array.optJSONObject(i) ?: continue
+        val heroes = ArrayList<ParsedHeroRef>(array.size)
+        for (i in array.indices) {
+            val obj = array[i].asJsonMap() ?: continue
             val name = firstNonBlankString(obj, listOf("name", "hero_name", "heroName", "title")) ?: continue
             val slug = firstNonBlankString(obj, listOf("slug", "hero_slug", "id", "hero_id"))
                 ?: name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
@@ -87,13 +101,10 @@ object SkinJsonParser {
         fallbackHeroName: String = "Hero",
         fallbackRole: String = "Fighter"
     ): List<SkinCatalogItem> {
-        val trimmed = rawJson.trim()
-        if (trimmed.isEmpty()) return emptyList()
-
-        val parsed = JSONTokener(trimmed).nextValue()
-        val rootObj = parsed as? JSONObject ?: return emptyList()
-        val heroContainer = rootObj.optJSONObject("data")
-            ?: rootObj.optJSONObject("hero")
+        val parsed = parseRoot(rawJson) ?: return emptyList()
+        val rootObj = parsed.asJsonMap() ?: return emptyList()
+        val heroContainer = rootObj["data"].asJsonMap()
+            ?: rootObj["hero"].asJsonMap()
             ?: rootObj
 
         val heroName = firstNonBlankString(
@@ -107,41 +118,33 @@ object SkinJsonParser {
         // 2) data.images.skins[skinId] -> "/visuels/heros/.../skins/..."
         // 3) data.images.portrait -> "/visuels/heros/.../portrait.webp"
         val illustrationsByName = LinkedHashMap<String, String>()
-        heroContainer.optJSONObject("illustrations")?.let { illus ->
-            val keys = illus.keys()
-            while (keys.hasNext()) {
-                val key = keys.next()
-                val rawUrl = illus.optString(key, "").trim()
-                if (rawUrl.isNotEmpty() && !rawUrl.equals("null", ignoreCase = true)) {
-                    illustrationsByName[key.trim().lowercase()] = rawUrl
-                }
+        heroContainer["illustrations"].asJsonMap()?.forEach { (key, value) ->
+            val rawUrl = (value as? String)?.trim().orEmpty()
+            if (rawUrl.isNotEmpty() && !rawUrl.equals("null", ignoreCase = true)) {
+                illustrationsByName[key.trim().lowercase()] = rawUrl
             }
         }
 
-        val imagesObj = heroContainer.optJSONObject("images")
+        val imagesObj = heroContainer["images"].asJsonMap()
         val skinImagesById = LinkedHashMap<String, String>()
-        imagesObj?.optJSONObject("skins")?.let { skinsImgObj ->
-            val keys = skinsImgObj.keys()
-            while (keys.hasNext()) {
-                val key = keys.next()
-                val rawUrl = skinsImgObj.optString(key, "").trim()
-                if (rawUrl.isNotEmpty() && !rawUrl.equals("null", ignoreCase = true)) {
-                    skinImagesById[key.trim()] = rawUrl
-                }
+        imagesObj?.get("skins").asJsonMap()?.forEach { (key, value) ->
+            val rawUrl = (value as? String)?.trim().orEmpty()
+            if (rawUrl.isNotEmpty() && !rawUrl.equals("null", ignoreCase = true)) {
+                skinImagesById[key.trim()] = rawUrl
             }
         }
         val portraitFallback = imagesObj?.let {
             firstNonBlankString(it, listOf("portrait", "icon", "cover"))
         } ?: ""
 
-        val skinsArray = heroContainer.optJSONArray("skins")
-            ?: rootObj.optJSONArray("skins")
+        val skinsArray = heroContainer["skins"].asJsonList()
+            ?: rootObj["skins"].asJsonList()
             ?: extractArray(parsed, listOf("skins", "data", "items"))
             ?: return emptyList()
 
-        val items = ArrayList<SkinCatalogItem>(skinsArray.length())
-        for (i in 0 until skinsArray.length()) {
-            val obj = skinsArray.optJSONObject(i) ?: continue
+        val items = ArrayList<SkinCatalogItem>(skinsArray.size)
+        for (i in skinsArray.indices) {
+            val obj = skinsArray[i].asJsonMap() ?: continue
             parseSkinObject(
                 obj = obj,
                 index = i,
@@ -155,41 +158,35 @@ object SkinJsonParser {
         return items.distinctBy { it.id }
     }
 
-    private fun extractRole(obj: JSONObject): String? {
+    private fun extractRole(obj: Map<String, Any?>): String? {
         firstNonBlankString(obj, listOf("role", "hero_role", "heroRole", "class", "lane"))?.let { return it }
-        val rolesArr = obj.optJSONArray("roles")
-        if (rolesArr != null && rolesArr.length() > 0) {
-            val joined = (0 until rolesArr.length())
-                .mapNotNull { rolesArr.optString(it, "").takeIf { s -> s.isNotBlank() && s != "null" } }
+        val rolesArr = obj["roles"].asJsonList()
+        if (!rolesArr.isNullOrEmpty()) {
+            val joined = rolesArr
+                .mapNotNull { (it as? String)?.trim()?.takeIf { s -> s.isNotBlank() && s != "null" } }
                 .joinToString(" / ")
             if (joined.isNotBlank()) return joined
         }
         return null
     }
 
-    private fun extractArray(parsed: Any?, candidateKeys: List<String>): JSONArray? {
-        return when (parsed) {
-            is JSONArray -> parsed
-            is JSONObject -> {
-                for (key in candidateKeys) {
-                    val arr = parsed.optJSONArray(key)
-                    if (arr != null) return arr
-                }
-                val dataObj = parsed.optJSONObject("data")
-                if (dataObj != null) {
-                    for (key in candidateKeys) {
-                        val arr = dataObj.optJSONArray(key)
-                        if (arr != null) return arr
-                    }
-                }
-                null
-            }
-            else -> null
+    private fun extractArray(parsed: Any?, candidateKeys: List<String>): List<Any?>? {
+        parsed.asJsonList()?.let { return it }
+        val obj = parsed.asJsonMap() ?: return null
+        for (key in candidateKeys) {
+            obj[key].asJsonList()?.let { return it }
         }
+        val dataObj = obj["data"].asJsonMap()
+        if (dataObj != null) {
+            for (key in candidateKeys) {
+                dataObj[key].asJsonList()?.let { return it }
+            }
+        }
+        return null
     }
 
     private fun parseSkinObject(
-        obj: JSONObject,
+        obj: Map<String, Any?>,
         index: Int,
         defaultHeroName: String = "Legend",
         defaultRole: String = "Fighter",
@@ -200,7 +197,7 @@ object SkinJsonParser {
         val skinName = firstNonBlankString(obj, listOf("name", "skin_name", "skinName", "title", "skin"))
             ?: return null
 
-        val heroObj = obj.optJSONObject("hero")
+        val heroObj = obj["hero"].asJsonMap()
         val rawHeroName = firstNonBlankString(obj, listOf("hero_name", "heroName", "hero", "character", "champion"))
             ?: heroObj?.let { firstNonBlankString(it, listOf("name", "hero_name", "title")) }
             ?: defaultHeroName
@@ -210,7 +207,7 @@ object SkinJsonParser {
             ?: heroObj?.let { extractRole(it) }
             ?: defaultRole
 
-        val tierObj = obj.optJSONObject("tier") ?: obj.optJSONObject("rarity") ?: obj.optJSONObject("series")
+        val tierObj = obj["tier"].asJsonMap() ?: obj["rarity"].asJsonMap() ?: obj["series"].asJsonMap()
         // Prefer specific series/label/tier over broad rarity tag so "Luckybox", "Elite", "StarLight" classify accurately!
         val specificLabel = firstNonBlankString(
             obj,
@@ -226,7 +223,7 @@ object SkinJsonParser {
             .replace(Regex("[^a-z0-9_]+"), "_")
             .trim('_')
 
-        val imageObj = obj.optJSONObject("images") ?: obj.optJSONObject("media")
+        val imageObj = obj["images"].asJsonMap() ?: obj["media"].asJsonMap()
         val directImage = firstNonBlankString(
             obj,
             listOf(
@@ -256,37 +253,58 @@ object SkinJsonParser {
         )
     }
 
-    private fun extractOptionalInt(root: JSONObject?, meta: JSONObject?, keys: List<String>): Int? {
+    private fun extractOptionalInt(
+        root: Map<String, Any?>?,
+        meta: Map<String, Any?>?,
+        keys: List<String>
+    ): Int? {
         for (source in listOfNotNull(meta, root)) {
             for (k in keys) {
-                if (source.has(k) && !source.isNull(k)) {
-                    val v = source.optInt(k, -1)
+                val value = source[k]
+                if (value is Number) {
+                    val v = value.toInt()
                     if (v >= 0) return v
+                } else if (value is String) {
+                    val v = value.toIntOrNull()
+                    if (v != null && v >= 0) return v
                 }
             }
         }
         return null
     }
 
-    private fun extractOptionalBoolean(root: JSONObject?, meta: JSONObject?, keys: List<String>): Boolean? {
+    private fun extractOptionalBoolean(
+        root: Map<String, Any?>?,
+        meta: Map<String, Any?>?,
+        keys: List<String>
+    ): Boolean? {
         for (source in listOfNotNull(meta, root)) {
             for (k in keys) {
-                if (source.has(k) && !source.isNull(k)) {
-                    return source.optBoolean(k)
+                val value = source[k]
+                if (value is Boolean) return value
+                if (value is String) {
+                    if (value.equals("true", ignoreCase = true)) return true
+                    if (value.equals("false", ignoreCase = true)) return false
                 }
             }
         }
         return null
     }
 
-    private fun firstNonBlankString(obj: JSONObject, keys: List<String>): String? {
+    private fun firstNonBlankString(obj: Map<String, Any?>, keys: List<String>): String? {
         for (key in keys) {
-            if (!obj.has(key) || obj.isNull(key)) continue
-            val value = obj.opt(key)
-            if (value is String && value.isNotBlank() && !value.equals("null", ignoreCase = true)) {
-                return value.trim()
-            } else if (value is Number) {
-                return value.toString()
+            val value = obj[key] ?: continue
+            when (value) {
+                is String -> {
+                    if (value.isNotBlank() && !value.equals("null", ignoreCase = true)) {
+                        return value.trim()
+                    }
+                }
+                is Number -> {
+                    val asDouble = value.toDouble()
+                    val asLong = value.toLong()
+                    return if (asDouble == asLong.toDouble()) asLong.toString() else value.toString()
+                }
             }
         }
         return null

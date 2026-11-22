@@ -9,12 +9,18 @@ import com.example.data.local.MegaCollectorDatabase
 import com.example.data.local.PlayerPreferencesStore
 import com.example.data.local.PlayerWalletState
 import com.example.data.repository.CollectorRepository
+import com.example.model.AchievementBadgeUi
+import com.example.model.AchievementCatalog
+import com.example.model.BazaarMarketCatalog
+import com.example.model.BazaarTraderListing
 import com.example.model.DailyRewardTier
 import com.example.model.DecodedTradeSlip
 import com.example.model.DiamondExchangeOption
 import com.example.model.OwnedCard
 import com.example.model.PackBundleOption
+import com.example.model.PackSatinTheme
 import com.example.model.QuestUiItem
+import com.example.model.QuizQuestionBank
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.TradeListing
@@ -37,15 +43,24 @@ sealed interface CatalogSyncStatus {
     data class Error(val message: String) : CatalogSyncStatus
 }
 
+data class PendingPackPurchase(
+    val bundle: PackBundleOption,
+    val payWithDiamonds: Boolean,
+    val useFreeTicket: Boolean
+)
+
 data class PackOpeningSession(
     val bundle: PackBundleOption,
-    val pulledCards: List<OwnedCard>,
+    val wrapperTheme: PackSatinTheme = PackSatinTheme.ALL.first(),
+    val pendingPurchase: PendingPackPurchase? = null,
+    val pulledCards: List<OwnedCard> = emptyList(),
     val isRipped: Boolean = false,
+    val isCommittingRip: Boolean = false,
     val revealedIndices: Set<Int> = emptySet(),
     val focusedRevealedIndex: Int? = null,
     val showSummaryGrid: Boolean = false
 ) {
-    val allRevealed: Boolean get() = revealedIndices.size >= pulledCards.size
+    val allRevealed: Boolean get() = pulledCards.isNotEmpty() && revealedIndices.size >= pulledCards.size
     val nextUnrevealedIndex: Int? get() = pulledCards.indices.firstOrNull { it !in revealedIndices }
     val remainingUnrevealedCount: Int get() = (pulledCards.size - revealedIndices.size).coerceAtLeast(0)
 }
@@ -55,12 +70,15 @@ data class MegaCollectorUiState(
     val catalog: List<SkinCatalogItem> = emptyList(),
     val ownedCards: List<OwnedCard> = emptyList(),
     val tradeListings: List<TradeListing> = emptyList(),
+    val bazaarListings: List<BazaarTraderListing> = emptyList(),
     val quests: List<QuestUiItem> = emptyList(),
+    val achievements: List<AchievementBadgeUi> = emptyList(),
     val syncStatus: CatalogSyncStatus = CatalogSyncStatus.Idle,
     val isDailyRewardClaimable: Boolean = true,
     val nextDailyDayIndex: Int = 1,
     val scratcherStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
     val prismStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
+    val wheelStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
     val quizCooldownRemainingMs: Long = 0L,
     val packSession: PackOpeningSession? = null,
     val isOpeningPack: Boolean = false,
@@ -79,6 +97,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isOpeningPack = MutableStateFlow(false)
     private val _decodedSlipPreview = MutableStateFlow<DecodedTradeSlip?>(null)
     private val _snackbarMessage = MutableStateFlow<String?>(null)
+    private val _bazaarSeed = MutableStateFlow(0)
+
+    private var lastSatinThemeId: String? = null
 
     private val clockTickFlow = flow {
         while (true) {
@@ -95,6 +116,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val isOpeningPack: Boolean,
         val decodedSlip: DecodedTradeSlip?,
         val snackbar: String?,
+        val bazaarSeed: Int,
         val nowMs: Long
     )
 
@@ -103,9 +125,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _packSession,
         _isOpeningPack,
         _decodedSlipPreview,
-        _snackbarMessage
-    ) { sync, session, opening, slip, snack ->
-        EphemeralState(sync, session, opening, slip, snack, System.currentTimeMillis())
+        _snackbarMessage,
+        _bazaarSeed
+    ) { values ->
+        @Suppress("UNCHECKED_CAST")
+        EphemeralState(
+            syncStatus = values[0] as CatalogSyncStatus,
+            packSession = values[1] as PackOpeningSession?,
+            isOpeningPack = values[2] as Boolean,
+            decodedSlip = values[3] as DecodedTradeSlip?,
+            snackbar = values[4] as String?,
+            bazaarSeed = values[5] as Int,
+            nowMs = System.currentTimeMillis()
+        )
     }.combine(clockTickFlow) { eph, nowMs ->
         eph.copy(nowMs = nowMs)
     }
@@ -129,6 +161,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val scratcherStatus = wallet.currentScratcherStatus(eph.nowMs)
         val prismStatus = wallet.currentPrismStatus(eph.nowMs)
+        val wheelStatus = wallet.currentWheelStatus(eph.nowMs)
         val quizCooldown = wallet.currentQuizCooldownRemainingMs(eph.nowMs)
 
         MegaCollectorUiState(
@@ -136,7 +169,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             catalog = catalog,
             ownedCards = owned,
             tradeListings = trades,
+            bazaarListings = BazaarMarketCatalog.buildDailyBazaarListings(
+                catalog = catalog,
+                epochDay = today,
+                rotationSeed = eph.bazaarSeed
+            ),
             quests = repository.buildQuestItems(wallet),
+            achievements = AchievementCatalog.evaluate(wallet, owned),
             syncStatus = if (catalog.isNotEmpty() && eph.syncStatus is CatalogSyncStatus.Idle) {
                 CatalogSyncStatus.Synced(catalog.size)
             } else {
@@ -146,6 +185,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             nextDailyDayIndex = nextDay,
             scratcherStatus = scratcherStatus,
             prismStatus = prismStatus,
+            wheelStatus = wheelStatus,
             quizCooldownRemainingMs = quizCooldown,
             packSession = eph.packSession,
             isOpeningPack = eph.isOpeningPack,
@@ -171,7 +211,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 count >= 950
 
             if (alreadySyncedToday) {
-                // Remembered in Room all day until next day's refresh
                 _syncStatus.value = CatalogSyncStatus.Synced(count)
             } else {
                 syncCatalog()
@@ -186,24 +225,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun playClick() = soundEngine.playClick()
 
+    fun playWheelTick(pitch: Float = 1.0f) = soundEngine.playWheelTick(pitch)
+
     fun playPlasticCrinkle() = soundEngine.playPlasticCrinkle()
 
     fun playPackTear() = soundEngine.playPackTear()
 
     fun playCardFlipSfx(rarity: SkinRarity, isMisprint: Boolean) =
         soundEngine.playCardFlip(rarity, isMisprint)
-
-    fun toggleSoundMute() {
-        viewModelScope.launch {
-            val current = repository.walletFlow.first().soundMuted
-            val next = !current
-            repository.setSoundMuted(next)
-            soundEngine.setMuted(next)
-            if (!next) {
-                soundEngine.playClick()
-            }
-        }
-    }
 
     fun setSoundEnabled(enabled: Boolean) {
         viewModelScope.launch {
@@ -252,30 +281,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Stages an un-ripped pack with a randomized satin wrapper theme.
+     * IMPORTANT: No coins/diamonds/tickets are consumed until the user actually rips the pack!
+     * Pressing X (close) before ripping cancels cleanly with 0 currency spent.
+     */
     fun openPackBundle(
         bundle: PackBundleOption,
         payWithDiamonds: Boolean = false,
         useFreeTicket: Boolean = false
     ) {
-        if (_isOpeningPack.value) return
+        if (_isOpeningPack.value || _packSession.value != null) return
         soundEngine.playClick()
         viewModelScope.launch {
-            _isOpeningPack.value = true
             val currentWallet = repository.walletFlow.first()
-            repository.openPackBundle(bundle, currentWallet, payWithDiamonds, useFreeTicket)
-                .onSuccess { cards ->
-                    val actualBundle = if (useFreeTicket) PackBundleOption.SINGLE else bundle
+            repository.verifyPackReadyToRip(bundle, currentWallet, payWithDiamonds, useFreeTicket)
+                .onSuccess { effectiveBundle ->
+                    val theme = PackSatinTheme.random(lastSatinThemeId)
+                    lastSatinThemeId = theme.id
                     _packSession.value = PackOpeningSession(
-                        bundle = actualBundle,
-                        pulledCards = cards,
+                        bundle = effectiveBundle,
+                        wrapperTheme = theme,
+                        pendingPurchase = PendingPackPurchase(
+                            bundle = effectiveBundle,
+                            payWithDiamonds = payWithDiamonds,
+                            useFreeTicket = useFreeTicket
+                        ),
+                        pulledCards = emptyList(),
                         isRipped = false,
-                        revealedIndices = emptySet(),
-                        focusedRevealedIndex = null,
-                        showSummaryGrid = false
+                        isCommittingRip = false
                     )
                 }
                 .onFailure { err ->
-                    _snackbarMessage.value = err.localizedMessage ?: "Unable to open pack"
+                    _snackbarMessage.value = err.localizedMessage ?: "Unable to prepare pack"
+                }
+        }
+    }
+
+    fun ripAndCommitPack() {
+        val session = _packSession.value ?: return
+        if (session.isRipped || session.isCommittingRip || _isOpeningPack.value) return
+        val purchase = session.pendingPurchase ?: return
+
+        viewModelScope.launch {
+            _isOpeningPack.value = true
+            _packSession.update { it?.copy(isCommittingRip = true) }
+
+            val currentWallet = repository.walletFlow.first()
+            repository.openPackBundle(
+                bundle = purchase.bundle,
+                wallet = currentWallet,
+                payWithDiamonds = purchase.payWithDiamonds,
+                useFreeTicket = purchase.useFreeTicket
+            )
+                .onSuccess { cards ->
+                    soundEngine.playPackTear()
+                    _packSession.update { current ->
+                        current?.copy(
+                            pulledCards = cards,
+                            isRipped = true,
+                            isCommittingRip = false,
+                            pendingPurchase = null,
+                            revealedIndices = emptySet(),
+                            focusedRevealedIndex = null,
+                            showSummaryGrid = false
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Unable to rip pack"
+                    _packSession.value = null
                 }
             _isOpeningPack.value = false
         }
@@ -321,12 +396,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun spinWheelPrize(
+        label: String,
+        coinReward: Int,
+        diamondReward: Int,
+        freePackReward: Int
+    ) {
+        viewModelScope.launch {
+            repository.consumeWheelSpinAndAward(coinReward, diamondReward, freePackReward)
+                .onSuccess {
+                    soundEngine.playRewardChime()
+                    _snackbarMessage.value = "Wheel Prize: $label!"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Prize Wheel recharging!"
+                }
+        }
+    }
+
     fun completeHourlyQuiz(score: Int, diamondsEarned: Int) {
         viewModelScope.launch {
             repository.completeHourlyQuizAndAwardDiamonds(diamondsEarned)
                 .onSuccess { earned ->
                     soundEngine.playRewardChime()
-                    _snackbarMessage.value = "10-Question Quiz Complete ($score/10): +$earned 💎 Diamonds!"
+                    _snackbarMessage.value =
+                        "Quiz Complete ($score/${QuizQuestionBank.QUIZ_QUESTION_COUNT}): +$earned 💎 Diamonds!"
                 }
                 .onFailure { err ->
                     _snackbarMessage.value = err.localizedMessage ?: "Quiz on hourly cooldown."
@@ -353,13 +447,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun markPackRipped() {
-        _packSession.update { it?.copy(isRipped = true, focusedRevealedIndex = null) }
+    fun togglePinnedBadge(badge: AchievementBadgeUi) {
+        if (!badge.isUnlocked) return
+        soundEngine.playClick()
+        viewModelScope.launch {
+            val pinned = repository.togglePinnedBadge(badge.definition.id)
+            _snackbarMessage.value = if (pinned) {
+                "Pinned \"${badge.definition.title}\" to your Profile showcase!"
+            } else {
+                "Unpinned \"${badge.definition.title}\"."
+            }
+        }
     }
 
     fun revealCardAt(index: Int) {
         _packSession.update { session ->
-            if (session == null) return@update null
+            if (session == null || session.pulledCards.isEmpty()) return@update session
             val validIdx = index.coerceIn(0, session.pulledCards.lastIndex)
             session.copy(
                 revealedIndices = session.revealedIndices + validIdx,
@@ -383,8 +486,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun showPulledSummaryGrid() {
         soundEngine.playClick()
         _packSession.update { session ->
-            session?.copy(
-                isRipped = true,
+            if (session == null || !session.isRipped) return@update session
+            session.copy(
                 revealedIndices = session.pulledCards.indices.toSet(),
                 focusedRevealedIndex = null,
                 showSummaryGrid = true
@@ -451,6 +554,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshBazaar() {
+        soundEngine.playClick()
+        _bazaarSeed.update { it + 1 }
+        _snackbarMessage.value = "Refreshed Collector Bazaar listings!"
+    }
+
+    fun executeBazaarTrade(listing: BazaarTraderListing, offeredCard: OwnedCard) {
+        viewModelScope.launch {
+            repository.executeBazaarTrade(listing, offeredCard)
+                .onSuccess { received ->
+                    soundEngine.playRewardChime()
+                    _snackbarMessage.value = "Swapped with ${listing.trader.alias} for ${received.skinName}!"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Bazaar trade failed."
+                }
+        }
+    }
+
     fun createTradeListing(
         card: OwnedCard,
         seekingNote: String,
@@ -459,8 +581,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         soundEngine.playClick()
         viewModelScope.launch {
-            val alias = repository.walletFlow.first().collectorAlias
-            repository.createTradeListing(card, seekingNote, alias, goldSweetener)
+            val currentState = uiState.value
+            val alias = currentState.wallet.collectorAlias
+            val prestige = currentState.ownedCards.sumOf { it.prestigeScore }
+            val uniqueCount = currentState.ownedCards.map { it.catalogId }.distinct().size
+            val pinnedIds = currentState.achievements.filter { it.isPinned }.map { it.definition.id }
+            repository.createTradeListing(
+                card = card,
+                seekingNote = seekingNote,
+                senderAlias = alias,
+                goldSweetener = goldSweetener,
+                senderPrestige = prestige,
+                senderCardCount = uniqueCount,
+                senderBadgeIds = pinnedIds
+            )
                 .onSuccess { listing ->
                     soundEngine.playRewardChime()
                     _snackbarMessage.value = "Trade Slip minted for ${card.skinName}!"

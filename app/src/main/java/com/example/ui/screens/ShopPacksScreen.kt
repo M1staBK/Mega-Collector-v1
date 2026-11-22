@@ -79,13 +79,10 @@ import com.example.ui.theme.MisprintMagenta
 import com.example.ui.theme.MoonlightNight
 import com.example.ui.theme.PearlCanvas
 import com.example.ui.theme.PureWhiteCard
-import com.example.ui.theme.SkyAzure
 import com.example.ui.theme.SkyFrost
 import com.example.ui.theme.SlateMuted
-import com.example.ui.theme.StudioCrimson
 import com.example.ui.theme.StudioGold
 import com.example.ui.theme.StudioGoldText
-import com.example.ui.viewmodel.CatalogSyncStatus
 import com.example.ui.viewmodel.MegaCollectorUiState
 import java.util.Locale
 
@@ -96,7 +93,6 @@ fun ShopPacksScreen(
     onClaimDailyReward: () -> Unit,
     onOpenPackBundle: (PackBundleOption, Boolean, Boolean) -> Unit,
     onExchangeDiamondsForCoins: (DiamondExchangeOption) -> Unit,
-    onSyncCatalog: () -> Unit,
     onOpenSettings: () -> Unit,
     onButtonClickSfx: () -> Unit,
     modifier: Modifier = Modifier
@@ -127,7 +123,7 @@ fun ShopPacksScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(234.dp)
+                        .height(198.dp)
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.img_arena_banner),
@@ -186,11 +182,6 @@ fun ShopPacksScreen(
                             CoinsPill(coins = uiState.wallet.coins)
                             DiamondsPill(diamonds = uiState.wallet.diamonds)
                         }
-
-                        SyncStatusBanner(
-                            syncStatus = uiState.syncStatus,
-                            onRetry = onSyncCatalog
-                        )
                     }
                 }
             }
@@ -238,7 +229,7 @@ fun ShopPacksScreen(
                             Surface(
                                 color = SkyFrost,
                                 shape = RoundedCornerShape(999.dp),
-                                border = BorderStroke(1.dp, SkyAzure.copy(alpha = 0.45f))
+                                border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.40f))
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
@@ -396,7 +387,7 @@ fun ShopPacksScreen(
                                 shadowElevation = if (canAfford) 2.dp else 0.dp,
                                 border = BorderStroke(
                                     1.2.dp,
-                                    if (canAfford) SkyAzure.copy(alpha = 0.6f) else IceBorder
+                                    if (canAfford) palette.accentPrimary.copy(alpha = 0.48f) else IceBorder
                                 ),
                                 modifier = Modifier
                                     .weight(1f)
@@ -485,100 +476,6 @@ fun ShopPacksScreen(
 }
 
 @Composable
-private fun SyncStatusBanner(
-    syncStatus: CatalogSyncStatus,
-    onRetry: () -> Unit
-) {
-    val palette = CollectorTheme.colors
-    Surface(
-        color = PureWhiteCard,
-        shape = RoundedCornerShape(16.dp),
-        shadowElevation = 2.dp,
-        border = BorderStroke(
-            1.dp,
-            when (syncStatus) {
-                is CatalogSyncStatus.Error -> StudioCrimson
-                is CatalogSyncStatus.Synced -> SkyAzure.copy(alpha = 0.45f)
-                else -> IceBorder
-            }
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-                when (syncStatus) {
-                    is CatalogSyncStatus.Syncing -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = palette.accentPrimary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = syncStatus.stage,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = InkSlate,
-                            maxLines = 1
-                        )
-                    }
-                    is CatalogSyncStatus.Synced -> {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = palette.accentPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "MLBBDex Cached: ${syncStatus.count} skins ready today",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = InkSlate
-                        )
-                    }
-                    is CatalogSyncStatus.Error -> {
-                        Text(
-                            text = "API Sync failed: ${syncStatus.message}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = StudioCrimson,
-                            maxLines = 2
-                        )
-                    }
-                    CatalogSyncStatus.Idle -> {
-                        Text(
-                            text = "Initializing MLBBDex catalog...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = SlateMuted
-                        )
-                    }
-                }
-            }
-
-            if (syncStatus is CatalogSyncStatus.Error || syncStatus is CatalogSyncStatus.Synced) {
-                IconButton(
-                    onClick = onRetry,
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Refresh MLBBDex catalog",
-                        tint = if (syncStatus is CatalogSyncStatus.Error) StudioCrimson else palette.accentPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun DailyTierTile(
     tier: DailyRewardTier,
     isClaimed: Boolean,
@@ -588,7 +485,7 @@ private fun DailyTierTile(
     val palette = CollectorTheme.colors
     val borderColor = when {
         isCurrentClaimable -> StudioGold
-        isClaimed -> SkyAzure.copy(alpha = 0.55f)
+        isClaimed -> palette.accentPrimary.copy(alpha = 0.42f)
         else -> IceBorder
     }
     Surface(
@@ -675,8 +572,8 @@ private fun MegaPackShowcaseCard(
         modifier = Modifier.fillMaxWidth(),
         color = PureWhiteCard,
         shape = RoundedCornerShape(22.dp),
-        shadowElevation = 4.dp,
-        border = BorderStroke(1.5.dp, SkyAzure.copy(alpha = 0.55f))
+        shadowElevation = 3.dp,
+        border = BorderStroke(1.2.dp, palette.accentPrimary.copy(alpha = 0.38f))
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -685,7 +582,7 @@ private fun MegaPackShowcaseCard(
                         .width(96.dp)
                         .height(132.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .border(2.dp, SkyAzure.copy(alpha = 0.85f), RoundedCornerShape(14.dp))
+                        .border(1.8.dp, palette.accentPrimary.copy(alpha = 0.65f), RoundedCornerShape(14.dp))
                 ) {
                     Image(
                         painter = painterResource(id = MegaPackConfig.COVER_DRAWABLE_RES),
@@ -749,7 +646,7 @@ private fun MegaPackShowcaseCard(
                     Surface(
                         color = SkyFrost,
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, SkyAzure.copy(alpha = 0.4f))
+                        border = BorderStroke(1.dp, palette.border)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -987,7 +884,7 @@ private fun PackOddsDialog(
                 Surface(
                     color = SkyFrost,
                     shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, SkyAzure.copy(alpha = 0.5f))
+                    border = BorderStroke(1.dp, palette.border)
                 ) {
                     Text(
                         text = "1-of-1 Misprint Bonus Roll: ${MegaPackConfig.MISPRINT_ODDS_LABEL}",

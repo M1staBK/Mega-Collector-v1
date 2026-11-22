@@ -18,8 +18,8 @@ private val Context.collectorDataStore: DataStore<Preferences> by preferencesDat
 )
 
 data class PlayerWalletState(
-    val coins: Int = 1200,
-    val diamonds: Int = 25,
+    val coins: Int = DEFAULT_STARTER_COINS,
+    val diamonds: Int = DEFAULT_STARTER_DIAMONDS,
     val lastDailyClaimEpochDay: Long = -1L,
     val dailyStreakCount: Int = 0,
     val totalPacksOpened: Int = 0,
@@ -37,8 +37,16 @@ data class PlayerWalletState(
     val scratcherLastRefillMs: Long = 0L,
     val prismStoredCharges: Int = MAX_HOURLY_CHARGES,
     val prismLastRefillMs: Long = 0L,
-    // 10-Question Hourly Quiz Cooldown (every 1 hour)
+    val wheelStoredCharges: Int = MAX_HOURLY_CHARGES,
+    val wheelLastRefillMs: Long = 0L,
+    // 5-Question Hourly Quiz Cooldown (every 1 hour)
     val quizLastCompletedMs: Long = 0L,
+    // Lifetime Stats & Pinned Achievement Badges
+    val pinnedBadgeIds: Set<String> = emptySet(),
+    val totalWheelSpins: Int = 0,
+    val totalQuizzesCompleted: Int = 0,
+    val totalCardsRecycledLifetime: Int = 0,
+    val totalTradesCompleted: Int = 0,
     // Quest Counters (Daily)
     val questDailyEpochDay: Long = -1L,
     val dailyPacksOpened: Int = 0,
@@ -66,6 +74,9 @@ data class PlayerWalletState(
     fun currentPrismStatus(nowMs: Long): HourlyChargeStatus =
         computeHourlyChargeStatus(prismStoredCharges, prismLastRefillMs, nowMs)
 
+    fun currentWheelStatus(nowMs: Long): HourlyChargeStatus =
+        computeHourlyChargeStatus(wheelStoredCharges, wheelLastRefillMs, nowMs)
+
     fun currentQuizCooldownRemainingMs(nowMs: Long): Long {
         if (quizLastCompletedMs <= 0L) return 0L
         val elapsed = (nowMs - quizLastCompletedMs).coerceAtLeast(0L)
@@ -73,6 +84,8 @@ data class PlayerWalletState(
     }
 
     companion object {
+        const val DEFAULT_STARTER_COINS = 250
+        const val DEFAULT_STARTER_DIAMONDS = 15
         const val MAX_HOURLY_CHARGES = 3
         const val ONE_HOUR_MS = 3_600_000L
 
@@ -124,7 +137,15 @@ class PlayerPreferencesStore(private val context: Context) {
         val SCRATCHER_LAST_REFILL_MS = longPreferencesKey("scratcher_last_refill_ms")
         val PRISM_CHARGES = intPreferencesKey("prism_charges_v2")
         val PRISM_LAST_REFILL_MS = longPreferencesKey("prism_last_refill_ms")
+        val WHEEL_CHARGES = intPreferencesKey("wheel_charges_v1")
+        val WHEEL_LAST_REFILL_MS = longPreferencesKey("wheel_last_refill_ms")
         val QUIZ_LAST_COMPLETED_MS = longPreferencesKey("quiz_last_completed_ms")
+
+        val PINNED_BADGE_IDS = stringSetPreferencesKey("pinned_badge_ids")
+        val TOTAL_WHEEL_SPINS = intPreferencesKey("total_wheel_spins")
+        val TOTAL_QUIZZES_COMPLETED = intPreferencesKey("total_quizzes_completed")
+        val TOTAL_CARDS_RECYCLED_LIFETIME = intPreferencesKey("total_cards_recycled_lifetime")
+        val TOTAL_TRADES_COMPLETED = intPreferencesKey("total_trades_completed")
 
         val QUEST_DAILY_EPOCH_DAY = longPreferencesKey("quest_daily_epoch_day")
         val DAILY_PACKS_OPENED = intPreferencesKey("daily_packs_opened")
@@ -149,8 +170,8 @@ class PlayerPreferencesStore(private val context: Context) {
 
     val walletFlow: Flow<PlayerWalletState> = context.collectorDataStore.data.map { prefs ->
         PlayerWalletState(
-            coins = prefs[Keys.COINS] ?: 1200,
-            diamonds = prefs[Keys.DIAMONDS] ?: 25,
+            coins = prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS,
+            diamonds = prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS,
             lastDailyClaimEpochDay = prefs[Keys.LAST_DAILY_EPOCH_DAY] ?: -1L,
             dailyStreakCount = prefs[Keys.DAILY_STREAK_COUNT] ?: 0,
             totalPacksOpened = prefs[Keys.TOTAL_PACKS_OPENED] ?: 0,
@@ -167,7 +188,14 @@ class PlayerPreferencesStore(private val context: Context) {
             scratcherLastRefillMs = prefs[Keys.SCRATCHER_LAST_REFILL_MS] ?: 0L,
             prismStoredCharges = prefs[Keys.PRISM_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES,
             prismLastRefillMs = prefs[Keys.PRISM_LAST_REFILL_MS] ?: 0L,
+            wheelStoredCharges = prefs[Keys.WHEEL_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES,
+            wheelLastRefillMs = prefs[Keys.WHEEL_LAST_REFILL_MS] ?: 0L,
             quizLastCompletedMs = prefs[Keys.QUIZ_LAST_COMPLETED_MS] ?: 0L,
+            pinnedBadgeIds = prefs[Keys.PINNED_BADGE_IDS] ?: emptySet(),
+            totalWheelSpins = prefs[Keys.TOTAL_WHEEL_SPINS] ?: 0,
+            totalQuizzesCompleted = prefs[Keys.TOTAL_QUIZZES_COMPLETED] ?: 0,
+            totalCardsRecycledLifetime = prefs[Keys.TOTAL_CARDS_RECYCLED_LIFETIME] ?: 0,
+            totalTradesCompleted = prefs[Keys.TOTAL_TRADES_COMPLETED] ?: 0,
             questDailyEpochDay = prefs[Keys.QUEST_DAILY_EPOCH_DAY] ?: -1L,
             dailyPacksOpened = prefs[Keys.DAILY_PACKS_OPENED] ?: 0,
             dailyEpicPlusCollected = prefs[Keys.DAILY_EPIC_PLUS] ?: 0,
@@ -206,11 +234,11 @@ class PlayerPreferencesStore(private val context: Context) {
                     prefs[Keys.BONUS_FREE_PACKS] = (cur - 1).coerceAtLeast(0)
                 }
                 diamondCost > 0 -> {
-                    val curD = prefs[Keys.DIAMONDS] ?: 25
+                    val curD = prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS
                     prefs[Keys.DIAMONDS] = (curD - diamondCost).coerceAtLeast(0)
                 }
                 else -> {
-                    val curC = prefs[Keys.COINS] ?: 1200
+                    val curC = prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS
                     prefs[Keys.COINS] = (curC - coinCost).coerceAtLeast(0)
                 }
             }
@@ -231,12 +259,19 @@ class PlayerPreferencesStore(private val context: Context) {
         }
     }
 
-    suspend fun addCoins(amount: Int, fromRecycleCount: Int = 0, todayEpochDay: Long? = null, currentWeekKey: Long? = null) {
+    suspend fun addCoins(
+        amount: Int,
+        fromRecycleCount: Int = 0,
+        todayEpochDay: Long? = null,
+        currentWeekKey: Long? = null
+    ) {
         context.collectorDataStore.edit { prefs ->
-            val cur = prefs[Keys.COINS] ?: 1200
-            prefs[Keys.COINS] = cur + amount
+            val cur = prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS
+            prefs[Keys.COINS] = (cur + amount).coerceAtLeast(0)
             if (fromRecycleCount > 0) {
                 prefs[Keys.TOTAL_COINS_RECYCLED] = (prefs[Keys.TOTAL_COINS_RECYCLED] ?: 0) + amount
+                prefs[Keys.TOTAL_CARDS_RECYCLED_LIFETIME] =
+                    (prefs[Keys.TOTAL_CARDS_RECYCLED_LIFETIME] ?: 0) + fromRecycleCount
                 if (todayEpochDay != null && currentWeekKey != null) {
                     resetDailyIfNeeded(prefs, todayEpochDay)
                     resetWeeklyIfNeeded(prefs, currentWeekKey)
@@ -246,13 +281,26 @@ class PlayerPreferencesStore(private val context: Context) {
         }
     }
 
+    suspend fun tryDeductCoins(amount: Int): Boolean {
+        if (amount <= 0) return true
+        var ok = false
+        context.collectorDataStore.edit { prefs ->
+            val cur = prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS
+            if (cur >= amount) {
+                prefs[Keys.COINS] = cur - amount
+                ok = true
+            }
+        }
+        return ok
+    }
+
     suspend fun exchangeDiamondsForCoins(diamondCost: Int, coinGain: Int): Boolean {
         var success = false
         context.collectorDataStore.edit { prefs ->
-            val curD = prefs[Keys.DIAMONDS] ?: 25
+            val curD = prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS
             if (curD >= diamondCost) {
                 prefs[Keys.DIAMONDS] = curD - diamondCost
-                prefs[Keys.COINS] = (prefs[Keys.COINS] ?: 1200) + coinGain
+                prefs[Keys.COINS] = (prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS) + coinGain
                 success = true
             }
         }
@@ -282,7 +330,7 @@ class PlayerPreferencesStore(private val context: Context) {
                 }
                 prefs[Keys.SCRATCHER_CHARGES] = afterSpend
                 prefs[Keys.SCRATCHER_LAST_REFILL_MS] = newRefillAnchor
-                prefs[Keys.COINS] = (prefs[Keys.COINS] ?: 1200) + coinReward
+                prefs[Keys.COINS] = (prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS) + coinReward
 
                 resetDailyIfNeeded(prefs, todayEpochDay)
                 resetWeeklyIfNeeded(prefs, currentWeekKey)
@@ -316,7 +364,7 @@ class PlayerPreferencesStore(private val context: Context) {
                 }
                 prefs[Keys.PRISM_CHARGES] = afterSpend
                 prefs[Keys.PRISM_LAST_REFILL_MS] = newRefillAnchor
-                prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: 25) + diamondReward
+                prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS) + diamondReward
 
                 if (diamondReward > 0) {
                     resetDailyIfNeeded(prefs, todayEpochDay)
@@ -324,6 +372,52 @@ class PlayerPreferencesStore(private val context: Context) {
                     prefs[Keys.DAILY_MINIGAMES_WON] = (prefs[Keys.DAILY_MINIGAMES_WON] ?: 0) + 1
                     prefs[Keys.WEEKLY_MINIGAMES_WON] = (prefs[Keys.WEEKLY_MINIGAMES_WON] ?: 0) + 1
                 }
+                recorded = true
+            }
+        }
+        return recorded
+    }
+
+    suspend fun consumeWheelSpinAndAward(
+        coinReward: Int,
+        diamondReward: Int,
+        freePackReward: Int,
+        nowMs: Long,
+        todayEpochDay: Long,
+        currentWeekKey: Long
+    ): Boolean {
+        var recorded = false
+        context.collectorDataStore.edit { prefs ->
+            val stored = prefs[Keys.WHEEL_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES
+            val lastRefill = prefs[Keys.WHEEL_LAST_REFILL_MS] ?: 0L
+            val status = PlayerWalletState.computeHourlyChargeStatus(stored, lastRefill, nowMs)
+            if (status.charges > 0) {
+                val afterSpend = status.charges - 1
+                val newRefillAnchor = when {
+                    status.charges >= PlayerWalletState.MAX_HOURLY_CHARGES -> nowMs
+                    else -> {
+                        val elapsed = (nowMs - lastRefill).coerceAtLeast(0L)
+                        val gained = (elapsed / PlayerWalletState.ONE_HOUR_MS).toInt()
+                        lastRefill + gained * PlayerWalletState.ONE_HOUR_MS
+                    }
+                }
+                prefs[Keys.WHEEL_CHARGES] = afterSpend
+                prefs[Keys.WHEEL_LAST_REFILL_MS] = newRefillAnchor
+                if (coinReward > 0) {
+                    prefs[Keys.COINS] = (prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS) + coinReward
+                }
+                if (diamondReward > 0) {
+                    prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS) + diamondReward
+                }
+                if (freePackReward > 0) {
+                    prefs[Keys.BONUS_FREE_PACKS] = (prefs[Keys.BONUS_FREE_PACKS] ?: 1) + freePackReward
+                }
+                prefs[Keys.TOTAL_WHEEL_SPINS] = (prefs[Keys.TOTAL_WHEEL_SPINS] ?: 0) + 1
+
+                resetDailyIfNeeded(prefs, todayEpochDay)
+                resetWeeklyIfNeeded(prefs, currentWeekKey)
+                prefs[Keys.DAILY_MINIGAMES_WON] = (prefs[Keys.DAILY_MINIGAMES_WON] ?: 0) + 1
+                prefs[Keys.WEEKLY_MINIGAMES_WON] = (prefs[Keys.WEEKLY_MINIGAMES_WON] ?: 0) + 1
                 recorded = true
             }
         }
@@ -341,7 +435,8 @@ class PlayerPreferencesStore(private val context: Context) {
             val last = prefs[Keys.QUIZ_LAST_COMPLETED_MS] ?: 0L
             if (last <= 0L || (nowMs - last) >= PlayerWalletState.ONE_HOUR_MS) {
                 prefs[Keys.QUIZ_LAST_COMPLETED_MS] = nowMs
-                prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: 25) + diamondReward
+                prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS) + diamondReward
+                prefs[Keys.TOTAL_QUIZZES_COMPLETED] = (prefs[Keys.TOTAL_QUIZZES_COMPLETED] ?: 0) + 1
 
                 if (diamondReward > 0) {
                     resetDailyIfNeeded(prefs, todayEpochDay)
@@ -358,7 +453,28 @@ class PlayerPreferencesStore(private val context: Context) {
     suspend fun recordTradeQuestProgress() {
         context.collectorDataStore.edit { prefs ->
             prefs[Keys.COMMUNITY_TRADES] = (prefs[Keys.COMMUNITY_TRADES] ?: 0) + 1
+            prefs[Keys.TOTAL_TRADES_COMPLETED] = (prefs[Keys.TOTAL_TRADES_COMPLETED] ?: 0) + 1
         }
+    }
+
+    suspend fun togglePinnedBadge(badgeId: String, maxPinned: Int = 3): Boolean {
+        var added = false
+        context.collectorDataStore.edit { prefs ->
+            val current = (prefs[Keys.PINNED_BADGE_IDS] ?: emptySet()).toMutableSet()
+            if (badgeId in current) {
+                current.remove(badgeId)
+                added = false
+            } else {
+                if (current.size >= maxPinned) {
+                    val oldest = current.first()
+                    current.remove(oldest)
+                }
+                current.add(badgeId)
+                added = true
+            }
+            prefs[Keys.PINNED_BADGE_IDS] = current
+        }
+        return added
     }
 
     suspend fun syncQuestPeriodsIfNeeded(todayEpochDay: Long, currentWeekKey: Long) {
@@ -389,10 +505,10 @@ class PlayerPreferencesStore(private val context: Context) {
             if (questId !in currentSet) {
                 prefs[key] = currentSet + questId
                 if (coinReward > 0) {
-                    prefs[Keys.COINS] = (prefs[Keys.COINS] ?: 1200) + coinReward
+                    prefs[Keys.COINS] = (prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS) + coinReward
                 }
                 if (diamondReward > 0) {
-                    prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: 25) + diamondReward
+                    prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS) + diamondReward
                 }
                 if (freePackReward > 0) {
                     prefs[Keys.BONUS_FREE_PACKS] = (prefs[Keys.BONUS_FREE_PACKS] ?: 1) + freePackReward
@@ -409,9 +525,9 @@ class PlayerPreferencesStore(private val context: Context) {
         bonusDiamonds: Int
     ) {
         context.collectorDataStore.edit { prefs ->
-            prefs[Keys.COINS] = (prefs[Keys.COINS] ?: 1200) + coinReward
+            prefs[Keys.COINS] = (prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS) + coinReward
             if (bonusDiamonds > 0) {
-                prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: 25) + bonusDiamonds
+                prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS) + bonusDiamonds
             }
             if (bonusFreePacks > 0) {
                 prefs[Keys.BONUS_FREE_PACKS] = (prefs[Keys.BONUS_FREE_PACKS] ?: 1) + bonusFreePacks

@@ -2,8 +2,12 @@ package com.example
 
 import com.example.data.local.PlayerWalletState
 import com.example.data.remote.SkinJsonParser
+import com.example.model.AchievementCatalog
+import com.example.model.BazaarMarketCatalog
 import com.example.model.MegaPackConfig
+import com.example.model.MisprintAnomaly
 import com.example.model.PackBundleOption
+import com.example.model.PackSatinTheme
 import com.example.model.QuestCatalog
 import com.example.model.QuizQuestionBank
 import com.example.model.QuizQuestionType
@@ -15,12 +19,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
 class SkinJsonParserTest {
     @Test
     fun `parses top-level array with 7-tier rarity fields`() {
@@ -137,22 +136,18 @@ class SkinJsonParserTest {
         val anchor = 10_000_000L
         val oneHour = PlayerWalletState.ONE_HOUR_MS
 
-        // Spent down to 0 at anchor: 30m later still 0 with 30m left
         val after30m = PlayerWalletState.computeHourlyChargeStatus(0, anchor, anchor + oneHour / 2)
         assertEquals(0, after30m.charges)
         assertEquals(oneHour / 2, after30m.msUntilNextCharge)
 
-        // 2 hours 15 mins later: 2 charges accrued, 45m until 3rd
         val after2h15m = PlayerWalletState.computeHourlyChargeStatus(0, anchor, anchor + oneHour * 2 + oneHour / 4)
         assertEquals(2, after2h15m.charges)
         assertEquals((oneHour * 3) / 4, after2h15m.msUntilNextCharge)
 
-        // 10 hours inactive: capped at 3 charges with 0ms timer
         val after10h = PlayerWalletState.computeHourlyChargeStatus(1, anchor, anchor + oneHour * 10)
         assertEquals(3, after10h.charges)
         assertEquals(0L, after10h.msUntilNextCharge)
 
-        // Quiz cooldown lasts 1 hour and settings default to Light Mode + Audio/Vibration enabled
         val wallet = PlayerWalletState(quizLastCompletedMs = anchor)
         assertEquals(false, wallet.darkModeEnabled)
         assertEquals(true, wallet.vibrationEnabled)
@@ -162,9 +157,9 @@ class SkinJsonParserTest {
     }
 
     @Test
-    fun `hourly quiz always builds 10 questions including map knowledge`() {
+    fun `hourly quiz always builds 5 questions including map knowledge`() {
         val emptyQuiz = QuizQuestionBank.buildHourlyQuiz(emptyList())
-        assertEquals(10, emptyQuiz.size)
+        assertEquals(QuizQuestionBank.QUIZ_QUESTION_COUNT, emptyQuiz.size)
         assertTrue(emptyQuiz.all { it.type == QuizQuestionType.MAP_KNOWLEDGE })
 
         val sampleCatalog = listOf("Gusion", "Miya", "Fanny", "Layla", "Ling").mapIndexed { idx, hero ->
@@ -179,34 +174,72 @@ class SkinJsonParserTest {
             )
         }
         val mixedQuiz = QuizQuestionBank.buildHourlyQuiz(sampleCatalog)
-        assertEquals(10, mixedQuiz.size)
-        assertEquals(5, mixedQuiz.count { it.type == QuizQuestionType.SKIN_IDENTITY })
-        assertEquals(5, mixedQuiz.count { it.type == QuizQuestionType.MAP_KNOWLEDGE })
+        assertEquals(5, mixedQuiz.size)
+        assertEquals(3, mixedQuiz.count { it.type == QuizQuestionType.SKIN_IDENTITY })
+        assertEquals(2, mixedQuiz.count { it.type == QuizQuestionType.MAP_KNOWLEDGE })
         assertTrue(mixedQuiz.all { it.options.size == 4 && it.correctAnswer in it.options })
     }
 
     @Test
-    fun `mega pack odds, bundle discounts, and quests remain valid`() {
+    fun `mega pack odds, 50-coin bundle discounts, recycle values, misprints, achievements, and bazaar remain valid`() {
         val total = MegaPackConfig.RARITY_WEIGHTS.values.sum()
         assertEquals(100.0, total, 0.001)
         assertEquals(0.005, MegaPackConfig.MISPRINT_CHANCE_PERCENT, 0.0001)
         assertEquals(SkinRarity.COMMON, SkinRarity.fromApiTier("Basic", "Grand Blade"))
 
-        assertEquals(200, PackBundleOption.SINGLE.coinCost)
-        assertEquals(950, PackBundleOption.FIVE_PACK.coinCost)
+        assertEquals(50, PackBundleOption.SINGLE.coinCost)
+        assertEquals(237, PackBundleOption.FIVE_PACK.coinCost)
         assertEquals(5, PackBundleOption.FIVE_PACK.discountPercent)
-        assertEquals(1800, PackBundleOption.TEN_PACK.coinCost)
+        assertEquals(450, PackBundleOption.TEN_PACK.coinCost)
         assertEquals(10, PackBundleOption.TEN_PACK.discountPercent)
+        assertEquals(5, PackBundleOption.SINGLE.diamondCost)
+        assertEquals(23, PackBundleOption.FIVE_PACK.diamondCost)
+        assertEquals(45, PackBundleOption.TEN_PACK.diamondCost)
+
+        assertEquals(1, SkinRarity.COMMON.recycleGold)
+        assertEquals(2, SkinRarity.UNCOMMON.recycleGold)
+        assertEquals(3, SkinRarity.SPECIAL.recycleGold)
+        assertEquals(5, SkinRarity.EPIC.recycleGold)
+        assertEquals(6, SkinRarity.LUCKYBOX.recycleGold)
+        assertEquals(7, SkinRarity.COLLECTOR.recycleGold)
+        assertEquals(10, SkinRarity.LEGEND.recycleGold)
+
+        assertTrue(MisprintAnomaly.entries.size <= MisprintAnomaly.MAX_VARIANTS)
+        assertEquals(10, MisprintAnomaly.entries.size)
+        assertTrue(PackSatinTheme.ALL.size >= 7)
 
         assertTrue(QuestCatalog.dailyQuests.isNotEmpty())
         assertTrue(QuestCatalog.weeklyQuests.isNotEmpty())
         assertTrue(QuestCatalog.communityQuests.isNotEmpty())
+
+        val badges = AchievementCatalog.evaluate(
+            wallet = PlayerWalletState(totalPacksOpened = 1, dailyStreakCount = 3),
+            ownedCards = emptyList()
+        )
+        assertEquals(12, badges.size)
+        assertTrue(badges.first { it.definition.id == "badge_first_rip" }.isUnlocked)
+        assertTrue(badges.first { it.definition.id == "badge_streak_3" }.isUnlocked)
+
+        val sampleSkins = SkinRarity.entries.mapIndexed { idx, rarity ->
+            SkinCatalogItem(
+                id = "bz_skin_$idx",
+                skinName = "Royal ${rarity.displayName}",
+                heroName = "Hero$idx",
+                role = "Mage",
+                rawTier = rarity.displayName,
+                rarity = rarity,
+                imageUrl = "https://mlbbdex.com/visuels/$idx.webp"
+            )
+        }
+        val listings = BazaarMarketCatalog.buildDailyBazaarListings(sampleSkins, epochDay = 20000L, rotationSeed = 1)
+        assertEquals(6, listings.size)
+        assertTrue(listings.all { it.trader.showcaseSkins.size == 3 })
     }
 
     @Test
     fun `character focus crop returns exact square anchored on character face or saliency peak`() {
         // Landscape 1280x720 with face centered on the right side (78% across)
-        val faceRightRect = CharacterFocusSquareTransformation.computeFocusCropRect(
+        val faceRightRect = CharacterFocusSquareTransformation.computeFocusCropBounds(
             width = 1280,
             height = 720,
             faceNormX = 0.78f,
@@ -217,7 +250,7 @@ class SkinJsonParserTest {
         assertTrue(faceRightRect.left > 400)
 
         // Landscape 1280x720 with visual energy concentrated on the left (columns 2..8 of 32)
-        val leftEnergyCrop = CharacterFocusSquareTransformation.computeFocusCropRect(
+        val leftEnergyCrop = CharacterFocusSquareTransformation.computeFocusCropBounds(
             width = 1280,
             height = 720,
             energyProvider = { gridW, gridH ->
@@ -235,7 +268,7 @@ class SkinJsonParserTest {
         assertTrue(leftEnergyCrop.left < 180)
 
         // Portrait 720x1280 fallback favors upper torso rather than bottom edge
-        val portraitCrop = CharacterFocusSquareTransformation.computeFocusCropRect(
+        val portraitCrop = CharacterFocusSquareTransformation.computeFocusCropBounds(
             width = 720,
             height = 1280
         )

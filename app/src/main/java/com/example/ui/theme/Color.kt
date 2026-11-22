@@ -7,20 +7,20 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 // Static Brand / Card / Rarity Constants (safe for non-Composable model files)
-val MoonlightNight = Color(0xFF080C18)
-val MoonlightAbyss = Color(0xFF0F162A)
-val MoonlightCard = Color(0xFF151E36)
-val MoonlightFrost = Color(0xFF1E2B4A)
-val MoonlightBorder = Color(0xFF2B3D6B)
+val MoonlightNight = Color(0xFF111622)
+val MoonlightAbyss = Color(0xFF171E2E)
+val MoonlightCard = Color(0xFF1D2538)
+val MoonlightFrost = Color(0xFF253047)
+val MoonlightBorder = Color(0xFF32405E)
 
-val MoonlightInk = Color(0xFFEAF0FA)
-val MoonlightMuted = Color(0xFF94A3B8)
-val MoonlightSilverBlue = Color(0xFF7DD3FC)
-val MoonlightIndigoBtn = Color(0xFF3B6EF6)
-val MoonlightGloomHalo = Color(0xFF6366F1)
-val MoonlightGold = Color(0xFFFBBF24)
-val MoonlightGoldSoft = Color(0xFFFDE68A)
-val MoonlightCrimson = Color(0xFFFB7185)
+val MoonlightInk = Color(0xFFE4E9F2)
+val MoonlightMuted = Color(0xFF9AA7BD)
+val MoonlightSilverBlue = Color(0xFF8AB4F8)
+val MoonlightIndigoBtn = Color(0xFF4B6ED6)
+val MoonlightGloomHalo = Color(0xFF3A4D7A)
+val MoonlightGold = Color(0xFFE5B84B)
+val MoonlightGoldSoft = Color(0xFFF3D58D)
+val MoonlightCrimson = Color(0xFFE57388)
 
 val PearlLightCanvas = Color(0xFFF4F7FB)
 val PearlLightTint = Color(0xFFEAF2FC)
@@ -34,27 +34,27 @@ val PearlLightSkyAccent = Color(0xFF0284C7)
 val PearlLightGoldText = Color(0xFFB45309)
 val PearlLightCrimson = Color(0xFFDC2626)
 
-// Card Back & Rarity Accents (high contrast on both dark card footers & light UI)
-val CardBackRoyal = Color(0xFF16203E)
-val CardBackDeep = Color(0xFF090D1A)
-val CardBackEdge = Color(0xFF23325C)
+// Card Back & Rarity Accents (refined satin hues, less jarring neon)
+val CardBackRoyal = Color(0xFF1A2440)
+val CardBackDeep = Color(0xFF0E1424)
+val CardBackEdge = Color(0xFF28375E)
 
-val SkyAzure = Color(0xFF38BDF8)
-val ArenaGold = Color(0xFFFBBF24)
-val ArenaGoldDeep = Color(0xFFD97706)
-val PrismCyan = Color(0xFF06B6D4)
-val MythicCrimson = Color(0xFFF43F5E)
+val SkyAzure = Color(0xFF5FA8E8)
+val ArenaGold = Color(0xFFEAB308)
+val ArenaGoldDeep = Color(0xFFCA8A04)
+val PrismCyan = Color(0xFF3898B8)
+val MythicCrimson = Color(0xFFE15B74)
 
-val RarityCommon = Color(0xFF64748B)
-val RarityUncommon = Color(0xFF10B981)
-val RaritySpecial = Color(0xFF0EA5E9)
-val RarityEpic = Color(0xFF8B5CF6)
-val RarityLuckybox = Color(0xFFEC4899)
-val RarityCollector = Color(0xFFF59E0B)
-val RarityLegend = Color(0xFFF43F5E)
+val RarityCommon = Color(0xFF6E7F96)
+val RarityUncommon = Color(0xFF1FB57E)
+val RaritySpecial = Color(0xFF2A9DF4)
+val RarityEpic = Color(0xFF9368E8)
+val RarityLuckybox = Color(0xFFD95B96)
+val RarityCollector = Color(0xFFE5A024)
+val RarityLegend = Color(0xFFE54D67)
 
-val MisprintNeon = Color(0xFF22D3EE)
-val MisprintMagenta = Color(0xFFE879F9)
+val MisprintNeon = Color(0xFF68BBE3)
+val MisprintMagenta = Color(0xFFC084FC)
 
 @Immutable
 data class CollectorPalette(
@@ -123,13 +123,13 @@ val DarkCollectorPalette = CollectorPalette(
     gold = MoonlightGold,
     goldBright = MoonlightGoldSoft,
     goldText = MoonlightGoldSoft,
-    goldSurfaceTint = Color(0xFF28200D),
+    goldSurfaceTint = Color(0xFF282218),
     crimson = MoonlightCrimson,
     navBar = MoonlightAbyss,
     goldButtonContent = MoonlightNight,
-    heroTopScrim = MoonlightAbyss.copy(alpha = 0.78f),
-    heroMidScrim = MoonlightNight.copy(alpha = 0.84f),
-    misprintLabel = MisprintNeon
+    heroTopScrim = MoonlightAbyss.copy(alpha = 0.84f),
+    heroMidScrim = MoonlightNight.copy(alpha = 0.92f),
+    misprintLabel = Color(0xFFA5B4FC)
 )
 
 val LocalCollectorPalette = staticCompositionLocalOf { LightCollectorPalette }

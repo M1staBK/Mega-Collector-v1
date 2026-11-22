@@ -58,7 +58,6 @@ import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
-import com.example.ui.theme.MisprintNeon
 import com.example.ui.theme.MoonlightAbyss
 import com.example.ui.theme.PearlLightInk
 import com.example.ui.theme.PureWhiteCard
@@ -87,9 +86,9 @@ fun CardInspectScreen(
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        (card?.rarity?.primaryColor ?: SkyAzure).copy(alpha = if (palette.isDark) 0.24f else 0.20f),
-                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.12f else 0.25f),
-                        palette.abyss.copy(alpha = 0.84f),
+                        (card?.rarity?.primaryColor ?: SkyAzure).copy(alpha = if (palette.isDark) 0.16f else 0.20f),
+                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.08f else 0.25f),
+                        palette.abyss.copy(alpha = 0.88f),
                         palette.canvas
                     )
                 )
@@ -249,7 +248,7 @@ fun CardInspectScreen(
                 Surface(
                     color = if (palette.isDark) MoonlightAbyss else PearlLightInk,
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.5.dp, MisprintNeon),
+                    border = BorderStroke(1.2.dp, palette.misprintLabel.copy(alpha = 0.65f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -259,7 +258,7 @@ fun CardInspectScreen(
                         Icon(
                             imageVector = Icons.Default.Bolt,
                             contentDescription = null,
-                            tint = MisprintNeon,
+                            tint = palette.misprintLabel,
                             modifier = Modifier.size(26.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
@@ -267,7 +266,7 @@ fun CardInspectScreen(
                             Text(
                                 text = "1-OF-1 MISPRINT • ${card.misprintAnomaly.title.uppercase()}",
                                 style = MaterialTheme.typography.labelLarge,
-                                color = MisprintNeon
+                                color = palette.misprintLabel
                             )
                             Text(
                                 text = card.misprintAnomaly.description,

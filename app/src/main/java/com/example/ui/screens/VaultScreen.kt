@@ -56,7 +56,6 @@ import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MoonlightNight
 import com.example.ui.theme.PearlCanvas
 import com.example.ui.theme.PureWhiteCard
-import com.example.ui.theme.SkyAzure
 import com.example.ui.theme.SkyFrost
 import com.example.ui.theme.SlateMuted
 import com.example.ui.theme.StudioGoldBright
@@ -288,6 +287,7 @@ private fun VaultGridCardItem(
     duplicateCount: Int,
     onClick: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -319,14 +319,14 @@ private fun VaultGridCardItem(
 
         if (card.isListedForTrade) {
             Surface(
-                color = SkyAzure,
+                color = palette.accentPrimary.copy(alpha = 0.90f),
                 shape = RoundedCornerShape(6.dp),
                 modifier = Modifier.align(Alignment.Center)
             ) {
                 Text(
                     text = "TRADE LISTED",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MoonlightNight,
+                    color = Color.White,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                 )
             }

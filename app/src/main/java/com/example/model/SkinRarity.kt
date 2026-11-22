@@ -25,7 +25,7 @@ enum class SkinRarity(
         primaryColor = RarityCommon,
         secondaryColor = Color(0xFF334155),
         basePullWeight = 32.99,
-        recycleGold = 30,
+        recycleGold = 1,
         prestigePower = 10,
         suspenseDelayMs = 200L
     ),
@@ -35,7 +35,7 @@ enum class SkinRarity(
         primaryColor = RarityUncommon,
         secondaryColor = Color(0xFF065F46),
         basePullWeight = 36.0,
-        recycleGold = 65,
+        recycleGold = 2,
         prestigePower = 25,
         suspenseDelayMs = 350L
     ),
@@ -45,7 +45,7 @@ enum class SkinRarity(
         primaryColor = RaritySpecial,
         secondaryColor = Color(0xFF075985),
         basePullWeight = 19.0,
-        recycleGold = 140,
+        recycleGold = 3,
         prestigePower = 60,
         suspenseDelayMs = 600L
     ),
@@ -55,7 +55,7 @@ enum class SkinRarity(
         primaryColor = RarityEpic,
         secondaryColor = Color(0xFF4C1D95),
         basePullWeight = 8.0,
-        recycleGold = 300,
+        recycleGold = 5,
         prestigePower = 150,
         suspenseDelayMs = 950L
     ),
@@ -65,7 +65,7 @@ enum class SkinRarity(
         primaryColor = RarityLuckybox,
         secondaryColor = Color(0xFF831843),
         basePullWeight = 3.0,
-        recycleGold = 550,
+        recycleGold = 6,
         prestigePower = 320,
         suspenseDelayMs = 1350L
     ),
@@ -75,7 +75,7 @@ enum class SkinRarity(
         primaryColor = RarityCollector,
         secondaryColor = Color(0xFF92400E),
         basePullWeight = 1.0,
-        recycleGold = 950,
+        recycleGold = 7,
         prestigePower = 600,
         suspenseDelayMs = 1800L
     ),
@@ -85,7 +85,7 @@ enum class SkinRarity(
         primaryColor = RarityLegend,
         secondaryColor = Color(0xFF881337),
         basePullWeight = 0.01,
-        recycleGold = 2500,
+        recycleGold = 10,
         prestigePower = 1500,
         suspenseDelayMs = 2400L
     );

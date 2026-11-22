@@ -23,6 +23,16 @@ val NunitoFontFamily = FontFamily(
     Font(R.font.nunito, FontWeight.ExtraBold)
 )
 
+// Thin stylish brush-pen strokes for skin voice-line quotes
+val BrushQuoteFontFamily = FontFamily(
+    Font(R.font.marck_script, FontWeight.Normal)
+)
+
+// Flowing fountain-pen handwriting for hero autograph signatures
+val SignatureHandwritingFontFamily = FontFamily(
+    Font(R.font.sacramento, FontWeight.Normal)
+)
+
 val MegaCollectorTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = FredokaFontFamily,

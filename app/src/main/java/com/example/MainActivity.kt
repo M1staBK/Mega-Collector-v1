@@ -64,7 +64,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.OwnedCard
-import com.example.ui.components.SettingsDialog
+import com.example.ui.components.CollectorSettingsController
+import com.example.ui.components.ProvideCollectorSettings
 import com.example.ui.screens.CardInspectScreen
 import com.example.ui.screens.PackOpeningScreen
 import com.example.ui.screens.PlayArcadeScreen
@@ -163,7 +164,6 @@ fun MegaCollectorApp(
     var vaultSubTab by rememberSaveable { mutableStateOf(VaultSubTab.COLLECTION) }
     var inspectingCardId by rememberSaveable { mutableStateOf<Long?>(null) }
     var preselectedTradeCard by remember { mutableStateOf<OwnedCard?>(null) }
-    var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
 
     val claimableQuestCount = remember(uiState.quests) {
         uiState.quests.count { it.canClaim }
@@ -179,6 +179,17 @@ fun MegaCollectorApp(
 
     val packSession = uiState.packSession
 
+    ProvideCollectorSettings(
+        controller = CollectorSettingsController(
+            soundEnabled = !uiState.wallet.soundMuted,
+            darkModeEnabled = uiState.wallet.darkModeEnabled,
+            vibrationEnabled = uiState.wallet.vibrationEnabled,
+            onToggleSound = viewModel::setSoundEnabled,
+            onToggleDarkMode = viewModel::setDarkModeEnabled,
+            onToggleVibration = viewModel::setVibrationEnabled,
+            onCogOpened = viewModel::playClick
+        )
+    ) {
     Box(modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val useRail = maxWidth >= 600.dp
@@ -199,6 +210,7 @@ fun MegaCollectorApp(
                                     CollectorTab.QUESTS -> claimableQuestCount
                                     CollectorTab.PLAY -> uiState.scratcherStatus.charges +
                                         uiState.prismStatus.charges +
+                                        uiState.wheelStatus.charges +
                                         if (uiState.quizCooldownRemainingMs <= 0L) 1 else 0
                                     else -> 0
                                 }
@@ -291,14 +303,7 @@ fun MegaCollectorApp(
                                 },
                                 onOpenPackBundle = viewModel::openPackBundle,
                                 onExchangeDiamondsForCoins = viewModel::exchangeDiamondsForCoins,
-                                onSyncCatalog = {
-                                    viewModel.playClick()
-                                    viewModel.syncCatalog()
-                                },
-                                onOpenSettings = {
-                                    viewModel.playClick()
-                                    showSettingsDialog = true
-                                },
+                                onOpenSettings = {},
                                 onButtonClickSfx = viewModel::playClick
                             )
 
@@ -306,22 +311,18 @@ fun MegaCollectorApp(
                                 uiState = uiState,
                                 onClaimScratcherPrize = viewModel::claimScratcherPrize,
                                 onAwardPrismDiamonds = viewModel::awardPrismDiamonds,
+                                onSpinWheelPrize = viewModel::spinWheelPrize,
+                                onWheelTickSfx = viewModel::playWheelTick,
                                 onCompleteHourlyQuiz = viewModel::completeHourlyQuiz,
                                 onPlasticCrinkle = viewModel::playPlasticCrinkle,
-                                onOpenSettings = {
-                                    viewModel.playClick()
-                                    showSettingsDialog = true
-                                },
+                                onOpenSettings = {},
                                 onButtonClickSfx = viewModel::playClick
                             )
 
                             CollectorTab.QUESTS -> QuestsScreen(
                                 uiState = uiState,
                                 onClaimQuest = viewModel::claimQuest,
-                                onOpenSettings = {
-                                    viewModel.playClick()
-                                    showSettingsDialog = true
-                                },
+                                onOpenSettings = {},
                                 onButtonClickSfx = viewModel::playClick
                             )
 
@@ -398,6 +399,8 @@ fun MegaCollectorApp(
                                             uiState = uiState,
                                             preselectedCardForTrade = preselectedTradeCard,
                                             onClearPreselectedCard = { preselectedTradeCard = null },
+                                            onExecuteBazaarTrade = viewModel::executeBazaarTrade,
+                                            onRefreshBazaar = viewModel::refreshBazaar,
                                             onCreateTradeListing = { card, seeking, gold ->
                                                 viewModel.createTradeListing(card, seeking, gold)
                                             },
@@ -416,10 +419,12 @@ fun MegaCollectorApp(
                             CollectorTab.PROFILE -> ProfileScreen(
                                 uiState = uiState,
                                 onUpdateAlias = viewModel::updateAlias,
-                                onOpenSettings = {
+                                onSyncCatalog = {
                                     viewModel.playClick()
-                                    showSettingsDialog = true
+                                    viewModel.syncCatalog()
                                 },
+                                onTogglePinnedBadge = viewModel::togglePinnedBadge,
+                                onOpenSettings = {},
                                 onButtonClickSfx = viewModel::playClick
                             )
                         }
@@ -431,20 +436,17 @@ fun MegaCollectorApp(
         // Fullscreen Pack Opening Overlay
         if (packSession != null && inspectingCardId == null) {
             BackHandler {
-                if (packSession.allRevealed) {
+                if (!packSession.isRipped || packSession.allRevealed) {
                     viewModel.closePackSession()
                 }
             }
             PackOpeningScreen(
                 session = packSession,
-                onOpenSettings = {
-                    viewModel.playClick()
-                    showSettingsDialog = true
-                },
+                onOpenSettings = {},
                 onPlasticCrinkle = viewModel::playPlasticCrinkle,
                 onPackTear = viewModel::playPackTear,
                 onCardFlipSound = viewModel::playCardFlipSfx,
-                onPackRipped = viewModel::markPackRipped,
+                onPackRipped = viewModel::ripAndCommitPack,
                 onRevealCard = viewModel::revealCardAt,
                 onAdvanceFromReveal = viewModel::advanceToNextFaceDownCard,
                 onShowSummaryGrid = viewModel::showPulledSummaryGrid,
@@ -496,28 +498,6 @@ fun MegaCollectorApp(
             )
         }
 
-        if (showSettingsDialog) {
-            SettingsDialog(
-                soundEnabled = !uiState.wallet.soundMuted,
-                darkModeEnabled = uiState.wallet.darkModeEnabled,
-                vibrationEnabled = uiState.wallet.vibrationEnabled,
-                onToggleSound = { enabled ->
-                    viewModel.setSoundEnabled(enabled)
-                    if (enabled) viewModel.playClick()
-                },
-                onToggleDarkMode = { dark ->
-                    viewModel.playClick()
-                    viewModel.setDarkModeEnabled(dark)
-                },
-                onToggleVibration = { enabled ->
-                    viewModel.playClick()
-                    viewModel.setVibrationEnabled(enabled)
-                },
-                onDismiss = {
-                    viewModel.playClick()
-                    showSettingsDialog = false
-                }
-            )
-        }
+    }
     }
 }

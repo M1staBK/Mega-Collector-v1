@@ -16,6 +16,6 @@
     <string name="gyro_hint">Tilt your device or drag card for holographic foil sheen</string>
     <string name="api_credit_title">Powered by MLBBDex</string>
     <string name="api_credit_body">Complete MOBA Legends skin catalog, hero rosters, and artwork metadata provided via mlbbdex.com/api/v1/skins/. All hero names and skin visuals belong to their respective owners.</string>
-    <string name="trade_offline_notice">Firebase cloud sync was declined, so Live Multiplayer Cloud Trading is paused. You can still mint, share, and redeem encrypted Trade Slips directly with friends!</string>
-    <string name="community_quest_notice">Local Season Milestones — your pack rips, rare pulls, and trades advance milestone rewards here while online community sync is paused.</string>
+    <string name="trade_offline_notice">Collector Bazaar &amp; P2P Trading Active — swap directly with live collector listings or mint and redeem Trade Slips with friends.</string>
+    <string name="community_quest_notice">Season &amp; Bazaar Milestones — your pack rips, rare pulls, and Bazaar swaps advance shared collector rewards.</string>
 </resources>

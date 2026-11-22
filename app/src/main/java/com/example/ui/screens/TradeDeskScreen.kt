@@ -23,13 +23,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -55,22 +58,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.example.R
+import com.example.model.BazaarCollectorProfile
+import com.example.model.BazaarTraderListing
 import com.example.model.DecodedTradeSlip
 import com.example.model.OwnedCard
 import com.example.model.TradeListing
 import com.example.ui.components.EmptyVaultState
+import com.example.ui.components.ProfileViewerDialog
 import com.example.ui.components.RarityChip
 import com.example.ui.components.rememberMlbbImageRequest
+import com.example.ui.components.rememberMlbbSquareImageRequest
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
-import com.example.ui.theme.MisprintNeon
 import com.example.ui.theme.PearlCanvas
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.SkyFrost
@@ -85,6 +91,8 @@ fun TradeDeskScreen(
     uiState: MegaCollectorUiState,
     preselectedCardForTrade: OwnedCard?,
     onClearPreselectedCard: () -> Unit,
+    onExecuteBazaarTrade: (BazaarTraderListing, OwnedCard) -> Unit,
+    onRefreshBazaar: () -> Unit,
     onCreateTradeListing: (OwnedCard, String, Int) -> Unit,
     onCancelListing: (TradeListing) -> Unit,
     onDecodeSlip: (String) -> Unit,
@@ -101,6 +109,8 @@ fun TradeDeskScreen(
     var seekingNote by remember { mutableStateOf("") }
     var pasteCodeInput by remember { mutableStateOf("") }
     var showPickOfferDialogForSlip by remember { mutableStateOf<DecodedTradeSlip?>(null) }
+    var showPickOfferDialogForBazaar by remember { mutableStateOf<BazaarTraderListing?>(null) }
+    var viewingProfile by remember { mutableStateOf<BazaarCollectorProfile?>(null) }
 
     val availableToList = remember(uiState.ownedCards) {
         uiState.ownedCards.filter { !it.isListedForTrade }
@@ -114,47 +124,108 @@ fun TradeDeskScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Honest Offline P2P Notice
+        // Active Collector Bazaar Banner
         item {
             Surface(
-                color = palette.goldSurfaceTint,
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, StudioGold.copy(alpha = 0.55f))
+                color = PureWhiteCard,
+                shape = RoundedCornerShape(18.dp),
+                shadowElevation = 2.dp,
+                border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.35f))
             ) {
                 Row(
-                    modifier = Modifier.padding(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.CloudOff,
-                        contentDescription = null,
-                        tint = StudioGoldText,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    Surface(
+                        color = palette.frostSurface,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Storefront,
+                                contentDescription = null,
+                                tint = palette.accentPrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.width(12.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "P2P Trade Slip Mode",
+                            text = "Collector Bazaar Active",
                             style = MaterialTheme.typography.titleMedium,
-                            color = StudioGoldText
+                            color = InkSlate
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = stringResource(R.string.trade_offline_notice),
+                            text = "Swap skins directly with Dawn Collectors, inspect their Profiles & Badges, or trade via P2P slips.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = SlateMuted
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = onRefreshBazaar,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .testTag("refresh_bazaar_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh Bazaar listings",
+                            tint = palette.accentPrimary
                         )
                     }
                 }
             }
         }
 
-        // Section 1: Mint a Shareable Trade Slip
+        // Section 1: Collector Bazaar Listings
+        if (uiState.bazaarListings.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "LIVE BAZAAR OFFERS (${uiState.bazaarListings.size})",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = SlateMuted
+                    )
+                    Text(
+                        text = "Tap trader to view profile",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.accentPrimary
+                    )
+                }
+            }
+
+            items(uiState.bazaarListings, key = { it.listingId }) { bz ->
+                BazaarOfferCard(
+                    listing = bz,
+                    ownedCards = uiState.ownedCards,
+                    playerCoins = uiState.wallet.coins,
+                    onViewProfile = {
+                        onButtonClickSfx()
+                        viewingProfile = bz.trader
+                    },
+                    onSwapClick = {
+                        onButtonClickSfx()
+                        showPickOfferDialogForBazaar = bz
+                    }
+                )
+            }
+        }
+
+        // Section 2: Mint a Shareable Trade Slip
         item {
             Surface(
                 color = PureWhiteCard,
                 shape = RoundedCornerShape(20.dp),
-                shadowElevation = 3.dp,
+                shadowElevation = 2.dp,
                 border = BorderStroke(1.dp, IceBorder)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -167,7 +238,7 @@ fun TradeDeskScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "MINT TRADE SLIP",
+                            text = "P2P TRADE SLIP EXCHANGE",
                             style = MaterialTheme.typography.titleLarge,
                             color = InkSlate
                         )
@@ -284,12 +355,12 @@ fun TradeDeskScreen(
             }
         }
 
-        // Section 2: Redeem Partner's Trade Slip
+        // Section 3: Redeem Partner's Trade Slip
         item {
             Surface(
                 color = PureWhiteCard,
                 shape = RoundedCornerShape(20.dp),
-                shadowElevation = 3.dp,
+                shadowElevation = 2.dp,
                 border = BorderStroke(1.dp, IceBorder)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -300,7 +371,7 @@ fun TradeDeskScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Paste a MEGA-TRADE-V1:... code sent by another collector to preview and swap.",
+                        text = "Paste a MEGA-TRADE-V1:... code sent by another collector to preview their profile & swap.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = SlateMuted
                     )
@@ -345,19 +416,70 @@ fun TradeDeskScreen(
                             color = SkyFrost,
                             shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(
-                                1.5.dp,
-                                if (slip.isMisprint) MisprintNeon else slip.rarity.primaryColor
+                                1.2.dp,
+                                if (slip.isMisprint) palette.misprintLabel.copy(alpha = 0.7f) else slip.rarity.primaryColor.copy(alpha = 0.7f)
                             )
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    RarityChip(rarity = slip.rarity, compact = true)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "From ${slip.senderAlias}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = SlateMuted
-                                    )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        RarityChip(rarity = slip.rarity, compact = true)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "From ${slip.senderAlias}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = InkSlate
+                                        )
+                                    }
+                                    Surface(
+                                        color = PureWhiteCard,
+                                        shape = RoundedCornerShape(999.dp),
+                                        border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.5f)),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(999.dp))
+                                            .clickable {
+                                                onButtonClickSfx()
+                                                viewingProfile = BazaarCollectorProfile(
+                                                    traderId = "p2p_${slip.senderAlias}",
+                                                    alias = slip.senderAlias,
+                                                    rankTitle = when {
+                                                        slip.senderPrestige >= 10000 -> "Mythical Glory"
+                                                        slip.senderPrestige >= 4000 -> "Mythic"
+                                                        else -> "Legend"
+                                                    },
+                                                    avatarColor = palette.accentPrimary,
+                                                    prestigeScore = slip.senderPrestige,
+                                                    uniqueSkinsCount = slip.senderCardCount,
+                                                    packsOpened = (slip.senderCardCount / 4).coerceAtLeast(3),
+                                                    tradesDone = 5,
+                                                    motto = slip.seekingNote.ifBlank { "Trading via P2P Slip!" },
+                                                    badgeIds = slip.senderBadgeIds.ifEmpty { listOf("badge_bazaar_broker") }
+                                                )
+                                            }
+                                            .testTag("view_slip_sender_profile")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Person,
+                                                contentDescription = "View sender profile",
+                                                tint = palette.accentPrimary,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = "Profile",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = palette.accentPrimary
+                                            )
+                                        }
+                                    }
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
@@ -407,7 +529,7 @@ fun TradeDeskScreen(
             }
         }
 
-        // Section 3: Active Minted Trade Listings
+        // Section 4: Active Minted Trade Listings
         item {
             Text(
                 text = "YOUR ACTIVE TRADE LISTINGS (${uiState.tradeListings.size})",
@@ -420,7 +542,7 @@ fun TradeDeskScreen(
             item {
                 EmptyVaultState(
                     title = "No Active Trade Slips",
-                    subtitle = "Mint a Trade Slip above to share any card or 1-of-1 Misprint with friends."
+                    subtitle = "Swap on the Live Bazaar above or mint a Trade Slip for friends."
                 )
             }
         } else {
@@ -450,6 +572,94 @@ fun TradeDeskScreen(
         }
     }
 
+    // Bazaar Card Picker Dialog
+    showPickOfferDialogForBazaar?.let { bz ->
+        val eligibleCards = remember(uiState.ownedCards, bz.listingId) {
+            uiState.ownedCards.filter { it.rarity.tierRank >= bz.minRequiredRarity.tierRank }
+        }
+        val canAffordFee = uiState.wallet.coins >= bz.coinFee
+
+        AlertDialog(
+            onDismissRequest = { showPickOfferDialogForBazaar = null },
+            containerColor = PureWhiteCard,
+            title = {
+                Text("Swap for ${bz.offeredSkin.skinName}", color = InkSlate)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Requires: ${bz.seekingLabel}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (canAffordFee) palette.accentPrimary else StudioCrimson
+                    )
+                    if (eligibleCards.isEmpty()) {
+                        Text(
+                            text = "You don't have a ${bz.minRequiredRarity.displayName}+ card in your Vault yet. Open packs to pull one!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SlateMuted
+                        )
+                    } else if (!canAffordFee) {
+                        Text(
+                            text = "You need ${bz.coinFee} Coins for this trade fee.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = StudioCrimson
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.height(250.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(eligibleCards, key = { it.instanceId }) { offered ->
+                                Surface(
+                                    color = SkyFrost,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, offered.rarity.primaryColor.copy(alpha = 0.6f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            showPickOfferDialogForBazaar = null
+                                            onExecuteBazaarTrade(bz, offered)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${offered.heroName} — ${offered.skinName}",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = InkSlate
+                                            )
+                                            Text(
+                                                text = "${offered.rarity.displayName} • ${offered.serialCode}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (offered.isMisprint) palette.misprintLabel else SlateMuted
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        onButtonClickSfx()
+                        showPickOfferDialogForBazaar = null
+                    }
+                ) {
+                    Text("Cancel", color = SlateMuted)
+                }
+            }
+        )
+    }
+
+    // P2P Slip Card Picker Dialog
     showPickOfferDialogForSlip?.let { slip ->
         AlertDialog(
             onDismissRequest = { showPickOfferDialogForSlip = null },
@@ -489,7 +699,7 @@ fun TradeDeskScreen(
                                     Text(
                                         text = "${offered.rarity.displayName} • ${offered.serialCode}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (offered.isMisprint) DeepCobalt else SlateMuted
+                                        color = if (offered.isMisprint) palette.misprintLabel else SlateMuted
                                     )
                                 }
                             }
@@ -510,6 +720,176 @@ fun TradeDeskScreen(
             }
         )
     }
+
+    // View Collector Profile Dialog
+    viewingProfile?.let { profile ->
+        ProfileViewerDialog(
+            profile = profile,
+            onDismiss = {
+                onButtonClickSfx()
+                viewingProfile = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun BazaarOfferCard(
+    listing: BazaarTraderListing,
+    ownedCards: List<OwnedCard>,
+    playerCoins: Int,
+    onViewProfile: () -> Unit,
+    onSwapClick: () -> Unit
+) {
+    val palette = CollectorTheme.colors
+    val hasEligibleCard = remember(ownedCards, listing.minRequiredRarity) {
+        ownedCards.any { it.rarity.tierRank >= listing.minRequiredRarity.tierRank }
+    }
+    val canTrade = hasEligibleCard && playerCoins >= listing.coinFee
+
+    Surface(
+        color = PureWhiteCard,
+        shape = RoundedCornerShape(18.dp),
+        shadowElevation = 2.dp,
+        border = BorderStroke(
+            1.dp,
+            if (listing.isMisprint) palette.misprintLabel.copy(alpha = 0.6f)
+            else listing.offeredSkin.rarity.primaryColor.copy(alpha = 0.48f)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("bazaar_card_${listing.listingId}")
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Trader Header (Clickable to open ProfileViewerDialog)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onViewProfile)
+                    .padding(vertical = 4.dp, horizontal = 4.dp)
+                    .testTag("bazaar_profile_${listing.trader.traderId}"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = listing.trader.avatarColor.copy(alpha = 0.16f),
+                    shape = CircleShape,
+                    border = BorderStroke(1.2.dp, listing.trader.avatarColor),
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = listing.trader.alias,
+                            tint = listing.trader.avatarColor,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = listing.trader.alias,
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                        color = InkSlate,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "${listing.trader.rankTitle} • ${listing.trader.uniqueSkinsCount} skins",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SlateMuted
+                    )
+                }
+                Surface(
+                    color = SkyFrost,
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.dp, palette.border)
+                ) {
+                    Text(
+                        text = "View Profile",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.accentPrimary,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Skin Offer Body
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SkyFrost)
+                ) {
+                    if (listing.offeredSkin.imageUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = rememberMlbbSquareImageRequest(listing.offeredSkin.imageUrl),
+                            contentDescription = listing.offeredSkin.skinName,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RarityChip(rarity = listing.offeredSkin.rarity, compact = true)
+                        if (listing.isMisprint) {
+                            Surface(
+                                color = palette.misprintLabel.copy(alpha = 0.16f),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "1/1 MISPRINT",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                    color = palette.misprintLabel,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${listing.offeredSkin.heroName} — ${listing.offeredSkin.skinName}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = InkSlate,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Seeking: ${listing.seekingLabel}",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                        color = StudioGoldText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = onSwapClick,
+                    enabled = ownedCards.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (canTrade) DeepCobalt else palette.frostSurface,
+                        contentColor = if (canTrade) Color.White else SlateMuted
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier.testTag("bazaar_swap_${listing.listingId}")
+                ) {
+                    Text(
+                        text = if (canTrade) "Swap" else "Details",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -526,7 +906,7 @@ private fun TradeListingRow(
         shadowElevation = 2.dp,
         border = BorderStroke(
             1.dp,
-            if (listing.isMisprint) MisprintNeon else listing.rarity.primaryColor.copy(alpha = 0.55f)
+            if (listing.isMisprint) palette.misprintLabel.copy(alpha = 0.65f) else listing.rarity.primaryColor.copy(alpha = 0.55f)
         )
     ) {
         Row(

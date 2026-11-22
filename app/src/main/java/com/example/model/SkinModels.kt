@@ -28,7 +28,7 @@ data class OwnedCard(
 ) {
     val recycleValueGold: Int
         get() = if (isMisprint && misprintAnomaly != null) {
-            maxOf(rarity.recycleGold * misprintAnomaly.valueMultiplier, 3500)
+            maxOf(rarity.recycleGold * misprintAnomaly.valueMultiplier, 25)
         } else {
             rarity.recycleGold
         }
@@ -77,5 +77,8 @@ data class DecodedTradeSlip(
     val serialCode: String,
     val goldSweetener: Int,
     val seekingNote: String,
-    val slipId: String
+    val slipId: String,
+    val senderPrestige: Int = 1850,
+    val senderCardCount: Int = 24,
+    val senderBadgeIds: List<String> = emptyList()
 )

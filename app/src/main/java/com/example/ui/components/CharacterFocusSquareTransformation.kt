@@ -144,18 +144,28 @@ class CharacterFocusSquareTransformation(
         internal const val GRID_W = 32
         internal const val GRID_H = 24
 
+        data class CropBounds(
+            val left: Int,
+            val top: Int,
+            val right: Int,
+            val bottom: Int
+        ) {
+            fun width(): Int = right - left
+            fun height(): Int = bottom - top
+        }
+
         /**
          * Pure-JVM testable 1:1 focus square calculator.
          */
-        fun computeFocusCropRect(
+        fun computeFocusCropBounds(
             width: Int,
             height: Int,
             faceNormX: Float? = null,
             faceNormY: Float? = null,
             energyProvider: ((Int, Int) -> FloatArray)? = null
-        ): Rect {
+        ): CropBounds {
             val squareSize = min(width, height).coerceAtLeast(1)
-            if (width == height) return Rect(0, 0, width, height)
+            if (width == height) return CropBounds(0, 0, width, height)
 
             // 1. If a face was clearly detected, anchor square directly around it
             if (faceNormX != null && faceNormY != null) {
@@ -163,7 +173,7 @@ class CharacterFocusSquareTransformation(
                 val centerY = (faceNormY * height).roundToInt()
                 val left = (centerX - squareSize / 2).coerceIn(0, width - squareSize)
                 val top = (centerY - squareSize / 2).coerceIn(0, height - squareSize)
-                return Rect(left, top, left + squareSize, top + squareSize)
+                return CropBounds(left, top, left + squareSize, top + squareSize)
             }
 
             // 2. Slide a square window across the saliency energy grid to capture the character
@@ -196,7 +206,7 @@ class CharacterFocusSquareTransformation(
                     val left = ((bestStartCol.toFloat() / GRID_W.toFloat()) * width)
                         .roundToInt()
                         .coerceIn(0, width - squareSize)
-                    return Rect(left, 0, left + squareSize, squareSize)
+                    return CropBounds(left, 0, left + squareSize, squareSize)
                 } else {
                     val rowEnergy = FloatArray(GRID_H)
                     for (y in 0 until GRID_H) {
@@ -224,14 +234,25 @@ class CharacterFocusSquareTransformation(
                     val top = ((bestStartRow.toFloat() / GRID_H.toFloat()) * height)
                         .roundToInt()
                         .coerceIn(0, height - squareSize)
-                    return Rect(0, top, squareSize, top + squareSize)
+                    return CropBounds(0, top, squareSize, top + squareSize)
                 }
             }
 
             // Default compositional fallback: horizontal center, upper-biased for portraits
             val left = ((width - squareSize) / 2).coerceIn(0, width - squareSize)
             val top = if (height > width) ((height - squareSize) * 0.25f).roundToInt() else 0
-            return Rect(left, top, left + squareSize, top + squareSize)
+            return CropBounds(left, top, left + squareSize, top + squareSize)
+        }
+
+        fun computeFocusCropRect(
+            width: Int,
+            height: Int,
+            faceNormX: Float? = null,
+            faceNormY: Float? = null,
+            energyProvider: ((Int, Int) -> FloatArray)? = null
+        ): Rect {
+            val b = computeFocusCropBounds(width, height, faceNormX, faceNormY, energyProvider)
+            return Rect(b.left, b.top, b.right, b.bottom)
         }
     }
 }

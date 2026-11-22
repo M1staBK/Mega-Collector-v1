@@ -57,7 +57,6 @@ import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MisprintMagenta
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.RarityUncommon
-import com.example.ui.theme.SkyAzure
 import com.example.ui.theme.SkyFrost
 import com.example.ui.theme.SlateMuted
 import com.example.ui.theme.StudioGold
@@ -86,7 +85,7 @@ fun QuestsScreen(
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.14f else 0.32f),
+                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.08f else 0.30f),
                         palette.canvas
                     )
                 )
@@ -198,7 +197,7 @@ fun QuestsScreen(
                         Surface(
                             color = SkyFrost,
                             shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, SkyAzure.copy(alpha = 0.5f))
+                            border = BorderStroke(1.dp, palette.border)
                         ) {
                             Row(
                                 modifier = Modifier.padding(14.dp),

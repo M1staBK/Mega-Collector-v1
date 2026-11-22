@@ -195,8 +195,104 @@ object QuizQuestionBank {
             ),
             correctAnswer = "A personal Shield & Adaptive Attack/Defense buff",
             explanation = "Every teammate gets Gold/EXP/small shield, while the slayer gets a stronger Turtle shield."
+        ),
+        QuizQuestion(
+            id = "map_rickety_crab",
+            type = QuizQuestionType.MAP_KNOWLEDGE,
+            prompt = "What drops in the side lane near the Crabs (Gold Buff) to help sustain or earn early gold?",
+            options = listOf(
+                "Gold Coins bonus over time",
+                "Permanent True Damage",
+                "Free Level 15 upgrade",
+                "Lord summon scroll"
+            ),
+            correctAnswer = "Gold Coins bonus over time",
+            explanation = "Slaying the side-lane Crab grants continuous bonus Gold ticking every second."
+        ),
+        QuizQuestion(
+            id = "map_mid_bush",
+            type = QuizQuestionType.MAP_KNOWLEDGE,
+            prompt = "Why do Mid Laners clear the very first minion wave as fast as possible?",
+            options = listOf(
+                "To rotate early for the Lithowanderer fight and side ganks",
+                "To destroy the Base before 1:00",
+                "To spawn the Lord at 2:00",
+                "To disable enemy Recall permanently"
+            ),
+            correctAnswer = "To rotate early for the Lithowanderer fight and side ganks",
+            explanation = "Mid wave priority frees Mages & Roamers to secure river vision and contest Lithowanderer."
+        ),
+        QuizQuestion(
+            id = "map_base_regen",
+            type = QuizQuestionType.MAP_KNOWLEDGE,
+            prompt = "How long does the Healing Spring inside your Base Fountain stay effective when taking lethal chase?",
+            options = listOf(
+                "It rapidly restores HP & Mana and grants a brief speed boost exiting base",
+                "It teleports allies straight to Lord pit",
+                "It doubles Attack Speed across the map",
+                "It locks jungle buffs permanently"
+            ),
+            correctAnswer = "It rapidly restores HP & Mana and grants a brief speed boost exiting base",
+            explanation = "Fountain heals HP & Mana quickly while giving a short Homeguard burst of speed on exit."
+        ),
+        QuizQuestion(
+            id = "map_healing_river_cabbage",
+            type = QuizQuestionType.MAP_KNOWLEDGE,
+            prompt = "Which neutral creep in the mid river heals nearby allied heroes upon defeat?",
+            options = listOf("Lithowanderer", "Infernal Lord", "Molten Fiend", "Scaled Lizard"),
+            correctAnswer = "Lithowanderer",
+            explanation = "Alongside Walkie Grass and speed, Lithowanderer restores a burst of HP & Mana to the team."
+        ),
+        QuizQuestion(
+            id = "map_inner_turret_def",
+            type = QuizQuestionType.MAP_KNOWLEDGE,
+            prompt = "What defense activates on nearby allied turrets if multiple enemy heroes siege together early?",
+            options = listOf(
+                "Anti-gank Defense Shield reducing siege damage when no allied minions are around",
+                "Turrets turn invisible for 15 seconds",
+                "Turrets summon a second Turtle",
+                "Minions transform into Jungle Creeps"
+            ),
+            correctAnswer = "Anti-gank Defense Shield reducing siege damage when no allied minions are around",
+            explanation = "Without allied minions in range, turrets gain massive damage reduction against backdooring."
+        ),
+        QuizQuestion(
+            id = "map_flameshot_steal",
+            type = QuizQuestionType.MAP_KNOWLEDGE,
+            prompt = "Why is Retribution crucial during Turtle & Lord pit contests?",
+            options = listOf(
+                "It deals instant scaled True Damage to secure objectives over normal skills",
+                "It makes the Lord fight for the enemy",
+                "It freezes turret attacks for 30 seconds",
+                "It grants 500 Gold per basic attack"
+            ),
+            correctAnswer = "It deals instant scaled True Damage to secure objectives over normal skills",
+            explanation = "Retribution executes Turtle & Lord cleanly when timed with the objective's HP threshold."
+        ),
+        QuizQuestion(
+            id = "map_winter_crown",
+            type = QuizQuestionType.MAP_KNOWLEDGE,
+            prompt = "Which active equipment freezes your hero in Stasis for 2 seconds to dodge fatal bursts?",
+            options = listOf("Winter Crown", "Wind of Nature", "Immortality", "Rose Gold Meteor"),
+            correctAnswer = "Winter Crown",
+            explanation = "Winter Crown puts your hero in untargetable Stasis while allowing ongoing channels to continue."
+        ),
+        QuizQuestion(
+            id = "map_wind_of_nature",
+            type = QuizQuestionType.MAP_KNOWLEDGE,
+            prompt = "Wind of Nature active grants immunity against which damage type?",
+            options = listOf(
+                "Physical Damage",
+                "True Damage",
+                "Magic Damage",
+                "Turret Laser only"
+            ),
+            correctAnswer = "Physical Damage",
+            explanation = "Wind Chant grants brief immunity to all Physical Damage (lasting longer for Marksmen)."
         )
     )
+
+    const val QUIZ_QUESTION_COUNT = 5
 
     fun buildHourlyQuiz(catalog: List<SkinCatalogItem>): List<QuizQuestion> {
         val uniqueHeroes = catalog
@@ -212,7 +308,7 @@ object QuizQuestionBank {
             }
             .shuffled()
 
-        val skinQuestionCount = if (validSkins.size >= 5 && uniqueHeroes.size >= 4) 5 else 0
+        val skinQuestionCount = if (validSkins.size >= 3 && uniqueHeroes.size >= 4) 3 else 0
         val skinQuestions = mutableListOf<QuizQuestion>()
 
         if (skinQuestionCount > 0) {
@@ -239,12 +335,12 @@ object QuizQuestionBank {
             }
         }
 
-        val mapNeeded = 10 - skinQuestions.size
+        val mapNeeded = QUIZ_QUESTION_COUNT - skinQuestions.size
         val mapQuestions = mapKnowledgePool
             .shuffled()
             .take(mapNeeded)
             .map { q -> q.copy(options = q.options.shuffled()) }
 
-        return (skinQuestions + mapQuestions).shuffled().take(10)
+        return (skinQuestions + mapQuestions).shuffled().take(QUIZ_QUESTION_COUNT)
     }
 }

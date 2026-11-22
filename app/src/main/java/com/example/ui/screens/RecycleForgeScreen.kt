@@ -53,7 +53,6 @@ import com.example.ui.components.rememberMlbbImageRequest
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
-import com.example.ui.theme.MisprintNeon
 import com.example.ui.theme.PearlCanvas
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.SkyFrost
@@ -269,7 +268,7 @@ private fun RecycleCardRow(
         shadowElevation = 2.dp,
         border = BorderStroke(
             1.dp,
-            if (card.isMisprint) MisprintNeon else card.rarity.primaryColor.copy(alpha = 0.45f)
+            if (card.isMisprint) palette.misprintLabel.copy(alpha = 0.65f) else card.rarity.primaryColor.copy(alpha = 0.45f)
         ),
         modifier = Modifier
             .fillMaxWidth()

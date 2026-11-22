@@ -43,16 +43,21 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SwipeRight
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -70,6 +75,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -82,8 +88,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
@@ -93,6 +102,7 @@ import com.airbnb.lottie.compose.rememberLottieComposition
 import com.example.R
 import com.example.model.MegaPackConfig
 import com.example.model.OwnedCard
+import com.example.model.PackSatinTheme
 import com.example.model.SkinRarity
 import com.example.ui.components.CardBackView
 import com.example.ui.components.HolographicCardView
@@ -103,7 +113,6 @@ import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
-import com.example.ui.theme.MisprintNeon
 import com.example.ui.theme.MoonlightNight
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.SkyAzure
@@ -159,12 +168,12 @@ fun PackOpeningScreen(
     val topFaceDownCard = nextUnrevealedIndex?.let { session.pulledCards.getOrNull(it) }
 
     fun triggerRipSequence() {
-        if (session.isRipped) return
+        if (session.isRipped || session.isCommittingRip) return
         performHaptic(HapticFeedbackType.LongPress)
         onPackTear()
         playBurstOnce = true
         scope.launch {
-            delay(260L)
+            delay(200L)
             onPackRipped()
         }
     }
@@ -176,7 +185,7 @@ fun PackOpeningScreen(
             isChargingFlip = true
             performHaptic(HapticFeedbackType.LongPress)
 
-            val totalMs = if (targetCard.isMisprint) 850L
+            val totalMs = if (targetCard.isMisprint) 820L
             else if (targetCard.rarity.tierRank >= SkinRarity.EPIC.tierRank) (targetCard.rarity.suspenseDelayMs * 0.45f).toLong()
             else 90L
 
@@ -204,13 +213,13 @@ fun PackOpeningScreen(
     }
 
     val auraColor = when {
-        focusedCard != null && focusedCard.isMisprint -> MisprintNeon
+        focusedCard != null && focusedCard.isMisprint -> palette.misprintLabel
         focusedCard != null -> focusedCard.rarity.primaryColor
         topFaceDownCard != null && isChargingFlip -> topFaceDownCard.rarity.primaryColor
+        !session.isRipped -> session.wrapperTheme.logoAccent
         else -> SkyAzure
     }
 
-    // 100% opaque reactive studio canvas (Pearl Sky Pocket Light or Moonlight Gloom Dark)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -218,8 +227,8 @@ fun PackOpeningScreen(
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        auraColor.copy(alpha = (if (palette.isDark) 0.24f else 0.18f) + suspenseProgress * 0.28f),
-                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.12f else 0.24f),
+                        auraColor.copy(alpha = (if (palette.isDark) 0.16f else 0.15f) + suspenseProgress * 0.22f),
+                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.10f else 0.22f),
                         palette.abyss.copy(alpha = 0.85f),
                         palette.canvas
                     )
@@ -253,10 +262,10 @@ fun PackOpeningScreen(
                         color = palette.accentPrimary
                     )
                     val subtitle = when {
-                        !session.isRipped -> "Touch wrapper to feel • Swipe seam to tear (${session.pulledCards.size} cards)"
-                        session.showSummaryGrid -> "All ${session.pulledCards.size} pulled cards • Tap any card to 3D inspect"
+                        !session.isRipped -> "Close now to cancel safely (${session.bundle.totalCards} cards)"
+                        session.showSummaryGrid -> "Tap any card to 3D gyro inspect"
                         focusedCard != null -> "Revealed ${session.revealedIndices.size} of ${session.pulledCards.size}"
-                        else -> "${session.remainingUnrevealedCount} cards stacked • Tap, swipe, or pinch to flip"
+                        else -> "${session.remainingUnrevealedCount} cards stacked • Tap, swipe, or pinch"
                     }
                     Text(
                         text = subtitle,
@@ -303,8 +312,9 @@ fun PackOpeningScreen(
                     !session.isRipped -> {
                         PackTearStage(
                             coverRes = MegaPackConfig.COVER_DRAWABLE_RES,
-                            accentColor = MegaPackConfig.ACCENT_COLOR,
+                            satinTheme = session.wrapperTheme,
                             packCount = session.bundle.packCount,
+                            isCommitting = session.isCommittingRip,
                             onCrinkle = onPlasticCrinkle,
                             onRipComplete = ::triggerRipSequence
                         )
@@ -362,10 +372,10 @@ fun PackOpeningScreen(
                                     .padding(top = 6.dp)
                             ) {
                                 Surface(
-                                    color = MoonlightNight.copy(alpha = 0.94f),
+                                    color = MoonlightNight.copy(alpha = 0.92f),
                                     shape = RoundedCornerShape(999.dp),
-                                    border = BorderStroke(1.5.dp, MisprintNeon),
-                                    shadowElevation = 6.dp
+                                    border = BorderStroke(1.2.dp, palette.misprintLabel.copy(alpha = 0.72f)),
+                                    shadowElevation = 4.dp
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -381,7 +391,7 @@ fun PackOpeningScreen(
                                         Text(
                                             text = "1 OF 1 MISPRINT DISCOVERED!",
                                             style = MaterialTheme.typography.labelLarge,
-                                            color = MisprintNeon
+                                            color = palette.misprintLabel
                                         )
                                     }
                                 }
@@ -439,7 +449,7 @@ fun PackOpeningScreen(
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("View All Grid", color = palette.accentPrimary)
+                            Text("View Summary", color = palette.accentPrimary)
                         }
                     }
 
@@ -454,7 +464,7 @@ fun PackOpeningScreen(
                                 color = if (isRevealed) PureWhiteCard else SkyFrost,
                                 shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(
-                                    width = if (isFocused) 2.dp else 1.dp,
+                                    width = if (isFocused) 1.8.dp else 1.dp,
                                     color = when {
                                         isFocused -> palette.accentPrimary
                                         isRevealed -> card.rarity.primaryColor
@@ -497,6 +507,7 @@ fun PackOpeningScreen(
             if (!session.isRipped) {
                 Button(
                     onClick = ::triggerRipSequence,
+                    enabled = !session.isCommittingRip,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = DeepCobalt,
                         contentColor = Color.White
@@ -507,8 +518,17 @@ fun PackOpeningScreen(
                         .height(54.dp)
                         .testTag("rip_pack_button")
                 ) {
+                    if (session.isCommittingRip) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.2.dp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                    }
                     Text(
-                        text = if (session.bundle.packCount > 1) "Rip ${session.bundle.packCount}x Bundle Open"
+                        text = if (session.isCommittingRip) "Opening..."
+                        else if (session.bundle.packCount > 1) "Rip ${session.bundle.packCount}x Bundle Open"
                         else "Rip Pack Open",
                         style = MaterialTheme.typography.titleMedium
                     )
@@ -571,7 +591,7 @@ fun PackOpeningScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "View All ${session.pulledCards.size} Pulled Cards",
+                                text = if (session.pulledCards.size > 5) "View Top 5 Rarest Pulls" else "View All ${session.pulledCards.size} Pulled Cards",
                                 style = MaterialTheme.typography.labelLarge
                             )
                         }
@@ -771,12 +791,29 @@ private fun FaceDownCardDeckStage(
     }
 }
 
+/**
+ * When multi-pack yields > 5 cards (e.g. 5-pack or 10-pack = 25..50 cards), defaults to showing
+ * ONLY the Top 5 Rarest cards in an iconic 3-on-top / 2-centered-on-bottom showcase layout,
+ * with a "Show All X Cards" button to view all remaining pulls.
+ */
 @Composable
 private fun PulledSummaryGrid(
     cards: List<OwnedCard>,
     onInspectCard: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = CollectorTheme.colors
+    val isMultiPackCurated = cards.size > 5
+    var showAllCards by remember(cards) { mutableStateOf(false) }
+
+    val sortedCards = remember(cards) {
+        cards.sortedWith(
+            compareByDescending<OwnedCard> { it.isMisprint }
+                .thenByDescending { it.rarity.tierRank }
+                .thenByDescending { it.instanceId }
+        )
+    }
+
     Column(modifier = modifier) {
         Surface(
             color = PureWhiteCard,
@@ -793,39 +830,131 @@ private fun PulledSummaryGrid(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Pack Pulls (${cards.size} Cards)",
+                    text = if (isMultiPackCurated && !showAllCards) {
+                        "Top 5 Rarest Pulls (of ${cards.size})"
+                    } else {
+                        "Pack Pulls (${cards.size} Cards)"
+                    },
                     style = MaterialTheme.typography.titleMedium,
                     color = InkSlate
                 )
-                val bestCard = cards.maxByOrNull {
-                    (if (it.isMisprint) 100 else 0) + it.rarity.tierRank
-                }
-                if (bestCard != null) {
-                    RarityChip(rarity = bestCard.rarity, compact = true)
+                if (isMultiPackCurated && showAllCards) {
+                    TextButton(
+                        onClick = { showAllCards = false },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Text("Top 5 Only", color = palette.accentPrimary)
+                    }
+                } else {
+                    val bestCard = sortedCards.firstOrNull()
+                    if (bestCard != null) {
+                        RarityChip(rarity = bestCard.rarity, compact = true)
+                    }
                 }
             }
         }
 
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 146.dp),
-            contentPadding = PaddingValues(top = 6.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier
-                .weight(1f)
-                .testTag("pulled_cards_summary_grid")
-        ) {
-            items(cards, key = { it.instanceId }) { card ->
-                Box(
+        if (isMultiPackCurated && !showAllCards) {
+            val topFive = remember(sortedCards) { sortedCards.take(5) }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 8.dp)
+                    .testTag("top_five_curated_stage"),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Top Row: 3 Cards
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    topFive.take(3).forEach { card ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onInspectCard(card.instanceId) }
+                                .testTag("summary_card_${card.instanceId}")
+                        ) {
+                            HolographicCardView(card = card, compact = true)
+                        }
+                    }
+                }
+
+                // Bottom Row: 2 Cards Centered (matching 1/3 width each)
+                val bottomTwo = topFive.drop(3)
+                if (bottomTwo.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Spacer(modifier = Modifier.weight(0.5f))
+                        bottomTwo.forEach { card ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onInspectCard(card.instanceId) }
+                                    .testTag("summary_card_${card.instanceId}")
+                            ) {
+                                HolographicCardView(card = card, compact = true)
+                            }
+                        }
+                        if (bottomTwo.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                        Spacer(modifier = Modifier.weight(0.5f))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                OutlinedButton(
+                    onClick = { showAllCards = true },
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.2.dp, palette.accentPrimary.copy(alpha = 0.65f)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onInspectCard(card.instanceId) }
-                        .testTag("summary_card_${card.instanceId}")
+                        .height(48.dp)
+                        .testTag("show_all_pulled_cards_button")
                 ) {
-                    HolographicCardView(
-                        card = card,
-                        compact = true
+                    Icon(
+                        imageVector = Icons.Default.Visibility,
+                        contentDescription = null,
+                        tint = palette.accentPrimary,
+                        modifier = Modifier.size(18.dp)
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Show All ${cards.size} Cards",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = palette.accentPrimary
+                    )
+                }
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 146.dp),
+                contentPadding = PaddingValues(top = 6.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("pulled_cards_summary_grid")
+            ) {
+                items(sortedCards, key = { it.instanceId }) { card ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onInspectCard(card.instanceId) }
+                            .testTag("summary_card_${card.instanceId}")
+                    ) {
+                        HolographicCardView(
+                            card = card,
+                            compact = true
+                        )
+                    }
                 }
             }
         }
@@ -835,16 +964,17 @@ private fun PulledSummaryGrid(
 @Composable
 private fun PackTearStage(
     coverRes: Int,
-    accentColor: Color,
+    satinTheme: PackSatinTheme,
     packCount: Int,
+    isCommitting: Boolean,
     onCrinkle: () -> Unit,
     onRipComplete: () -> Unit
 ) {
     var tearProgress by remember { mutableFloatStateOf(0f) }
     val pulseTransition = rememberInfiniteTransition(label = "pack_float")
     val floatOffset by pulseTransition.animateFloat(
-        initialValue = -8f,
-        targetValue = 8f,
+        initialValue = -7f,
+        targetValue = 7f,
         animationSpec = infiniteRepeatable(
             animation = tween(1600, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -861,74 +991,142 @@ private fun PackTearStage(
 
     Box(
         modifier = Modifier
-            .width(244.dp)
-            .height(344.dp)
+            .width(246.dp)
+            .height(348.dp)
             .offset { IntOffset(0, floatOffset.roundToInt()) }
             .graphicsLayer {
                 scaleX = scaleAnim.value
                 scaleY = scaleAnim.value
-                rotationZ = tearProgress * 4f
+                rotationZ = tearProgress * 3.5f
             }
-            .shadow(16.dp, RoundedCornerShape(22.dp))
+            .shadow(14.dp, RoundedCornerShape(22.dp))
             .clip(RoundedCornerShape(22.dp))
-            .border(3.dp, accentColor, RoundedCornerShape(22.dp))
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragStart = { onCrinkle() },
-                    onDragEnd = {
-                        if (tearProgress > 0.45f) {
-                            onRipComplete()
-                        } else {
-                            tearProgress = 0f
+            .background(satinTheme.baseColor)
+            .border(2.5.dp, satinTheme.logoAccent.copy(alpha = 0.85f), RoundedCornerShape(22.dp))
+            .pointerInput(isCommitting) {
+                if (!isCommitting) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { onCrinkle() },
+                        onDragEnd = {
+                            if (tearProgress > 0.45f) {
+                                onRipComplete()
+                            } else {
+                                tearProgress = 0f
+                            }
                         }
-                    }
-                ) { change, dragAmount ->
-                    change.consume()
-                    onCrinkle()
-                    tearProgress = (tearProgress + abs(dragAmount) / 340f).coerceIn(0f, 1f)
-                    if (tearProgress >= 0.85f) {
-                        onRipComplete()
+                    ) { change, dragAmount ->
+                        change.consume()
+                        onCrinkle()
+                        tearProgress = (tearProgress + abs(dragAmount) / 340f).coerceIn(0f, 1f)
+                        if (tearProgress >= 0.85f) {
+                            onRipComplete()
+                        }
                     }
                 }
             }
-            .clickable {
+            .clickable(enabled = !isCommitting) {
                 onCrinkle()
                 onRipComplete()
             }
     ) {
+        // Subtle base cover texture blended into the satin wrapper colorway
         Image(
             painter = painterResource(id = coverRes),
             contentDescription = "Booster pack ready to rip",
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(0.32f)
         )
 
+        // Smooth satin finish diagonal silk sheen overlay
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        0.0f to satinTheme.baseColor.copy(alpha = 0.92f),
+                        0.32f to satinTheme.sheenHighlight.copy(alpha = 0.34f),
+                        0.50f to Color.White.copy(alpha = 0.24f),
+                        0.68f to satinTheme.logoAccent.copy(alpha = 0.36f),
+                        1.0f to satinTheme.baseColor.copy(alpha = 0.95f)
+                    )
+                )
+        )
+
+        // Satin-Finish Custom Color Pack Crest & Logo in Center
+        Surface(
+            color = satinTheme.baseColor.copy(alpha = 0.78f),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.4.dp, satinTheme.sheenHighlight.copy(alpha = 0.65f)),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = 20.dp)
+                .padding(top = 34.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = satinTheme.crestTint,
+                    modifier = Modifier.size(28.dp)
+                )
+                Text(
+                    text = "MEGA\nCOLLECTOR",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        lineHeight = 19.sp,
+                        letterSpacing = 1.sp
+                    ),
+                    color = satinTheme.sheenHighlight,
+                    textAlign = TextAlign.Center
+                )
+                Surface(
+                    color = satinTheme.logoAccent.copy(alpha = 0.28f),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.dp, satinTheme.crestTint.copy(alpha = 0.6f))
+                ) {
+                    Text(
+                        text = satinTheme.label.uppercase(),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                        color = satinTheme.crestTint,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+
+        // Top Tear Seam
         val tearGold = StudioGoldBright
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val y = size.height * 0.24f
+            val y = size.height * 0.22f
             drawLine(
-                color = Color.White.copy(alpha = 0.55f),
+                color = satinTheme.sheenHighlight.copy(alpha = 0.68f),
                 start = Offset(0f, y),
                 end = Offset(size.width, y),
-                strokeWidth = 4f
+                strokeWidth = 3.5f
             )
             if (tearProgress > 0f) {
                 drawLine(
                     color = tearGold,
                     start = Offset(0f, y),
                     end = Offset(size.width * tearProgress, y),
-                    strokeWidth = 10f
+                    strokeWidth = 9f
                 )
             }
         }
 
         Surface(
-            color = MoonlightNight.copy(alpha = 0.92f),
+            color = MoonlightNight.copy(alpha = 0.88f),
             shape = RoundedCornerShape(999.dp),
-            border = BorderStroke(1.dp, StudioGoldBright),
+            border = BorderStroke(1.dp, satinTheme.crestTint.copy(alpha = 0.78f)),
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 64.dp)
+                .padding(top = 24.dp)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
@@ -937,14 +1135,14 @@ private fun PackTearStage(
                 Icon(
                     imageVector = Icons.Default.SwipeRight,
                     contentDescription = null,
-                    tint = StudioGoldBright,
+                    tint = satinTheme.crestTint,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = if (packCount > 1) "SWIPE TO RIP ${packCount}x PACKS" else "SWIPE TO TEAR",
+                    text = if (packCount > 1) "SWIPE TO RIP ${packCount}x" else "SWIPE TO TEAR",
                     style = MaterialTheme.typography.labelSmall,
-                    color = StudioGoldBright
+                    color = satinTheme.crestTint
                 )
             }
         }

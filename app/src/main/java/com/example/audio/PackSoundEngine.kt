@@ -45,6 +45,7 @@ class PackSoundEngine(context: Context) {
     private var rareBassId: Int = 0
     private var mythicBassId: Int = 0
     private var rewardChimeId: Int = 0
+    private var wheelTickId: Int = 0
 
     @Volatile
     private var lastCrinkleMs: Long = 0L
@@ -65,6 +66,11 @@ class PackSoundEngine(context: Context) {
     fun playClick() {
         if (isMuted || !isLoaded || clickId == 0) return
         soundPool.play(clickId, 0.36f, 0.36f, 1, 0, 1.0f)
+    }
+
+    fun playWheelTick(pitch: Float = 1.0f) {
+        if (isMuted || !isLoaded || wheelTickId == 0) return
+        soundPool.play(wheelTickId, 0.38f, 0.38f, 2, 0, pitch.coerceIn(0.85f, 1.25f))
     }
 
     fun playPlasticCrinkle() {
@@ -115,7 +121,7 @@ class PackSoundEngine(context: Context) {
 
     private fun prepareSoundFiles() {
         try {
-            val sfxDir = File(appContext.cacheDir, "sfx_v3").apply { mkdirs() }
+            val sfxDir = File(appContext.cacheDir, "sfx_v4").apply { mkdirs() }
 
             val clickFile = ensureWav(sfxDir, "sfx_click.wav") { synthSoftClick() }
             val crinkleFile = ensureWav(sfxDir, "sfx_plastic_crinkle.wav") { synthPlasticCrinkle() }
@@ -124,6 +130,7 @@ class PackSoundEngine(context: Context) {
             val rareBassFile = ensureWav(sfxDir, "sfx_rare_bass.wav") { synthRareBass(mythic = false) }
             val mythicBassFile = ensureWav(sfxDir, "sfx_mythic_bass.wav") { synthRareBass(mythic = true) }
             val chimeFile = ensureWav(sfxDir, "sfx_reward_chime.wav") { synthRewardChime() }
+            val wheelTickFile = ensureWav(sfxDir, "sfx_wheel_tick.wav") { synthWheelTick() }
 
             clickId = soundPool.load(clickFile.absolutePath, 1)
             plasticCrinkleId = soundPool.load(crinkleFile.absolutePath, 1)
@@ -132,6 +139,7 @@ class PackSoundEngine(context: Context) {
             rareBassId = soundPool.load(rareBassFile.absolutePath, 1)
             mythicBassId = soundPool.load(mythicBassFile.absolutePath, 1)
             rewardChimeId = soundPool.load(chimeFile.absolutePath, 1)
+            wheelTickId = soundPool.load(wheelTickFile.absolutePath, 1)
             isLoaded = true
         } catch (_: Throwable) {
             isLoaded = false
@@ -159,6 +167,24 @@ class PackSoundEngine(context: Context) {
             phase += 2.0 * PI * freq / SAMPLE_RATE
             val body = sin(phase) * 0.65 + sin(phase * 2.1) * 0.15
             val sample = (body * env * 0.45 * Short.MAX_VALUE).toInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            out[i] = sample.toShort()
+        }
+        return out
+    }
+
+    private fun synthWheelTick(): ShortArray {
+        val durationSec = 0.028
+        val count = (SAMPLE_RATE * durationSec).toInt()
+        val out = ShortArray(count)
+        var phase = 0.0
+        for (i in 0 until count) {
+            val t = i.toDouble() / SAMPLE_RATE
+            val env = exp(-t * 170.0)
+            val freq = 1520.0 - 600.0 * (t / durationSec)
+            phase += 2.0 * PI * freq / SAMPLE_RATE
+            val body = sin(phase) * 0.72 + sin(phase * 1.9) * 0.18
+            val sample = (body * env * 0.44 * Short.MAX_VALUE).toInt()
                 .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
             out[i] = sample.toShort()
         }
