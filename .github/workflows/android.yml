@@ -56,6 +56,18 @@ jobs:
             -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
             -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
 
+      # app/google-services.json is gitignored, but the Firebase sign-in code doesn't compile
+      # without it. PRs from forks don't get the secret, so their builds fail.
+      - name: Create google-services.json
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "::warning::GOOGLE_SERVICES_JSON_BASE64 is not set, the build will fail"
+            exit 0
+          fi
+          echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > app/google-services.json
+
       - name: Build debug APK
         run: gradle assembleDebug
 
