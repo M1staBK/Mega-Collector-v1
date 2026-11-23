@@ -827,6 +827,10 @@ class CollectorRepository(
         prefs.setVibrationEnabled(enabled)
     }
 
+    suspend fun setThemeAccentId(accentId: String) {
+        prefs.setThemeAccentId(accentId)
+    }
+
     private fun randomHex4(): String =
         Integer.toHexString(Random.nextInt(0x1000, 0xFFFF)).uppercase(Locale.US)
 }

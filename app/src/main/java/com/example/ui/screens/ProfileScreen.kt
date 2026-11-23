@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
@@ -32,7 +34,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Recycling
-import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Visibility
@@ -62,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -82,6 +84,7 @@ import com.example.ui.components.BadgeIconVector
 import com.example.ui.components.CatalogSyncStatusCard
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.DiamondsPill
+import com.example.ui.components.FrostedGlassCard
 import com.example.ui.components.MlbbDexCreditCard
 import com.example.ui.components.ProfileViewerDialog
 import com.example.ui.components.SettingsGearButton
@@ -107,7 +110,8 @@ fun ProfileScreen(
     uiState: MegaCollectorUiState,
     currentUser: AuthenticatedUser?,
     onUpdateAlias: (String) -> Unit,
-    onUpdateMlbbAccount: (String, String) -> Unit,
+    onGoogleSignInClick: (Context) -> Unit = {},
+    isSigningIn: Boolean = false,
     onSignOut: () -> Unit,
     onSyncCatalog: () -> Unit,
     onTogglePinnedBadge: (AchievementBadgeUi) -> Unit,
@@ -116,8 +120,8 @@ fun ProfileScreen(
     modifier: Modifier = Modifier
 ) {
     val palette = CollectorTheme.colors
+    val context = LocalContext.current
     var showEditAlias by remember { mutableStateOf(false) }
-    var showEditMlbbAccount by remember { mutableStateOf(false) }
     var showSelfProfilePreview by remember { mutableStateOf(false) }
     var inspectedBadgeId by remember { mutableStateOf<String?>(null) }
     var inspectedHeaderBadgeId by remember { mutableStateOf<String?>(null) }
@@ -185,8 +189,8 @@ fun ProfileScreen(
         CollectorPublicProfile(
             traderId = currentUser?.uid ?: "self",
             alias = uiState.wallet.collectorAlias.ifBlank { currentUser?.displayName ?: "Collector" },
-            mlbbIgn = uiState.wallet.mlbbIgn,
-            mlbbServerId = uiState.wallet.mlbbServerId,
+            mlbbIgn = "",
+            mlbbServerId = "",
             photoUrl = currentUser?.photoUrl.orEmpty(),
             rankTitle = collectorRank,
             avatarColor = palette.accentPrimary,
@@ -204,19 +208,13 @@ fun ProfileScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(PearlCanvas)
             .statusBarsPadding(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Profile Header Card (Google Account + MOBA Legends IGN + Icon-only Pinned Badges)
+        // Profile Header Card (Google Account + Icon-only Pinned Badges)
         item {
-            Surface(
-                color = PureWhiteCard,
-                shape = RoundedCornerShape(22.dp),
-                shadowElevation = 3.dp,
-                border = BorderStroke(1.2.dp, palette.border)
-            ) {
+            FrostedGlassCard(cornerRadius = 24.dp) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -334,58 +332,66 @@ fun ProfileScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // MOBA Legends IGN & Server ID Bar
-                    Surface(
-                        color = SkyFrost,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, IceBorder),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                onButtonClickSfx()
-                                showEditMlbbAccount = true
-                            }
-                            .testTag("edit_mlbb_account_row")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                    if (currentUser == null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            color = SkyFrost,
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, palette.mintAccent.copy(alpha = 0.55f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("optional_google_signin_card")
                         ) {
                             Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.SportsEsports,
-                                    contentDescription = null,
-                                    tint = palette.accentPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                val mlbbText = if (uiState.wallet.mlbbIgn.isNotBlank()) {
-                                    val srv = if (uiState.wallet.mlbbServerId.isNotBlank()) " (${uiState.wallet.mlbbServerId})" else ""
-                                    "MOBA Legends: ${uiState.wallet.mlbbIgn}$srv"
-                                } else {
-                                    "Link MOBA Legends IGN & Server ID"
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudUpload,
+                                        contentDescription = null,
+                                        tint = palette.accentPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "Preview / Guest Collector Mode",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = InkSlate
+                                        )
+                                        Text(
+                                            text = "Optional: Sign in with Google for cloud backup & live P2P",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = SlateMuted
+                                        )
+                                    }
                                 }
-                                Text(
-                                    text = mlbbText,
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    color = InkSlate,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = {
+                                        onButtonClickSfx()
+                                        onGoogleSignInClick(context)
+                                    },
+                                    enabled = !isSigningIn,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = DeepCobalt,
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(999.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    modifier = Modifier.testTag("profile_google_signin_button")
+                                ) {
+                                    Text(
+                                        text = if (isSigningIn) "..." else "Sign In",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
                             }
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Edit IGN & Server ID",
-                                tint = palette.accentPrimary,
-                                modifier = Modifier.size(15.dp)
-                            )
                         }
                     }
 
@@ -566,12 +572,7 @@ fun ProfileScreen(
 
         // Achievements & Showcase Badges Section (Icon-Only Grid; text revealed on tap/hover!)
         item {
-            Surface(
-                color = PureWhiteCard,
-                shape = RoundedCornerShape(18.dp),
-                shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, IceBorder)
-            ) {
+            FrostedGlassCard(cornerRadius = 22.dp) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -730,12 +731,7 @@ fun ProfileScreen(
 
         // Cloud Activity History
         item {
-            Surface(
-                color = PureWhiteCard,
-                shape = RoundedCornerShape(18.dp),
-                shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, IceBorder)
-            ) {
+            FrostedGlassCard(cornerRadius = 22.dp) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -772,12 +768,7 @@ fun ProfileScreen(
 
         // 7-Tier Rarity Distribution Breakdown
         item {
-            Surface(
-                color = PureWhiteCard,
-                shape = RoundedCornerShape(18.dp),
-                shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, IceBorder)
-            ) {
+            FrostedGlassCard(cornerRadius = 22.dp) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -908,59 +899,6 @@ fun ProfileScreen(
                     onClick = {
                         onButtonClickSfx()
                         showEditAlias = false
-                    }
-                ) {
-                    Text("Cancel", color = SlateMuted)
-                }
-            }
-        )
-    }
-
-    if (showEditMlbbAccount) {
-        var draftIgn by remember { mutableStateOf(uiState.wallet.mlbbIgn) }
-        var draftServer by remember { mutableStateOf(uiState.wallet.mlbbServerId) }
-        AlertDialog(
-            onDismissRequest = { showEditMlbbAccount = false },
-            containerColor = PureWhiteCard,
-            title = { Text("MOBA Legends Account", color = InkSlate) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = draftIgn,
-                        onValueChange = { draftIgn = it },
-                        singleLine = true,
-                        label = { Text("In-Game Name (IGN)") },
-                        modifier = Modifier.testTag("mlbb_ign_input")
-                    )
-                    OutlinedTextField(
-                        value = draftServer,
-                        onValueChange = { draftServer = it.filter { ch -> ch.isDigit() }.take(10) },
-                        singleLine = true,
-                        label = { Text("Server ID (digits)") },
-                        modifier = Modifier.testTag("mlbb_server_input")
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onUpdateMlbbAccount(draftIgn, draftServer)
-                        showEditMlbbAccount = false
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = DeepCobalt,
-                        contentColor = Color.White
-                    ),
-                    modifier = Modifier.testTag("save_mlbb_account_button")
-                ) {
-                    Text("Link Account")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        onButtonClickSfx()
-                        showEditMlbbAccount = false
                     }
                 ) {
                     Text("Cancel", color = SlateMuted)
@@ -1156,12 +1094,9 @@ private fun StatTile(
     accent: Color,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    FrostedGlassCard(
         modifier = modifier,
-        color = PureWhiteCard,
-        shape = RoundedCornerShape(16.dp),
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, IceBorder)
+        cornerRadius = 18.dp
     ) {
         Column(
             modifier = Modifier.padding(12.dp),

@@ -13,50 +13,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 
-private val MegaPearlLightColorScheme = lightColorScheme(
-    primary = PearlLightCobalt,
-    onPrimary = Color.White,
-    primaryContainer = PearlLightFrost,
-    onPrimaryContainer = PearlLightCobalt,
-    secondary = Color(0xFFFBBF24),
-    onSecondary = PearlLightInk,
-    secondaryContainer = Color(0xFFFEF3C7),
-    onSecondaryContainer = PearlLightGoldText,
-    tertiary = SkyAzure,
-    onTertiary = PearlLightInk,
-    background = PearlLightCanvas,
-    onBackground = PearlLightInk,
-    surface = PearlLightCard,
-    onSurface = PearlLightInk,
-    surfaceVariant = PearlLightFrost,
-    onSurfaceVariant = PearlLightMuted,
-    outline = PearlLightBorder,
-    error = PearlLightCrimson,
-    onError = Color.White
-)
-
-private val MegaMoonlightDarkColorScheme = darkColorScheme(
-    primary = MoonlightSilverBlue,
-    onPrimary = MoonlightNight,
-    primaryContainer = MoonlightFrost,
-    onPrimaryContainer = MoonlightSilverBlue,
-    secondary = MoonlightGold,
-    onSecondary = MoonlightNight,
-    secondaryContainer = Color(0xFF2C2312),
-    onSecondaryContainer = MoonlightGoldSoft,
-    tertiary = MoonlightGloomHalo,
-    onTertiary = Color.White,
-    background = MoonlightNight,
-    onBackground = MoonlightInk,
-    surface = MoonlightCard,
-    onSurface = MoonlightInk,
-    surfaceVariant = MoonlightFrost,
-    onSurfaceVariant = MoonlightMuted,
-    outline = MoonlightBorder,
-    error = MoonlightCrimson,
-    onError = MoonlightNight
-)
-
 private val MegaShapes = Shapes(
     small = RoundedCornerShape(10.dp),
     medium = RoundedCornerShape(16.dp),
@@ -67,11 +23,56 @@ private val MegaShapes = Shapes(
 @Composable
 fun MegaCollectorTheme(
     darkTheme: Boolean = false,
+    accentOption: ThemeAccentOption = ThemeAccentOption.SKY_COBALT,
     vibrationEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val palette = if (darkTheme) DarkCollectorPalette else LightCollectorPalette
-    val colorScheme = if (darkTheme) MegaMoonlightDarkColorScheme else MegaPearlLightColorScheme
+    val palette = buildCollectorPalette(isDark = darkTheme, accent = accentOption)
+    val colorScheme = if (darkTheme) {
+        darkColorScheme(
+            primary = palette.accentPrimary,
+            onPrimary = MoonlightNight,
+            primaryContainer = palette.frostSurface,
+            onPrimaryContainer = palette.accentPrimary,
+            secondary = palette.gold,
+            onSecondary = MoonlightNight,
+            secondaryContainer = Color(0xFF2C2312),
+            onSecondaryContainer = palette.goldText,
+            tertiary = palette.gloomHalo,
+            onTertiary = Color.White,
+            background = palette.canvas,
+            onBackground = palette.ink,
+            surface = palette.cardSurface,
+            onSurface = palette.ink,
+            surfaceVariant = palette.frostSurface,
+            onSurfaceVariant = palette.muted,
+            outline = palette.border,
+            error = palette.crimson,
+            onError = MoonlightNight
+        )
+    } else {
+        lightColorScheme(
+            primary = palette.accentPrimary,
+            onPrimary = Color.White,
+            primaryContainer = palette.frostSurface,
+            onPrimaryContainer = palette.accentPrimary,
+            secondary = Color(0xFFFBBF24),
+            onSecondary = palette.ink,
+            secondaryContainer = Color(0xFFFEF3C7),
+            onSecondaryContainer = palette.goldText,
+            tertiary = palette.skyAccent,
+            onTertiary = palette.ink,
+            background = palette.canvas,
+            onBackground = palette.ink,
+            surface = palette.cardSurface,
+            onSurface = palette.ink,
+            surfaceVariant = palette.frostSurface,
+            onSurfaceVariant = palette.muted,
+            outline = palette.border,
+            error = palette.crimson,
+            onError = Color.White
+        )
+    }
 
     CompositionLocalProvider(
         LocalCollectorPalette provides palette,

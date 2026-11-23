@@ -82,8 +82,18 @@ import com.example.model.QuizQuestion
 import com.example.model.QuizQuestionBank
 import com.example.model.QuizQuestionType
 import com.example.model.SkinCatalogItem
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Stars
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.DiamondsPill
+import com.example.ui.components.FrostedGlassCard
 import com.example.ui.components.RarityChip
 import com.example.ui.components.SettingsGearButton
 import com.example.ui.components.rememberMlbbImageRequest
@@ -127,15 +137,6 @@ fun PlayArcadeScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(palette.canvas)
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.12f else 0.30f),
-                        palette.canvas
-                    )
-                )
-            )
             .let { if (includeStatusBarPadding) it.statusBarsPadding() else it }
     ) {
         LazyColumn(
@@ -143,33 +144,107 @@ fun PlayArcadeScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Arcade Studio Header
+            // Arcade Top Hero Header (Star Emblem + Title + Decorative Pack Foil)
             item {
-                Surface(
-                    color = PureWhiteCard,
-                    shape = RoundedCornerShape(22.dp),
-                    shadowElevation = 3.dp,
-                    border = BorderStroke(1.dp, palette.border)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            color = palette.frostSurface,
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.2.dp, palette.glassHighlight),
+                            shadowElevation = 2.dp,
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Stars,
+                                    contentDescription = null,
+                                    tint = palette.accentPrimary,
+                                    modifier = Modifier.size(23.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Arcade",
+                                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                color = palette.ink
+                            )
+                            Text(
+                                text = "Challenge yourself",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = palette.muted
+                            )
+                        }
+                    }
+
+                    // Subtle angled decorative pack silhouette fading gently into backdrop
+                    Box(
+                        modifier = Modifier
+                            .size(width = 76.dp, height = 56.dp)
+                            .graphicsLayer { rotationZ = 10f }
+                            .clip(RoundedCornerShape(12.dp))
+                            .alpha(if (palette.isDark) 0.42f else 0.72f)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.img_pack_mythic),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+
+            // Frosted Collector Arcade Info Card with Settings Cog + Currency Pills
+            item {
+                FrostedGlassCard(cornerRadius = 24.dp) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = if (palette.isDark) "Moonlight Arcade" else "Collector Arcade",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = palette.accentPrimary,
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
-                            )
+                            ) {
+                                Surface(
+                                    color = palette.frostSurface,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.size(30.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Casino,
+                                            contentDescription = null,
+                                            tint = palette.accentPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (palette.isDark) "Moonlight Arcade" else "Collector Arcade",
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                    color = palette.ink
+                                )
+                            }
                             SettingsGearButton(onClick = onOpenSettings)
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "Scratchers, Prize Wheel & Prism Strike refill +1/hr (stack 3). 5-Question Quiz resets every 1 hour!",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = SlateMuted
+                            color = palette.muted
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -305,12 +380,7 @@ private fun HourlyPrizeWheelSection(
         }
     }
 
-    Surface(
-        color = PureWhiteCard,
-        shape = RoundedCornerShape(22.dp),
-        shadowElevation = 3.dp,
-        border = BorderStroke(1.2.dp, palette.accentPrimary.copy(alpha = 0.35f))
-    ) {
+    FrostedGlassCard(cornerRadius = 24.dp) {
         Column(
             modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -333,7 +403,7 @@ private fun HourlyPrizeWheelSection(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Collector Prize Wheel",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
                         color = InkSlate
                     )
                 }
@@ -350,9 +420,19 @@ private fun HourlyPrizeWheelSection(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Wheel + Top Pointer
+            // Wheel + Soft Golden Glow + Top Pointer
             Box(
-                modifier = Modifier.size(224.dp),
+                modifier = Modifier
+                    .size(246.dp)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                palette.gold.copy(alpha = if (palette.isDark) 0.24f else 0.32f),
+                                Color.Transparent
+                            )
+                        ),
+                        shape = CircleShape
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 PrizeWheelCanvas(
@@ -369,6 +449,7 @@ private fun HourlyPrizeWheelSection(
                 Canvas(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
                         .size(26.dp)
                 ) {
                     val pointer = Path().apply {
@@ -388,27 +469,29 @@ private fun HourlyPrizeWheelSection(
                 onClick = ::spinWheel,
                 enabled = hasCharges && !isSpinning,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = DeepCobalt,
+                    containerColor = palette.buttonPrimary,
                     contentColor = Color.White,
                     disabledContainerColor = SkyFrost,
                     disabledContentColor = SlateMuted
                 ),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(999.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
                     .testTag("spin_wheel_button")
             ) {
-                Icon(Icons.Default.Casino, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.CardGiftcard, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = when {
                         isSpinning -> "Spinning Wheel..."
-                        hasCharges -> "Spin Prize Wheel (${status.charges}/3)"
+                        hasCharges -> "Spin Now (${status.charges}/3)"
                         else -> "Recharging (${formatCountdownMs(status.msUntilNextCharge)})"
                     },
                     style = MaterialTheme.typography.labelLarge
                 )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(Icons.Default.ChevronRight, contentDescription = null, modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -565,11 +648,9 @@ private fun HourlyScratcherSection(
         }
     }
 
-    Surface(
-        color = PureWhiteCard,
-        shape = RoundedCornerShape(22.dp),
-        shadowElevation = 3.dp,
-        border = BorderStroke(1.2.dp, StudioGold.copy(alpha = 0.45f))
+    FrostedGlassCard(
+        cornerRadius = 24.dp,
+        borderColor = StudioGold.copy(alpha = 0.48f)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -797,12 +878,7 @@ private fun HourlyFiveQuestionQuizCard(
     val totalQuestions = QuizQuestionBank.QUIZ_QUESTION_COUNT
     val onCooldown = cooldownRemainingMs > 0L
 
-    Surface(
-        color = PureWhiteCard,
-        shape = RoundedCornerShape(22.dp),
-        shadowElevation = 3.dp,
-        border = BorderStroke(1.2.dp, palette.border)
-    ) {
+    FrostedGlassCard(cornerRadius = 24.dp) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1166,12 +1242,7 @@ private fun HourlyPrismTimingTapGame(
     var currentPos by remember { mutableFloatStateOf(0.5f) }
     currentPos = sweepAnim.value
 
-    Surface(
-        color = PureWhiteCard,
-        shape = RoundedCornerShape(22.dp),
-        shadowElevation = 3.dp,
-        border = BorderStroke(1.2.dp, palette.border)
-    ) {
+    FrostedGlassCard(cornerRadius = 24.dp) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

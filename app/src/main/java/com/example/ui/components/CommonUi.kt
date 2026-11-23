@@ -83,12 +83,18 @@ import androidx.compose.ui.window.PopupProperties
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.size.Precision
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.draw.clip
 import com.example.model.BadgeIconStyle
 import com.example.model.SkinRarity
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.MoonlightNight
 import com.example.ui.theme.PearlLightInk
 import com.example.ui.theme.RarityUncommon
+import com.example.ui.theme.ThemeAccentOption
 import com.example.ui.viewmodel.CatalogSyncStatus
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -98,9 +104,11 @@ data class CollectorSettingsController(
     val soundEnabled: Boolean = true,
     val darkModeEnabled: Boolean = false,
     val vibrationEnabled: Boolean = true,
+    val themeAccent: ThemeAccentOption = ThemeAccentOption.SKY_COBALT,
     val onToggleSound: (Boolean) -> Unit = {},
     val onToggleDarkMode: (Boolean) -> Unit = {},
     val onToggleVibration: (Boolean) -> Unit = {},
+    val onSelectThemeAccent: (ThemeAccentOption) -> Unit = {},
     val onCogOpened: () -> Unit = {}
 )
 
@@ -167,6 +175,109 @@ fun rememberUserAvatarRequest(url: String): ImageRequest {
 }
 
 @Composable
+fun SkyStudioBackdrop(
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
+) {
+    val palette = CollectorTheme.colors
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = if (palette.isDark) {
+                        listOf(palette.abyss, palette.canvas, palette.abyss)
+                    } else {
+                        listOf(
+                            Color(0xFFE7EEFF),
+                            Color(0xFFF3F7FF),
+                            Color(0xFFE9F0FE)
+                        )
+                    }
+                )
+            )
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+
+            // Soft upper-right luminous sky bloom
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        palette.gloomHalo.copy(alpha = if (palette.isDark) 0.24f else 0.42f),
+                        Color.Transparent
+                    ),
+                    center = Offset(w * 0.88f, h * 0.14f),
+                    radius = w * 0.72f
+                ),
+                radius = w * 0.72f,
+                center = Offset(w * 0.88f, h * 0.14f)
+            )
+
+            // Soft lower-left radial bloom
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        palette.skyAccent.copy(alpha = if (palette.isDark) 0.10f else 0.16f),
+                        Color.Transparent
+                    ),
+                    center = Offset(w * 0.14f, h * 0.68f),
+                    radius = w * 0.65f
+                ),
+                radius = w * 0.65f,
+                center = Offset(w * 0.14f, h * 0.68f)
+            )
+
+            // Subtle geometric orb watermark (upper-left & lower-right) inspired by TCG studio cards
+            val orbCenterTop = Offset(w * 0.12f, h * 0.12f)
+            drawCircle(
+                color = palette.orbWatermark,
+                radius = w * 0.20f,
+                center = orbCenterTop,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+            )
+            drawCircle(
+                color = palette.orbWatermark,
+                radius = w * 0.06f,
+                center = orbCenterTop,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
+            )
+
+            val orbCenterBottom = Offset(w * 0.88f, h * 0.86f)
+            drawCircle(
+                color = palette.orbWatermark,
+                radius = w * 0.24f,
+                center = orbCenterBottom,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+            )
+        }
+        content()
+    }
+}
+
+@Composable
+fun FrostedGlassCard(
+    modifier: Modifier = Modifier,
+    cornerRadius: androidx.compose.ui.unit.Dp = 24.dp,
+    borderColor: Color? = null,
+    containerAlpha: Float? = null,
+    content: @Composable () -> Unit
+) {
+    val palette = CollectorTheme.colors
+    val alpha = containerAlpha ?: if (palette.isDark) 0.94f else 0.88f
+    val stroke = borderColor ?: if (palette.isDark) palette.border else palette.glassHighlight
+    Surface(
+        color = palette.cardSurface.copy(alpha = alpha),
+        shape = RoundedCornerShape(cornerRadius),
+        shadowElevation = if (palette.isDark) 4.dp else 5.dp,
+        border = BorderStroke(1.3.dp, stroke),
+        modifier = modifier,
+        content = content
+    )
+}
+
+@Composable
 fun RarityChip(
     rarity: SkinRarity,
     compact: Boolean = false,
@@ -175,8 +286,8 @@ fun RarityChip(
     val palette = CollectorTheme.colors
     Surface(
         modifier = modifier,
-        color = if (palette.isDark) MoonlightNight.copy(alpha = 0.90f) else PearlLightInk.copy(alpha = 0.88f),
-        shape = RoundedCornerShape(8.dp),
+        color = if (palette.isDark) MoonlightNight.copy(alpha = 0.92f) else PearlLightInk.copy(alpha = 0.90f),
+        shape = RoundedCornerShape(999.dp),
         border = BorderStroke(1.dp, rarity.primaryColor)
     ) {
         Text(
@@ -187,8 +298,8 @@ fun RarityChip(
             ),
             color = Color.White,
             modifier = Modifier.padding(
-                horizontal = if (compact) 6.dp else 8.dp,
-                vertical = if (compact) 2.dp else 3.dp
+                horizontal = if (compact) 7.dp else 9.dp,
+                vertical = if (compact) 2.5.dp else 3.5.dp
             )
         )
     }
@@ -202,26 +313,34 @@ fun CoinsPill(
     val palette = CollectorTheme.colors
     Surface(
         modifier = modifier,
-        color = palette.cardSurface,
+        color = palette.cardSurface.copy(alpha = if (palette.isDark) 0.96f else 0.92f),
         shape = RoundedCornerShape(999.dp),
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.1.dp, palette.gold.copy(alpha = 0.65f))
+        shadowElevation = 3.dp,
+        border = BorderStroke(1.2.dp, if (palette.isDark) palette.gold.copy(alpha = 0.55f) else palette.glassHighlight)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.MonetizationOn,
-                contentDescription = "Coins",
-                tint = palette.gold,
-                modifier = Modifier.size(17.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
+            Surface(
+                color = palette.gold,
+                shape = CircleShape,
+                modifier = Modifier.size(22.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.MonetizationOn,
+                        contentDescription = "Coins",
+                        tint = palette.goldButtonContent,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = "%,d".format(coins),
                 style = MaterialTheme.typography.labelLarge.copy(
-                    color = palette.goldText,
+                    color = palette.ink,
                     fontWeight = FontWeight.ExtraBold
                 )
             )
@@ -243,26 +362,34 @@ fun DiamondsPill(
     val palette = CollectorTheme.colors
     Surface(
         modifier = modifier,
-        color = palette.cardSurface,
+        color = palette.cardSurface.copy(alpha = if (palette.isDark) 0.96f else 0.92f),
         shape = RoundedCornerShape(999.dp),
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.1.dp, palette.skyAccent.copy(alpha = 0.55f))
+        shadowElevation = 3.dp,
+        border = BorderStroke(1.2.dp, if (palette.isDark) palette.skyAccent.copy(alpha = 0.55f) else palette.glassHighlight)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.Diamond,
-                contentDescription = "Diamonds",
-                tint = palette.skyAccent,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
+            Surface(
+                color = palette.skyAccent.copy(alpha = 0.16f),
+                shape = CircleShape,
+                modifier = Modifier.size(22.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Diamond,
+                        contentDescription = "Diamonds",
+                        tint = palette.skyAccent,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = "%,d".format(diamonds),
                 style = MaterialTheme.typography.labelLarge.copy(
-                    color = palette.accentPrimary,
+                    color = palette.ink,
                     fontWeight = FontWeight.ExtraBold
                 )
             )
@@ -279,12 +406,12 @@ fun SoundMuteButton(
     val palette = CollectorTheme.colors
     Surface(
         modifier = modifier,
-        color = palette.cardSurface,
+        color = palette.cardSurface.copy(alpha = if (palette.isDark) 0.94f else 0.90f),
         shape = CircleShape,
-        shadowElevation = 2.dp,
+        shadowElevation = 3.dp,
         border = BorderStroke(
-            1.dp,
-            if (isMuted) palette.border else palette.accentPrimary.copy(alpha = 0.45f)
+            1.2.dp,
+            if (isMuted) palette.border else palette.glassHighlight
         )
     ) {
         IconButton(
@@ -304,8 +431,8 @@ fun SoundMuteButton(
 }
 
 /**
- * Gear button that opens a vertical 3-icon-only popup anchored right at the cog's location.
- * Tapping any icon directly toggles Speaker (Sound), Moon/Sun (Dark/Light Mode), or Vibration.
+ * Gear button that opens a vertical icon popup anchored right at the cog's location.
+ * Tapping any icon directly toggles Speaker (Sound), Moon/Sun (Dark/Light Mode), Vibration, or Theme Accent.
  */
 @Composable
 fun SettingsGearButton(
@@ -320,10 +447,13 @@ fun SettingsGearButton(
 
     Box(modifier = modifier) {
         Surface(
-            color = palette.cardSurface,
+            color = palette.cardSurface.copy(alpha = if (palette.isDark) 0.95f else 0.92f),
             shape = CircleShape,
-            shadowElevation = 2.dp,
-            border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.40f))
+            shadowElevation = 4.dp,
+            border = BorderStroke(
+                1.3.dp,
+                if (palette.isDark) palette.border else palette.glassHighlight
+            )
         ) {
             IconButton(
                 onClick = {
@@ -446,6 +576,49 @@ fun SettingsGearButton(
                                     )
                                 }
                             }
+
+                            HorizontalDivider(
+                                thickness = 1.dp,
+                                color = palette.border,
+                                modifier = Modifier.width(34.dp)
+                            )
+
+                            // 4. Theme Accent Swatch Pills
+                            ThemeAccentOption.entries.forEach { accent ->
+                                val isSelected = settings.themeAccent == accent
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            settings.onSelectThemeAccent(accent)
+                                        }
+                                        .testTag("settings_accent_${accent.name.lowercase()}")
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(accent.swatchColor)
+                                            .border(
+                                                width = if (isSelected) 2.5.dp else 1.2.dp,
+                                                color = if (isSelected) palette.ink else Color.White.copy(alpha = 0.7f),
+                                                shape = CircleShape
+                                            )
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Theme accent: ${accent.label} selected",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -511,12 +684,10 @@ fun CatalogSyncStatusCard(
         else -> palette.accentPrimary
     }
 
-    Surface(
+    FrostedGlassCard(
         modifier = modifier.fillMaxWidth(),
-        color = palette.cardSurface,
-        shape = RoundedCornerShape(18.dp),
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, accentTint.copy(alpha = 0.4f))
+        cornerRadius = 20.dp,
+        borderColor = accentTint.copy(alpha = 0.4f)
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -626,12 +797,9 @@ fun MlbbDexCreditCard(
     modifier: Modifier = Modifier
 ) {
     val palette = CollectorTheme.colors
-    Surface(
+    FrostedGlassCard(
         modifier = modifier.fillMaxWidth(),
-        color = palette.cardSurface,
-        shape = RoundedCornerShape(18.dp),
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, palette.border)
+        cornerRadius = 20.dp
     ) {
         Row(
             modifier = Modifier.padding(14.dp),

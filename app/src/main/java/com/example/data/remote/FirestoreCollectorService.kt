@@ -13,6 +13,7 @@ import com.example.model.OwnedCard
 import com.example.model.P2PTradeListing
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
+import com.google.firebase.FirebaseApp
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
@@ -38,14 +39,31 @@ sealed interface CloudUiState<out T> {
 
 class FirestoreCollectorService(context: Context) {
 
-    private val db: FirebaseFirestore by lazy {
-        FirebaseFirestore.getInstance(context.getString(R.string.firestore_database_id))
+    private val appContext = context.applicationContext
+
+    private fun isFirebaseConfigured(): Boolean = FirebaseApp.getApps(appContext).isNotEmpty()
+
+    private fun getDbOrNull(): FirebaseFirestore? {
+        if (!isFirebaseConfigured()) return null
+        return runCatching {
+            val resId = appContext.resources.getIdentifier("firestore_database_id", "string", appContext.packageName)
+            val dbId = if (resId != 0) appContext.getString(resId) else "(default)"
+            FirebaseFirestore.getInstance(dbId)
+        }.getOrNull()
     }
 
-    private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
+    private fun getAuthOrNull(): FirebaseAuth? {
+        if (!isFirebaseConfigured()) return null
+        return runCatching { FirebaseAuth.getInstance() }.getOrNull()
+    }
+
+    private fun requireDb(): FirebaseFirestore {
+        return getDbOrNull()
+            ?: throw IllegalStateException("Cloud database is offline until Firebase google-services.json is configured.")
+    }
 
     private fun requireUid(): String {
-        return auth.currentUser?.uid
+        return getAuthOrNull()?.currentUser?.uid
             ?: throw IllegalStateException("Please sign in with Google to use cloud features.")
     }
 
@@ -57,6 +75,7 @@ class FirestoreCollectorService(context: Context) {
         pinnedBadgeIds: List<String>
     ): Result<Unit> {
         return try {
+            val db = requireDb()
             val uid = requireUid()
             if (uid != user.uid) {
                 return Result.failure(IllegalStateException("Authenticated user mismatch."))
@@ -142,6 +161,7 @@ class FirestoreCollectorService(context: Context) {
         diamondDelta: Int = 0
     ): Result<Unit> {
         return try {
+            val db = requireDb()
             val activeUid = requireUid()
             if (activeUid != uid) return Result.failure(IllegalStateException("User mismatch"))
             val payload = mapOf(
@@ -169,6 +189,12 @@ class FirestoreCollectorService(context: Context) {
     }
 
     fun observeHistoryEvents(uid: String): Flow<List<CollectorHistoryEvent>> = callbackFlow {
+        val db = getDbOrNull()
+        if (db == null) {
+            trySend(emptyList())
+            awaitClose {}
+            return@callbackFlow
+        }
         val reg = db.collection("users")
             .document(uid)
             .collection("history")
@@ -193,6 +219,12 @@ class FirestoreCollectorService(context: Context) {
     }
 
     fun observeOpenP2PListings(): Flow<List<P2PTradeListing>> = callbackFlow {
+        val db = getDbOrNull()
+        if (db == null) {
+            trySend(emptyList())
+            awaitClose {}
+            return@callbackFlow
+        }
         val reg = db.collection("trade_listings")
             .whereEqualTo("status", "OPEN")
             .limit(60)
@@ -214,6 +246,12 @@ class FirestoreCollectorService(context: Context) {
     }
 
     fun observeSellerP2PListings(uid: String): Flow<List<P2PTradeListing>> = callbackFlow {
+        val db = getDbOrNull()
+        if (db == null) {
+            trySend(emptyList())
+            awaitClose {}
+            return@callbackFlow
+        }
         val reg = db.collection("trade_listings")
             .whereEqualTo("sellerUid", uid)
             .limit(40)
@@ -242,6 +280,7 @@ class FirestoreCollectorService(context: Context) {
         tradeCode: String
     ): Result<String> {
         return try {
+            val db = requireDb()
             val uid = requireUid()
             val payload = mapOf(
                 "sellerUid" to uid,
@@ -289,6 +328,7 @@ class FirestoreCollectorService(context: Context) {
 
     suspend fun cancelP2PListing(listingId: String): Result<Unit> {
         return try {
+            val db = requireDb()
             requireUid()
             db.collection("trade_listings").document(listingId).update(
                 mapOf(
@@ -311,6 +351,7 @@ class FirestoreCollectorService(context: Context) {
         offeredCard: OwnedCard
     ): Result<Unit> {
         return try {
+            val db = requireDb()
             val activeUid = requireUid()
             if (activeUid != buyerUid) return Result.failure(IllegalStateException("Auth mismatch"))
             val docRef = db.collection("trade_listings").document(listingId)
@@ -354,6 +395,7 @@ class FirestoreCollectorService(context: Context) {
 
     suspend fun markListingSellerSettled(listingId: String): Result<Unit> {
         return try {
+            val db = requireDb()
             requireUid()
             db.collection("trade_listings").document(listingId).update(
                 mapOf(
@@ -371,6 +413,7 @@ class FirestoreCollectorService(context: Context) {
 
     suspend fun fetchPublicProfile(targetUid: String): Result<CollectorPublicProfile?> {
         return try {
+            val db = requireDb()
             requireUid()
             val doc = db.collection("public_profiles").document(targetUid).get().await()
             if (!doc.exists()) return Result.success(null)

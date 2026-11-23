@@ -53,7 +53,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -68,6 +70,7 @@ import com.example.model.OwnedCard
 import com.example.model.P2PTradeListing
 import com.example.model.TradeListing
 import com.example.ui.components.EmptyVaultState
+import com.example.ui.components.FrostedGlassCard
 import com.example.ui.components.ProfileViewerDialog
 import com.example.ui.components.RarityChip
 import com.example.ui.components.rememberMlbbSquareImageRequest
@@ -100,6 +103,8 @@ fun TradeDeskScreen(
     onDecodeSlip: (String) -> Unit,
     onClearDecodedSlip: () -> Unit,
     onCompleteTrade: (DecodedTradeSlip, OwnedCard) -> Unit,
+    onGoogleSignInClick: (Context) -> Unit = {},
+    isSigningIn: Boolean = false,
     onShowToast: (String) -> Unit,
     onButtonClickSfx: () -> Unit,
     includeStatusBarPadding: Boolean = true,
@@ -121,51 +126,153 @@ fun TradeDeskScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(PearlCanvas)
             .let { if (includeStatusBarPadding) it.statusBarsPadding() else it },
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Player-to-Player Header Banner
+        // TCG Pocket Mint-Emerald Sash Trade Header
         item {
-            Surface(
-                color = PureWhiteCard,
-                shape = RoundedCornerShape(18.dp),
-                shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.35f))
+            FrostedGlassCard(
+                cornerRadius = 24.dp,
+                borderColor = palette.mintAccent.copy(alpha = 0.45f)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        color = palette.frostSurface,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.size(44.dp)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Angled Mint-Emerald Banner Sash
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(palette.mintAccent, Color(0xFF10B981))
+                                )
+                            )
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Groups,
-                                contentDescription = null,
-                                tint = palette.accentPrimary,
-                                modifier = Modifier.size(24.dp)
+                        Surface(
+                            color = PureWhiteCard.copy(alpha = 0.94f),
+                            shape = RoundedCornerShape(999.dp),
+                            shadowElevation = 2.dp,
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(horizontal = 14.dp)
+                                .graphicsLayer { rotationZ = -2f }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SwapHoriz,
+                                    contentDescription = null,
+                                    tint = palette.mintAccent,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Trade Desk",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                    color = InkSlate
+                                )
+                            }
+                        }
+
+                        Surface(
+                            color = PureWhiteCard.copy(alpha = 0.92f),
+                            shape = RoundedCornerShape(999.dp),
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 14.dp)
+                        ) {
+                            Text(
+                                text = "${uiState.ownedCards.size} Binder • ${uiState.tradeListings.size} Slips",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = palette.accentPrimary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Player-to-Player Trade Desk",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = InkSlate
-                        )
-                        Text(
-                            text = "100% real player offers only — swap skins directly in cloud marketplace or exchange P2P Trade Slips.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = SlateMuted
-                        )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            color = palette.mintAccent.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, palette.mintAccent.copy(alpha = 0.45f)),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Groups,
+                                    contentDescription = null,
+                                    tint = palette.mintAccent,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Player-to-Player Skin Exchange",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = InkSlate
+                            )
+                            Text(
+                                text = "100% real player offers only — swap skins directly in Cloud P2P or share instant Trade Slips.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SlateMuted
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (currentUserUid == null) {
+            item {
+                Surface(
+                    color = SkyFrost,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Optional: Live Cloud P2P",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = InkSlate
+                            )
+                            Text(
+                                text = "Preview mode supports Trade Slips locally. Sign in with Google to browse & post live cloud P2P listings.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SlateMuted
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Button(
+                            onClick = {
+                                onButtonClickSfx()
+                                onGoogleSignInClick(context)
+                            },
+                            enabled = !isSigningIn,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = DeepCobalt,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(999.dp),
+                            modifier = Modifier.testTag("trade_google_signin_button")
+                        ) {
+                            Text(if (isSigningIn) "..." else "Sign In")
+                        }
                     }
                 }
             }
@@ -223,12 +330,7 @@ fun TradeDeskScreen(
 
         // Section 2: Mint & Publish Trade Listing + Shareable Slip
         item {
-            Surface(
-                color = PureWhiteCard,
-                shape = RoundedCornerShape(20.dp),
-                shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, IceBorder)
-            ) {
+            FrostedGlassCard(cornerRadius = 24.dp) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -358,12 +460,7 @@ fun TradeDeskScreen(
 
         // Section 3: Redeem Friend's Trade Slip
         item {
-            Surface(
-                color = PureWhiteCard,
-                shape = RoundedCornerShape(20.dp),
-                shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, IceBorder)
-            ) {
+            FrostedGlassCard(cornerRadius = 24.dp) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = "REDEEM FRIEND'S TRADE SLIP",
@@ -725,15 +822,10 @@ private fun P2PMarketListingCard(
     onCancelOwn: () -> Unit
 ) {
     val palette = CollectorTheme.colors
-    Surface(
-        color = PureWhiteCard,
-        shape = RoundedCornerShape(18.dp),
-        shadowElevation = 2.dp,
-        border = BorderStroke(
-            1.dp,
-            if (listing.isMisprint) palette.misprintLabel.copy(alpha = 0.6f)
-            else listing.rarity.primaryColor.copy(alpha = 0.48f)
-        ),
+    FrostedGlassCard(
+        cornerRadius = 20.dp,
+        borderColor = if (listing.isMisprint) palette.misprintLabel.copy(alpha = 0.6f)
+        else listing.rarity.primaryColor.copy(alpha = 0.48f),
         modifier = Modifier
             .fillMaxWidth()
             .testTag("p2p_listing_card_${listing.id}")
@@ -781,13 +873,11 @@ private fun P2PMarketListingCard(
                         color = InkSlate,
                         maxLines = 1
                     )
-                    if (listing.sellerMlbbIgn.isNotBlank()) {
-                        Text(
-                            text = "IGN: ${listing.sellerMlbbIgn}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = SlateMuted
-                        )
-                    }
+                    Text(
+                        text = "Verified P2P Collector",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SlateMuted
+                    )
                 }
                 Surface(
                     color = SkyFrost,
@@ -896,14 +986,9 @@ private fun TradeListingRow(
     onCancel: () -> Unit
 ) {
     val palette = CollectorTheme.colors
-    Surface(
-        color = PureWhiteCard,
-        shape = RoundedCornerShape(16.dp),
-        shadowElevation = 2.dp,
-        border = BorderStroke(
-            1.dp,
-            if (listing.isMisprint) palette.misprintLabel.copy(alpha = 0.65f) else listing.rarity.primaryColor.copy(alpha = 0.55f)
-        )
+    FrostedGlassCard(
+        cornerRadius = 18.dp,
+        borderColor = if (listing.isMisprint) palette.misprintLabel.copy(alpha = 0.65f) else listing.rarity.primaryColor.copy(alpha = 0.55f)
     ) {
         Row(
             modifier = Modifier

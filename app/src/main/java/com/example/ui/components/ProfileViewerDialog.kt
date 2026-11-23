@@ -22,7 +22,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -143,34 +142,6 @@ fun ProfileViewerDialog(
                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                         color = profile.avatarColor
                                     )
-                                }
-                            }
-                            if (profile.mlbbIgn.isNotBlank()) {
-                                Surface(
-                                    color = palette.frostSurface,
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(1.dp, palette.border)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.SportsEsports,
-                                            contentDescription = null,
-                                            tint = palette.accentPrimary,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        val serverPart = if (profile.mlbbServerId.isNotBlank()) " (${profile.mlbbServerId})" else ""
-                                        Text(
-                                            text = "${profile.mlbbIgn}$serverPart",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = palette.ink,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
                                 }
                             }
                         }

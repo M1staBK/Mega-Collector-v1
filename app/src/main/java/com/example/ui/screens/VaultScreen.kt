@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,19 +22,21 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,22 +45,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.model.OwnedCard
 import com.example.model.SkinRarity
 import com.example.ui.components.EmptyVaultState
+import com.example.ui.components.FrostedGlassCard
 import com.example.ui.components.HolographicCardView
 import com.example.ui.theme.CollectorTheme
-import com.example.ui.theme.DeepCobalt
-import com.example.ui.theme.IceBorder
 import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MoonlightNight
-import com.example.ui.theme.PearlCanvas
-import com.example.ui.theme.PureWhiteCard
-import com.example.ui.theme.SkyFrost
 import com.example.ui.theme.SlateMuted
+import com.example.ui.theme.StudioGold
 import com.example.ui.theme.StudioGoldBright
 import com.example.ui.viewmodel.MegaCollectorUiState
 
@@ -74,6 +78,12 @@ private enum class VaultFilter(val label: String) {
     COMMON("Common")
 }
 
+private enum class VaultSortOrder(val label: String) {
+    RARITY("Rarity"),
+    NEWEST("Newest"),
+    NAME("Hero A-Z")
+}
+
 @Composable
 fun VaultScreen(
     uiState: MegaCollectorUiState,
@@ -85,17 +95,15 @@ fun VaultScreen(
     val palette = CollectorTheme.colors
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(VaultFilter.ALL) }
+    var sortOrder by remember { mutableStateOf(VaultSortOrder.RARITY) }
 
     val countByCatalog = remember(uiState.ownedCards) {
         uiState.ownedCards.groupingBy { it.catalogId }.eachCount()
     }
     val uniqueCount = countByCatalog.size
-    val misprintCount = remember(uiState.ownedCards) {
-        uiState.ownedCards.count { it.isMisprint }
-    }
 
-    val filteredCards = remember(uiState.ownedCards, searchQuery, selectedFilter, countByCatalog) {
-        uiState.ownedCards.filter { card ->
+    val filteredCards = remember(uiState.ownedCards, searchQuery, selectedFilter, sortOrder, countByCatalog) {
+        val base = uiState.ownedCards.filter { card ->
             val matchesQuery = searchQuery.isBlank() ||
                 card.skinName.contains(searchQuery, ignoreCase = true) ||
                 card.heroName.contains(searchQuery, ignoreCase = true) ||
@@ -115,136 +123,240 @@ fun VaultScreen(
             }
             matchesQuery && matchesFilter
         }
+        when (sortOrder) {
+            VaultSortOrder.RARITY -> base.sortedWith(
+                compareByDescending<OwnedCard> { it.isMisprint }
+                    .thenByDescending { it.rarity.ordinal }
+                    .thenByDescending { it.obtainedAtMs }
+            )
+            VaultSortOrder.NEWEST -> base.sortedByDescending { it.obtainedAtMs }
+            VaultSortOrder.NAME -> base.sortedWith(compareBy({ it.heroName }, { it.skinName }))
+        }
     }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(PearlCanvas)
             .let { if (includeStatusBarPadding) it.statusBarsPadding() else it }
     ) {
-        // Header Summary
-        Surface(
-            color = PureWhiteCard,
-            border = BorderStroke(1.dp, IceBorder),
-            shadowElevation = 3.dp,
+        // Frosted Collector Vault Hero Banner Card (matching screenshot)
+        FrostedGlassCard(
+            cornerRadius = 24.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            shape = RoundedCornerShape(20.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "COLLECTOR VAULT",
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = palette.accentPrimary
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                palette.frostSurface.copy(alpha = if (palette.isDark) 0.55f else 0.72f),
+                                palette.cardSurface.copy(alpha = 0.85f),
+                                palette.gloomHalo.copy(alpha = if (palette.isDark) 0.30f else 0.38f)
+                            )
                         )
-                        Text(
-                            text = "${uiState.ownedCards.size} total cards • $uniqueCount unique skins",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = SlateMuted
-                        )
-                    }
-                    Surface(
-                        color = SkyFrost,
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, palette.misprintLabel.copy(alpha = 0.6f))
-                    ) {
+                    )
+            ) {
+                // Translucent Orb Watermark on right matching screenshot
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    val c = Offset(size.width * 0.88f, size.height * 0.62f)
+                    val r = size.height * 0.44f
+                    drawCircle(
+                        color = palette.accentPrimary.copy(alpha = if (palette.isDark) 0.14f else 0.11f),
+                        radius = r,
+                        center = c,
+                        style = Stroke(width = 3.dp.toPx())
+                    )
+                    drawCircle(
+                        color = palette.accentPrimary.copy(alpha = if (palette.isDark) 0.12f else 0.09f),
+                        radius = r * 0.34f,
+                        center = c,
+                        style = Stroke(width = 2.5.dp.toPx())
+                    )
+                }
+
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = palette.gold.copy(alpha = 0.75f),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(14.dp)
+                        .size(18.dp)
+                )
+
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Collector Vault",
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
+                        color = palette.ink
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${uiState.ownedCards.size} total cards • $uniqueCount unique skins",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = palette.muted
+                    )
+
+                    if (uiState.catalog.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        val progress = (uniqueCount.toFloat() / uiState.catalog.size.toFloat()).coerceIn(0f, 1f)
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Bolt,
-                                contentDescription = null,
-                                tint = palette.misprintLabel,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "$misprintCount 1/1",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = palette.misprintLabel
-                            )
+                            Surface(
+                                color = palette.goldSurfaceTint,
+                                shape = CircleShape,
+                                border = BorderStroke(1.5.dp, palette.gold),
+                                shadowElevation = 2.dp,
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.WorkspacePremium,
+                                        contentDescription = null,
+                                        tint = palette.gold,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(999.dp))
+                                        .background(palette.frostSurface)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(fraction = progress.coerceAtLeast(0.03f))
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(999.dp))
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    listOf(palette.buttonPrimary, palette.skyAccent)
+                                                )
+                                            )
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(5.dp))
+                                Text(
+                                    text = "Dex Completion: $uniqueCount / ${uiState.catalog.size}",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = palette.ink
+                                )
+                            }
                         }
                     }
                 }
+            }
+        }
 
-                if (uiState.catalog.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    val progress = (uniqueCount.toFloat() / uiState.catalog.size.toFloat()).coerceIn(0f, 1f)
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        color = palette.accentPrimary,
-                        trackColor = SkyFrost,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(7.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
+        // Search Pill + Circular Sort Button Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = {
                     Text(
-                        text = "Dex Completion: $uniqueCount / ${uiState.catalog.size}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SlateMuted
+                        text = "Search cards, skins, or heroes...",
+                        color = SlateMuted,
+                        maxLines = 1
+                    )
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = null, tint = palette.muted)
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(999.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = palette.accentPrimary,
+                    unfocusedBorderColor = palette.glassHighlight,
+                    focusedContainerColor = palette.cardSurface.copy(alpha = 0.92f),
+                    unfocusedContainerColor = palette.cardSurface.copy(alpha = 0.86f),
+                    focusedTextColor = InkSlate,
+                    unfocusedTextColor = InkSlate
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("vault_search_input")
+            )
+
+            Surface(
+                color = palette.cardSurface.copy(alpha = 0.90f),
+                shape = CircleShape,
+                shadowElevation = 2.dp,
+                border = BorderStroke(1.2.dp, palette.glassHighlight)
+            ) {
+                IconButton(
+                    onClick = {
+                        onButtonClickSfx()
+                        val orders = VaultSortOrder.entries
+                        sortOrder = orders[(sortOrder.ordinal + 1) % orders.size]
+                    },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("vault_sort_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FilterList,
+                        contentDescription = "Sort by ${sortOrder.label}",
+                        tint = palette.accentPrimary,
+                        modifier = Modifier.size(21.dp)
                     )
                 }
             }
         }
 
-        // Search Box
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Search hero, skin, or serial...", color = SlateMuted) },
-            leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = null, tint = SlateMuted)
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = DeepCobalt,
-                unfocusedBorderColor = IceBorder,
-                focusedContainerColor = PureWhiteCard,
-                unfocusedContainerColor = PureWhiteCard,
-                focusedTextColor = InkSlate,
-                unfocusedTextColor = InkSlate
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .testTag("vault_search_input")
-        )
-
         Spacer(modifier = Modifier.height(10.dp))
 
-        // 7-Tier Filter Chips
+        // Pill Filter Chips Row
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(VaultFilter.entries) { filter ->
                 val selected = selectedFilter == filter
-                FilterChip(
-                    selected = selected,
-                    onClick = {
-                        onButtonClickSfx()
-                        selectedFilter = filter
+                Surface(
+                    color = if (selected) {
+                        palette.buttonPrimary
+                    } else {
+                        palette.cardSurface.copy(alpha = if (palette.isDark) 0.90f else 0.84f)
                     },
-                    label = { Text(filter.label) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = DeepCobalt,
-                        selectedLabelColor = Color.White,
-                        containerColor = PureWhiteCard,
-                        labelColor = SlateMuted
+                    shape = RoundedCornerShape(999.dp),
+                    shadowElevation = if (selected) 3.dp else 1.dp,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (selected) palette.buttonPrimary else palette.glassHighlight
+                    ),
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(999.dp))
+                        .clickable {
+                            onButtonClickSfx()
+                            selectedFilter = filter
+                        }
+                ) {
+                    Text(
+                        text = filter.label,
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold
+                        ),
+                        color = if (selected) Color.White else palette.muted,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                     )
-                )
+                }
             }
         }
 
@@ -254,7 +366,7 @@ fun VaultScreen(
             EmptyVaultState(
                 title = if (uiState.ownedCards.isEmpty()) "Your Vault is Empty" else "No Matching Skins",
                 subtitle = if (uiState.ownedCards.isEmpty()) {
-                    "Head to the Packs tab and open your free Starter Studio Pack to pull MOBA Legends skins!"
+                    "Head to the Packs tab and open a booster pack to pull MOBA Legends skins!"
                 } else {
                     "Try clearing your search or selecting another rarity filter."
                 },
@@ -263,7 +375,7 @@ fun VaultScreen(
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 152.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.weight(1f)
@@ -302,7 +414,7 @@ private fun VaultGridCardItem(
         if (duplicateCount > 1) {
             Surface(
                 color = MoonlightNight.copy(alpha = 0.92f),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(999.dp),
                 border = BorderStroke(1.dp, StudioGoldBright),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -312,22 +424,22 @@ private fun VaultGridCardItem(
                     text = "x$duplicateCount",
                     style = MaterialTheme.typography.labelSmall,
                     color = StudioGoldBright,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                 )
             }
         }
 
         if (card.isListedForTrade) {
             Surface(
-                color = palette.accentPrimary.copy(alpha = 0.90f),
-                shape = RoundedCornerShape(6.dp),
+                color = palette.accentPrimary.copy(alpha = 0.92f),
+                shape = RoundedCornerShape(999.dp),
                 modifier = Modifier.align(Alignment.Center)
             ) {
                 Text(
                     text = "TRADE LISTED",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
                 )
             }
         }

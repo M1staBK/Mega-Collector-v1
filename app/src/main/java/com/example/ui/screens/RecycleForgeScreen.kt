@@ -48,6 +48,7 @@ import coil.compose.AsyncImage
 import com.example.model.OwnedCard
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.EmptyVaultState
+import com.example.ui.components.FrostedGlassCard
 import com.example.ui.components.RarityChip
 import com.example.ui.components.rememberMlbbImageRequest
 import com.example.ui.theme.CollectorTheme
@@ -99,14 +100,10 @@ fun RecycleForgeScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(PearlCanvas)
             .let { if (includeStatusBarPadding) it.statusBarsPadding() else it }
     ) {
-        Surface(
-            color = PureWhiteCard,
-            shape = RoundedCornerShape(20.dp),
-            shadowElevation = 3.dp,
-            border = BorderStroke(1.dp, IceBorder),
+        FrostedGlassCard(
+            cornerRadius = 24.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
@@ -262,14 +259,9 @@ private fun RecycleCardRow(
     onRecycleClick: () -> Unit
 ) {
     val palette = CollectorTheme.colors
-    Surface(
-        color = PureWhiteCard,
-        shape = RoundedCornerShape(16.dp),
-        shadowElevation = 2.dp,
-        border = BorderStroke(
-            1.dp,
-            if (card.isMisprint) palette.misprintLabel.copy(alpha = 0.65f) else card.rarity.primaryColor.copy(alpha = 0.45f)
-        ),
+    FrostedGlassCard(
+        cornerRadius = 18.dp,
+        borderColor = if (card.isMisprint) palette.misprintLabel.copy(alpha = 0.65f) else card.rarity.primaryColor.copy(alpha = 0.45f),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onInspect)

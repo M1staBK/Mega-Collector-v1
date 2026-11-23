@@ -34,6 +34,7 @@ data class PlayerWalletState(
     val soundMuted: Boolean = false,
     val darkModeEnabled: Boolean = false,
     val vibrationEnabled: Boolean = true,
+    val themeAccentId: String = "SKY_COBALT",
     // Hourly-recharging Charges (1 charge per 1 hour, stacks up to 3)
     val scratcherStoredCharges: Int = MAX_HOURLY_CHARGES,
     val scratcherLastRefillMs: Long = 0L,
@@ -136,6 +137,7 @@ class PlayerPreferencesStore(private val context: Context) {
         val SOUND_MUTED = booleanPreferencesKey("sound_muted")
         val DARK_MODE_ENABLED = booleanPreferencesKey("dark_mode_enabled")
         val VIBRATION_ENABLED = booleanPreferencesKey("vibration_enabled")
+        val THEME_ACCENT_ID = stringPreferencesKey("theme_accent_id")
 
         val SCRATCHER_CHARGES = intPreferencesKey("scratcher_charges_v2")
         val SCRATCHER_LAST_REFILL_MS = longPreferencesKey("scratcher_last_refill_ms")
@@ -190,6 +192,7 @@ class PlayerPreferencesStore(private val context: Context) {
             soundMuted = prefs[Keys.SOUND_MUTED] ?: false,
             darkModeEnabled = prefs[Keys.DARK_MODE_ENABLED] ?: false,
             vibrationEnabled = prefs[Keys.VIBRATION_ENABLED] ?: true,
+            themeAccentId = prefs[Keys.THEME_ACCENT_ID] ?: "SKY_COBALT",
             scratcherStoredCharges = prefs[Keys.SCRATCHER_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES,
             scratcherLastRefillMs = prefs[Keys.SCRATCHER_LAST_REFILL_MS] ?: 0L,
             prismStoredCharges = prefs[Keys.PRISM_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES,
@@ -593,6 +596,12 @@ class PlayerPreferencesStore(private val context: Context) {
     suspend fun setVibrationEnabled(enabled: Boolean) {
         context.collectorDataStore.edit { prefs ->
             prefs[Keys.VIBRATION_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setThemeAccentId(accentId: String) {
+        context.collectorDataStore.edit { prefs ->
+            prefs[Keys.THEME_ACCENT_ID] = accentId
         }
     }
 

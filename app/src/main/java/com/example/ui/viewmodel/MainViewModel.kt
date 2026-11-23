@@ -13,7 +13,6 @@ import com.example.data.local.PlayerPreferencesStore
 import com.example.data.local.PlayerWalletState
 import com.example.data.remote.AuthenticatedUser
 import com.example.data.remote.FirestoreCollectorService
-import com.example.data.remote.RoneArenaRepository
 import com.example.data.repository.CollectorRepository
 import com.example.model.AchievementBadgeUi
 import com.example.model.AchievementCatalog
@@ -23,9 +22,6 @@ import com.example.model.CollectorPublicProfile
 import com.example.model.DailyRewardTier
 import com.example.model.DecodedTradeSlip
 import com.example.model.DiamondExchangeOption
-import com.example.model.MetaHeroStats
-import com.example.model.MetaRankFilter
-import com.example.model.MetaSortMode
 import com.example.model.OwnedCard
 import com.example.model.P2PTradeListing
 import com.example.model.PackBundleOption
@@ -35,7 +31,7 @@ import com.example.model.QuizQuestionBank
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.TradeListing
-import com.example.ui.screens.MetaGuidesUiState
+import com.example.ui.theme.ThemeAccentOption
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -86,7 +82,6 @@ data class MegaCollectorUiState(
     val openP2PListings: List<P2PTradeListing> = emptyList(),
     val historyEvents: List<CollectorHistoryEvent> = emptyList(),
     val viewingTraderProfile: CollectorPublicProfile? = null,
-    val metaState: MetaGuidesUiState = MetaGuidesUiState(),
     val quests: List<QuestUiItem> = emptyList(),
     val achievements: List<AchievementBadgeUi> = emptyList(),
     val syncStatus: CatalogSyncStatus = CatalogSyncStatus.Idle,
@@ -108,7 +103,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = CollectorRepository(db.collectorDao(), prefs)
     val soundEngine = PackSoundEngine(application)
     private val firestoreService = FirestoreCollectorService(application)
-    private val roneArenaRepo = RoneArenaRepository(application)
 
     private val _activeUser = MutableStateFlow<AuthenticatedUser?>(null)
     private val _syncStatus = MutableStateFlow<CatalogSyncStatus>(CatalogSyncStatus.Idle)
@@ -119,7 +113,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _openP2PListings = MutableStateFlow<List<P2PTradeListing>>(emptyList())
     private val _historyEvents = MutableStateFlow<List<CollectorHistoryEvent>>(emptyList())
     private val _viewingTraderProfile = MutableStateFlow<CollectorPublicProfile?>(null)
-    private val _metaState = MutableStateFlow(MetaGuidesUiState())
 
     private var lastSatinThemeId: String? = null
     private var historyListenerJob: Job? = null
@@ -145,7 +138,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val openP2PListings: List<P2PTradeListing>,
         val historyEvents: List<CollectorHistoryEvent>,
         val viewingTraderProfile: CollectorPublicProfile?,
-        val metaState: MetaGuidesUiState,
         val nowMs: Long
     )
 
@@ -158,7 +150,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _openP2PListings,
         _historyEvents,
         _viewingTraderProfile,
-        _metaState,
         clockTickFlow
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -171,8 +162,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             openP2PListings = values[5] as List<P2PTradeListing>,
             historyEvents = values[6] as List<CollectorHistoryEvent>,
             viewingTraderProfile = values[7] as CollectorPublicProfile?,
-            metaState = values[8] as MetaGuidesUiState,
-            nowMs = values[9] as Long
+            nowMs = values[8] as Long
         )
     }
 
@@ -206,7 +196,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             openP2PListings = eph.openP2PListings,
             historyEvents = eph.historyEvents,
             viewingTraderProfile = eph.viewingTraderProfile,
-            metaState = eph.metaState,
             quests = repository.buildQuestItems(wallet),
             achievements = AchievementCatalog.evaluate(wallet, owned),
             syncStatus = if (catalog.isNotEmpty() && eph.syncStatus is CatalogSyncStatus.Idle) {
@@ -414,6 +403,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.setVibrationEnabled(enabled) }
     }
 
+    fun setThemeAccent(accent: ThemeAccentOption) {
+        soundEngine.playClick()
+        viewModelScope.launch { repository.setThemeAccentId(accent.id) }
+    }
+
     fun observeOwnedCard(instanceId: Long): Flow<OwnedCard?> =
         repository.observeCard(instanceId)
 
@@ -441,7 +435,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun openPackBundle(
         bundle: PackBundleOption,
         payWithDiamonds: Boolean = false,
-        useFreeTicket: Boolean = false
+        useFreeTicket: Boolean = false,
+        preferredTheme: PackSatinTheme? = null
     ) {
         if (_isOpeningPack.value || _packSession.value != null) return
         soundEngine.playClick()
@@ -449,7 +444,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val currentWallet = repository.walletFlow.first()
             repository.verifyPackReadyToRip(bundle, currentWallet, payWithDiamonds, useFreeTicket)
                 .onSuccess { effectiveBundle ->
-                    val theme = PackSatinTheme.random(lastSatinThemeId)
+                    val theme = preferredTheme ?: PackSatinTheme.random(lastSatinThemeId)
                     lastSatinThemeId = theme.id
                     _packSession.value = PackOpeningSession(
                         bundle = effectiveBundle,
@@ -946,98 +941,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.updateAlias(newAlias)
             syncCloudProfileNow()
             _snackbarMessage.value = "Collector tag updated!"
-        }
-    }
-
-    fun updateMlbbAccount(ign: String, serverId: String) {
-        soundEngine.playClick()
-        viewModelScope.launch {
-            repository.updateMlbbAccount(ign, serverId)
-            syncCloudProfileNow()
-            _snackbarMessage.value = "MOBA Legends IGN & Server linked!"
-        }
-    }
-
-    // Rone Arena Meta Hub Actions
-    fun ensureMetaLoaded() {
-        val current = _metaState.value
-        if (current.heroes.isEmpty() && !current.isLoading) {
-            loadMetaHeroes(current.rankFilter, forceRefresh = false)
-        }
-    }
-
-    fun selectMetaRankFilter(rankFilter: MetaRankFilter) {
-        _metaState.update { it.copy(rankFilter = rankFilter) }
-        loadMetaHeroes(rankFilter, forceRefresh = false)
-    }
-
-    fun selectMetaSortMode(sortMode: MetaSortMode) {
-        _metaState.update { it.copy(sortMode = sortMode) }
-    }
-
-    fun refreshMeta() {
-        loadMetaHeroes(_metaState.value.rankFilter, forceRefresh = true)
-    }
-
-    private fun loadMetaHeroes(rankFilter: MetaRankFilter, forceRefresh: Boolean) {
-        viewModelScope.launch {
-            _metaState.update { it.copy(isLoading = true, errorMessage = null) }
-            val catalog = db.collectorDao().getAllCatalogOnce().map { it.toDomain() }
-            roneArenaRepo.fetchMetaHeroStats(rankFilter, catalog, forceRefresh)
-                .onSuccess { list ->
-                    _metaState.update {
-                        it.copy(isLoading = false, heroes = list, errorMessage = null)
-                    }
-                    warmImageUrls(list.take(18).map { it.iconUrl })
-                }
-                .onFailure { err ->
-                    _metaState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = err.localizedMessage ?: "Failed to load MLBB Meta data."
-                        )
-                    }
-                }
-        }
-    }
-
-    fun openHeroMetaDetail(hero: MetaHeroStats) {
-        viewModelScope.launch {
-            _metaState.update {
-                it.copy(
-                    isLoadingDetail = true,
-                    detailError = null,
-                    selectedHeroDetail = com.example.model.HeroMetaDetail(
-                        heroStats = hero,
-                        strongAgainst = emptyList(),
-                        counteredBy = emptyList(),
-                        synergies = emptyList(),
-                        buildGuides = emptyList(),
-                        skillSummary = emptyList()
-                    )
-                )
-            }
-            val catalog = db.collectorDao().getAllCatalogOnce().map { it.toDomain() }
-            roneArenaRepo.fetchHeroMetaDetail(hero, catalog)
-                .onSuccess { detail ->
-                    _metaState.update {
-                        it.copy(isLoadingDetail = false, selectedHeroDetail = detail)
-                    }
-                }
-                .onFailure { err ->
-                    _metaState.update {
-                        it.copy(
-                            isLoadingDetail = false,
-                            detailError = err.localizedMessage ?: "Could not load detailed counters & builds."
-                        )
-                    }
-                }
-        }
-    }
-
-    fun dismissHeroMetaDetail() {
-        _metaState.update {
-            it.copy(isLoadingDetail = false, selectedHeroDetail = null, detailError = null)
         }
     }
 

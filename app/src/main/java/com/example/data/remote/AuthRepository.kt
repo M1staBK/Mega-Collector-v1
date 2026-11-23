@@ -10,10 +10,10 @@ import androidx.credentials.GetCredentialResponse
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
-import com.example.R
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -39,24 +39,43 @@ data class AuthenticatedUser(
 )
 
 class AuthRepository(private val context: Context) {
-    private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
     private val credentialManager: CredentialManager by lazy { CredentialManager.create(context) }
 
-    val authStateFlow: Flow<AuthenticatedUser?> = callbackFlow {
-        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-            trySend(firebaseAuth.currentUser?.toAuthenticatedUser())
-        }
-        auth.addAuthStateListener(listener)
-        trySend(auth.currentUser?.toAuthenticatedUser())
-        awaitClose { auth.removeAuthStateListener(listener) }
+    private fun isFirebaseConfigured(): Boolean = FirebaseApp.getApps(context).isNotEmpty()
+
+    private fun getAuthOrNull(): FirebaseAuth? {
+        if (!isFirebaseConfigured()) return null
+        return runCatching { FirebaseAuth.getInstance() }.getOrNull()
     }
 
-    fun currentUser(): AuthenticatedUser? = auth.currentUser?.toAuthenticatedUser()
+    private fun resolveWebClientId(): String? {
+        val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+        if (resId == 0) return null
+        return context.getString(resId).takeIf { it.isNotBlank() }
+    }
+
+    val authStateFlow: Flow<AuthenticatedUser?> = callbackFlow {
+        val firebaseAuth = getAuthOrNull()
+        if (firebaseAuth == null) {
+            trySend(null)
+            awaitClose {}
+            return@callbackFlow
+        }
+        val listener = FirebaseAuth.AuthStateListener { activeAuth ->
+            trySend(activeAuth.currentUser?.toAuthenticatedUser())
+        }
+        firebaseAuth.addAuthStateListener(listener)
+        trySend(firebaseAuth.currentUser?.toAuthenticatedUser())
+        awaitClose { firebaseAuth.removeAuthStateListener(listener) }
+    }
+
+    fun currentUser(): AuthenticatedUser? = getAuthOrNull()?.currentUser?.toAuthenticatedUser()
 
     suspend fun attemptSilentSignIn(): AuthenticatedUser? {
-        auth.currentUser?.let { return it.toAuthenticatedUser() }
+        val firebaseAuth = getAuthOrNull() ?: return null
+        firebaseAuth.currentUser?.let { return it.toAuthenticatedUser() }
+        val webClientId = resolveWebClientId() ?: return null
         return try {
-            val webClientId = context.getString(R.string.default_web_client_id)
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(true)
                 .setServerClientId(webClientId)
@@ -66,7 +85,7 @@ class AuthRepository(private val context: Context) {
                 .addCredentialOption(googleIdOption)
                 .build()
             val response = credentialManager.getCredential(context, request)
-            val res = handleGoogleCredentialResponse(response)
+            val res = handleGoogleCredentialResponse(firebaseAuth, response)
             (res as? AuthResult.Success)?.user?.toAuthenticatedUser()
         } catch (e: CancellationException) {
             throw e
@@ -79,8 +98,11 @@ class AuthRepository(private val context: Context) {
     }
 
     suspend fun signInWithGoogle(activityContext: Context): AuthResult {
+        val firebaseAuth = getAuthOrNull()
+            ?: return AuthResult.Error("Cloud sign-in is offline until Firebase google-services.json is configured.")
+        val webClientId = resolveWebClientId()
+            ?: return AuthResult.Error("Google Sign-In client ID is unavailable in this preview build.")
         return try {
-            val webClientId = context.getString(R.string.default_web_client_id)
             val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(webClientId)
                 .build()
             val request = GetCredentialRequest.Builder()
@@ -88,7 +110,7 @@ class AuthRepository(private val context: Context) {
                 .build()
             val cm = CredentialManager.create(activityContext)
             val response = cm.getCredential(activityContext, request)
-            handleGoogleCredentialResponse(response)
+            handleGoogleCredentialResponse(firebaseAuth, response)
         } catch (e: CancellationException) {
             throw e
         } catch (_: GetCredentialCancellationException) {
@@ -102,14 +124,17 @@ class AuthRepository(private val context: Context) {
         }
     }
 
-    private suspend fun handleGoogleCredentialResponse(response: GetCredentialResponse): AuthResult {
+    private suspend fun handleGoogleCredentialResponse(
+        firebaseAuth: FirebaseAuth,
+        response: GetCredentialResponse
+    ): AuthResult {
         val credential = response.credential
         if (credential is CustomCredential &&
             credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
         ) {
             val googleCred = GoogleIdTokenCredential.createFrom(credential.data)
             val authCred = GoogleAuthProvider.getCredential(googleCred.idToken, null)
-            val result = auth.signInWithCredential(authCred).await()
+            val result = firebaseAuth.signInWithCredential(authCred).await()
             val user = result.user
             return if (user != null) {
                 AuthResult.Success(user)
@@ -125,7 +150,7 @@ class AuthRepository(private val context: Context) {
             runCatching {
                 credentialManager.clearCredentialState(ClearCredentialStateRequest())
             }
-            auth.signOut()
+            getAuthOrNull()?.signOut()
         }
     }
 

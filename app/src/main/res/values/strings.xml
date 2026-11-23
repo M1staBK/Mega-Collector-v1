@@ -1,10 +1,10 @@
 <resources>
     <string name="app_name">MEGA COLLECTOR</string>
-    <string name="nav_packs">Packs</string>
     <string name="nav_play">Play</string>
-    <string name="nav_meta">Meta</string>
     <string name="nav_quests">Quests</string>
+    <string name="nav_packs">Packs</string>
     <string name="nav_vault">Vault</string>
+    <string name="nav_trade">Trade</string>
     <string name="nav_profile">Profile</string>
     <string name="daily_rewards_title">Daily Streak Rewards</string>
     <string name="claim_daily_reward">Claim Daily Reward</string>
@@ -12,11 +12,11 @@
     <string name="open_pack_cta">RIP PACK OPEN</string>
     <string name="reveal_next_card">Tap, Swipe, or Pinch to Flip</string>
     <string name="reveal_all">Reveal All</string>
-    <string name="done_collect">Collect All to Vault</string>
+    <string name="done_collect">Collect All to Binder</string>
     <string name="misprint_badge">1 OF 1 • MISPRINT</string>
     <string name="gyro_hint">Tilt your device or drag card for holographic foil sheen</string>
-    <string name="api_credit_title">Powered by MLBBDex &amp; Rone Arena</string>
-    <string name="api_credit_body">Complete MOBA Legends skin catalog provided via mlbbdex.com/api/v1/skins/, and live meta picks, bans, tier lists, counters, and builds powered by arena.rone.dev.</string>
-    <string name="trade_offline_notice">Player-to-Player (P2P) Trading Active — swap directly with real signed-in collectors or share Trade Slips with friends.</string>
+    <string name="api_credit_title">Powered by MLBBDex.com</string>
+    <string name="api_credit_body">Complete MOBA Legends skin catalog and artwork provided via mlbbdex.com/api/v1/skins/.</string>
+    <string name="trade_offline_notice">Player-to-Player (P2P) Trading Active — swap directly with real collectors or share Trade Slips with friends.</string>
     <string name="community_quest_notice">Season &amp; Collector Milestones — your pack rips, rare pulls, and player-to-player swaps advance collector rewards.</string>
 </resources>

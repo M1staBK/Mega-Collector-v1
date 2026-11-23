@@ -20,7 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -82,19 +81,23 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.compose.foundation.shape.GenericShape
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
@@ -127,8 +130,65 @@ import com.example.ui.viewmodel.PackOpeningSession
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.sin
+
+internal data class AngledTearGeometry(
+    val leftYRatio: Float,
+    val rightYRatio: Float,
+    val angleDeg: Float,
+    val leftToRight: Boolean,
+    val peelDirX: Float,
+    val peelDirY: Float
+)
+
+internal fun computeAngledTearGeometry(
+    startNormY: Float,
+    dragDeltaX: Float,
+    dragDeltaY: Float,
+    baseSplitYRatio: Float = 0.24f
+): AngledTearGeometry {
+    val totalDist = hypot(dragDeltaX, dragDeltaY)
+    val leftToRight = dragDeltaX >= 0f
+    if (totalDist < 6f) {
+        return AngledTearGeometry(
+            leftYRatio = baseSplitYRatio,
+            rightYRatio = baseSplitYRatio,
+            angleDeg = 0f,
+            leftToRight = true,
+            peelDirX = 1f,
+            peelDirY = -0.65f
+        )
+    }
+
+    val safeDx = if (abs(dragDeltaX) < 18f) {
+        if (dragDeltaX >= 0f) 18f else -18f
+    } else {
+        dragDeltaX
+    }
+    val rawSlope = (dragDeltaY / safeDx).coerceIn(-0.34f, 0.34f)
+    val centerY = (baseSplitYRatio + (startNormY - baseSplitYRatio) * 0.35f).coerceIn(0.16f, 0.34f)
+    val halfSpan = 0.5f * rawSlope
+    val leftY = (centerY - halfSpan).coerceIn(0.10f, 0.44f)
+    val rightY = (centerY + halfSpan).coerceIn(0.10f, 0.44f)
+    val angleDeg = Math.toDegrees(atan2((rightY - leftY).toDouble(), 1.0)).toFloat().coerceIn(-38f, 38f)
+
+    val normVy = dragDeltaY / totalDist
+    val peelDirX = if (leftToRight) 1f else -1f
+    val peelDirY = (-0.68f + normVy * 0.45f).coerceIn(-1.25f, 0.15f)
+
+    return AngledTearGeometry(
+        leftYRatio = leftY,
+        rightYRatio = rightY,
+        angleDeg = angleDeg,
+        leftToRight = leftToRight,
+        peelDirX = peelDirX,
+        peelDirY = peelDirY
+    )
+}
 
 @Composable
 fun PackOpeningScreen(
@@ -983,6 +1043,20 @@ private fun PackTearStage(
     val pitchAnim = remember { Animatable(0f) }
     var tornCommitted by remember { mutableStateOf(false) }
 
+    // 2D Finger-Swipe Angle Tracking State
+    var startNormY by remember { mutableFloatStateOf(0.24f) }
+    var cumulativeDragX by remember { mutableFloatStateOf(0f) }
+    var cumulativeDragY by remember { mutableFloatStateOf(0f) }
+    var tearStripSize by remember { mutableStateOf(IntSize.Zero) }
+
+    val tearGeometry = remember(startNormY, cumulativeDragX, cumulativeDragY) {
+        computeAngledTearGeometry(
+            startNormY = startNormY,
+            dragDeltaX = cumulativeDragX,
+            dragDeltaY = cumulativeDragY
+        )
+    }
+
     val pulseTransition = rememberInfiniteTransition(label = "pack_float")
     val floatOffset by pulseTransition.animateFloat(
         initialValue = -6f,
@@ -1006,13 +1080,55 @@ private fun PackTearStage(
     val showingBack = normalizedYaw in 90f..270f
     val tearProgress = tearAnim.value.coerceIn(0f, 1f)
 
+    // Shapes splitting the upper torn foil cap from the lower pouch along the angled serrated seam
+    val serratedTeeth = 14
+    val topFoilCapShape = remember(tearGeometry.leftYRatio, tearGeometry.rightYRatio, tearProgress) {
+        GenericShape { size, _ ->
+            val yL = size.height * tearGeometry.leftYRatio
+            val yR = size.height * tearGeometry.rightYRatio
+            moveTo(0f, 0f)
+            lineTo(size.width, 0f)
+            lineTo(size.width, yR)
+            for (i in serratedTeeth downTo 0) {
+                val t = i.toFloat() / serratedTeeth.toFloat()
+                val x = size.width * t
+                val baseY = yL + (yR - yL) * t
+                val toothOffset = if (i in 1 until serratedTeeth && tearProgress > 0.02f) {
+                    (if (i % 2 == 0) -1f else 1f) * 5.5f * (0.4f + tearProgress * 0.6f)
+                } else 0f
+                lineTo(x, baseY + toothOffset)
+            }
+            close()
+        }
+    }
+
+    val lowerPouchShape = remember(tearGeometry.leftYRatio, tearGeometry.rightYRatio, tearProgress) {
+        GenericShape { size, _ ->
+            val yL = size.height * tearGeometry.leftYRatio
+            val yR = size.height * tearGeometry.rightYRatio
+            moveTo(0f, yL)
+            for (i in 0..serratedTeeth) {
+                val t = i.toFloat() / serratedTeeth.toFloat()
+                val x = size.width * t
+                val baseY = yL + (yR - yL) * t
+                val toothOffset = if (i in 1 until serratedTeeth && tearProgress > 0.02f) {
+                    (if (i % 2 == 0) -1f else 1f) * 5.5f * (0.4f + tearProgress * 0.6f)
+                } else 0f
+                lineTo(x, baseY + toothOffset)
+            }
+            lineTo(size.width, size.height)
+            lineTo(0f, size.height)
+            close()
+        }
+    }
+
     fun commitTear() {
         if (tornCommitted || isCommitting) return
         tornCommitted = true
         scope.launch {
             tearAnim.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing)
+                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
             )
             onRipComplete()
         }
@@ -1032,11 +1148,11 @@ private fun PackTearStage(
                     scaleY = entryScale.value
                     rotationY = totalYaw
                     rotationX = (pitchAnim.value - tiltState.pitchDegrees * 0.35f).coerceIn(-18f, 18f)
-                    rotationZ = tearProgress * 2.5f
+                    rotationZ = tearProgress * (tearGeometry.angleDeg * 0.10f + tearGeometry.peelDirX * 2.2f)
                     cameraDistance = 18f * density
                 }
         ) {
-            // Lower Pack Body (Rotates 3D on drag; shows Front Art or Back Foil Seal)
+            // Pack Frame (Rotates 3D on lower-body drag; shows Front Art or Back Foil Seal)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1111,33 +1227,120 @@ private fun PackTearStage(
                         PackBackSealFace(satinTheme = satinTheme, packCount = packCount)
                     }
                 } else {
-                    PackFrontArtFace(
-                        coverRes = coverRes,
-                        satinTheme = satinTheme,
-                        tearProgress = tearProgress
-                    )
-                }
+                    // 1. Revealed Interior Cards Edge & Chrome Pouch Cavity (visible behind the angled tear slit)
+                    if (tearProgress > 0.02f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color(0xFFCBD5E1),
+                                            Color(0xFF475569),
+                                            satinTheme.baseColor
+                                        )
+                                    )
+                                )
+                        ) {
+                            // Top peeking rim of the card stack inside the pack
+                            Surface(
+                                color = Color(0xFFF8FAFC),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.5.dp, StudioGoldBright),
+                                shadowElevation = 4.dp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp)
+                                    .padding(top = 62.dp)
+                                    .height(74.dp)
+                                    .graphicsLayer {
+                                        translationY = -tearProgress * 10f
+                                        rotationZ = tearGeometry.angleDeg * 0.18f
+                                    }
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(
+                                                    Color(0xFFE2E8F0),
+                                                    StudioGoldBright.copy(alpha = 0.55f),
+                                                    Color(0xFF93C5FD)
+                                                )
+                                            )
+                                        )
+                                )
+                            }
+                        }
+                    }
 
-                // Perforated Foil Tear Strip Overlay (Top 24% of wrapper)
-                if (!showingBack) {
+                    // 2. Lower Pouch Artwork (clipped cleanly below the angled serrated tear path)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(if (tearProgress > 0.01f) lowerPouchShape else RoundedCornerShape(22.dp))
+                    ) {
+                        PackFrontArtFace(
+                            coverRes = coverRes,
+                            satinTheme = satinTheme,
+                            tearProgress = tearProgress
+                        )
+                    }
+
+                    // 3. Torn Top Foil Cap (clipped cleanly ABOVE the angled tear path; peels off along finger swipe vector!)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(if (tearProgress > 0.01f) topFoilCapShape else RoundedCornerShape(22.dp))
+                            .graphicsLayer {
+                                translationX = tearGeometry.peelDirX * tearProgress * 124f
+                                translationY = tearGeometry.peelDirY * tearProgress * 92f
+                                rotationZ = tearProgress * (tearGeometry.angleDeg * 0.42f + tearGeometry.peelDirX * -18f)
+                                rotationX = tearProgress * 34f
+                                alpha = (1f - tearProgress * 0.72f).coerceIn(0.18f, 1f)
+                            }
+                    ) {
+                        PackFrontArtFace(
+                            coverRes = coverRes,
+                            satinTheme = satinTheme,
+                            tearProgress = tearProgress
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(106.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            satinTheme.sheenHighlight.copy(alpha = 0.28f),
+                                            satinTheme.baseColor.copy(alpha = 0.75f),
+                                            Color.Transparent
+                                        )
+                                    )
+                                )
+                        )
+                    }
+
+                    // 4. Interactive Top 38% Angled Tear Touch Zone + Prompt Pill
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(82.dp)
+                            .height(134.dp)
                             .align(Alignment.TopCenter)
-                            .graphicsLayer {
-                                translationX = tearProgress * 72f
-                                translationY = -tearProgress * 36f
-                                rotationZ = tearProgress * -11f
-                                rotationX = tearProgress * 22f
-                                alpha = (1f - tearProgress * 0.55f).coerceIn(0.35f, 1f)
-                            }
+                            .onSizeChanged { tearStripSize = it }
                             .pointerInput(isCommitting, tornCommitted) {
                                 if (!isCommitting && !tornCommitted) {
-                                    detectHorizontalDragGestures(
-                                        onDragStart = { onCrinkle() },
+                                    detectDragGestures(
+                                        onDragStart = { startOffset ->
+                                            onCrinkle()
+                                            cumulativeDragX = 0f
+                                            cumulativeDragY = 0f
+                                            val h = tearStripSize.height.coerceAtLeast(1).toFloat()
+                                            startNormY = ((startOffset.y / h) * 0.38f).coerceIn(0.12f, 0.36f)
+                                        },
                                         onDragEnd = {
-                                            if (tearAnim.value >= 0.62f) {
+                                            if (tearAnim.value >= 0.56f) {
                                                 commitTear()
                                             } else {
                                                 scope.launch {
@@ -1145,103 +1348,148 @@ private fun PackTearStage(
                                                         0f,
                                                         spring(dampingRatio = Spring.DampingRatioMediumBouncy)
                                                     )
+                                                    cumulativeDragX = 0f
+                                                    cumulativeDragY = 0f
                                                 }
                                             }
                                         },
                                         onDragCancel = {
-                                            scope.launch { tearAnim.animateTo(0f) }
+                                            scope.launch {
+                                                tearAnim.animateTo(0f)
+                                                cumulativeDragX = 0f
+                                                cumulativeDragY = 0f
+                                            }
                                         }
                                     ) { change, dragAmount ->
                                         change.consume()
+                                        cumulativeDragX += dragAmount.x
+                                        cumulativeDragY += dragAmount.y
                                         onCrinkle()
-                                        val next = (tearAnim.value + abs(dragAmount) / 360f).coerceIn(0f, 1f)
+                                        val stepDist = hypot(dragAmount.x, dragAmount.y)
+                                        val next = (tearAnim.value + stepDist / 340f).coerceIn(0f, 1f)
                                         scope.launch { tearAnim.snapTo(next) }
-                                        if (next >= 0.68f) {
+                                        if (next >= 0.65f) {
                                             commitTear()
                                         }
                                     }
                                 }
                             }
                     ) {
-                        // Top Foil Cap Gradient
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            satinTheme.sheenHighlight.copy(alpha = 0.28f),
-                                            satinTheme.baseColor.copy(alpha = 0.85f)
-                                        )
-                                    )
-                                )
-                        )
-
-                        // Tear Cue Badge
-                        Surface(
-                            color = MoonlightNight.copy(alpha = 0.86f),
-                            shape = RoundedCornerShape(999.dp),
-                            border = BorderStroke(1.dp, satinTheme.crestTint.copy(alpha = 0.78f)),
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .padding(top = 8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        if (tearProgress < 0.78f) {
+                            Surface(
+                                color = MoonlightNight.copy(alpha = (0.86f * (1f - tearProgress)).coerceAtLeast(0f)),
+                                shape = RoundedCornerShape(999.dp),
+                                border = BorderStroke(1.dp, satinTheme.crestTint.copy(alpha = 0.78f)),
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 18.dp)
+                                    .graphicsLayer {
+                                        translationX = tearGeometry.peelDirX * tearProgress * 78f
+                                        translationY = tearGeometry.peelDirY * tearProgress * 56f
+                                        rotationZ = tearGeometry.angleDeg * 0.35f
+                                        alpha = (1f - tearProgress * 1.25f).coerceIn(0f, 1f)
+                                    }
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.SwipeRight,
-                                    contentDescription = null,
-                                    tint = satinTheme.crestTint,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (packCount > 1) "SWIPE TOP TO RIP ${packCount}x" else "SWIPE TOP FOIL TO TEAR",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = satinTheme.crestTint
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SwipeRight,
+                                        contentDescription = null,
+                                        tint = satinTheme.crestTint,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (packCount > 1) "SWIPE ANY ANGLE TO RIP ${packCount}x" else "SWIPE ANY ANGLE TO TEAR",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = satinTheme.crestTint
+                                    )
+                                }
                             }
                         }
                     }
 
-                    // Dynamic Foil Tear Zip Line & Metallic Inner Foil Opening
+                    // 5. Angled Perforated Cut Line, Exposed Metallic Foil Opening & Directional Foil Shred Particles
                     val tearGoldColor = StudioGoldBright
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        val y = size.height * 0.235f
-                        val splitX = size.width * tearProgress
+                        val yL = size.height * tearGeometry.leftYRatio
+                        val yR = size.height * tearGeometry.rightYRatio
 
-                        // Perforation dashes along un-ripped portion
+                        fun pointAt(t: Float): Offset = Offset(
+                            x = size.width * t,
+                            y = yL + (yR - yL) * t
+                        )
+
+                        // Perforated dashed guide along remaining uncut portion
                         val dashCount = 18
-                        val step = size.width / dashCount
                         for (i in 0 until dashCount) {
-                            val startX = i * step + 4f
-                            val endX = (i + 0.65f) * step
-                            if (endX > splitX) {
+                            val t0 = i.toFloat() / dashCount.toFloat()
+                            val t1 = (i + 0.62f) / dashCount.toFloat()
+                            val isCut = if (tearGeometry.leftToRight) t1 <= tearProgress else (1f - t0) <= tearProgress
+                            if (!isCut) {
                                 drawLine(
-                                    color = satinTheme.sheenHighlight.copy(alpha = 0.72f),
-                                    start = Offset(startX.coerceAtLeast(splitX), y),
-                                    end = Offset(endX, y),
-                                    strokeWidth = 3f
+                                    color = satinTheme.sheenHighlight.copy(alpha = 0.70f),
+                                    start = pointAt(t0),
+                                    end = pointAt(t1),
+                                    strokeWidth = 2.6f,
+                                    cap = StrokeCap.Round
                                 )
                             }
                         }
 
-                        // Exposed metallic silver inner foil gap along ripped length
+                        // Metallic silver-gold inner foil seam & directional foil sparks along the active slice
                         if (tearProgress > 0.01f) {
+                            val cutStartT = if (tearGeometry.leftToRight) 0f else (1f - tearProgress)
+                            val cutEndT = if (tearGeometry.leftToRight) tearProgress else 1f
+                            val pStart = pointAt(cutStartT)
+                            val pEnd = pointAt(cutEndT)
+
+                            // Exposed metallic silver/gold seam
                             drawLine(
-                                brush = Brush.horizontalGradient(
-                                    listOf(
+                                brush = Brush.linearGradient(
+                                    colors = listOf(
                                         Color(0xFFE2E8F0),
                                         tearGoldColor,
                                         Color(0xFFF8FAFC)
-                                    )
+                                    ),
+                                    start = pStart,
+                                    end = pEnd
                                 ),
-                                start = Offset(0f, y),
-                                end = Offset(splitX, y),
-                                strokeWidth = 10f + tearProgress * 6f
+                                start = pStart,
+                                end = pEnd,
+                                strokeWidth = 8f + tearProgress * 7f,
+                                cap = StrokeCap.Round
                             )
+
+                            // Crisp bright blade glint at active tear tip
+                            val tip = if (tearGeometry.leftToRight) pEnd else pStart
+                            drawCircle(
+                                color = Color.White.copy(alpha = 0.92f),
+                                radius = 7f + tearProgress * 5f,
+                                center = tip
+                            )
+                            drawCircle(
+                                color = tearGoldColor.copy(alpha = 0.52f),
+                                radius = 15f + tearProgress * 9f,
+                                center = tip
+                            )
+
+                            // Directional metallic foil shred particles flying off the active cut point
+                            val angleRad = Math.toRadians(tearGeometry.angleDeg.toDouble())
+                            for (p in 0 until 7) {
+                                val spread = (p - 3) * 0.32
+                                val dist = (14f + p * 8f) * tearProgress
+                                val px = tip.x + tearGeometry.peelDirX * (cos(angleRad + spread) * dist).toFloat()
+                                val py = tip.y + tearGeometry.peelDirY * (abs(sin(angleRad + spread)) * dist + 10f).toFloat()
+                                drawCircle(
+                                    color = if (p % 2 == 0) tearGoldColor else satinTheme.sheenHighlight,
+                                    radius = (4.2f - p * 0.35f).coerceAtLeast(1.6f),
+                                    center = Offset(px, py),
+                                    alpha = (1f - tearProgress * 0.45f).coerceIn(0.25f, 1f)
+                                )
+                            }
                         }
                     }
                 }
