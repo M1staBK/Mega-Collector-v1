@@ -26,7 +26,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
@@ -67,9 +69,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.remote.AuthenticatedUser
@@ -78,6 +82,7 @@ import com.example.model.AchievementCatalog
 import com.example.model.CollectorHistoryEvent
 import com.example.model.CollectorHistoryType
 import com.example.model.CollectorPublicProfile
+import com.example.model.MlbbCollectionTier
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.ui.components.BadgeIconVector
@@ -85,6 +90,7 @@ import com.example.ui.components.CatalogSyncStatusCard
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.DiamondsPill
 import com.example.ui.components.FrostedGlassCard
+import com.example.ui.components.MlbbCollectionBadge
 import com.example.ui.components.MlbbDexCreditCard
 import com.example.ui.components.ProfileViewerDialog
 import com.example.ui.components.SettingsGearButton
@@ -123,6 +129,7 @@ fun ProfileScreen(
     val context = LocalContext.current
     var showEditAlias by remember { mutableStateOf(false) }
     var showSelfProfilePreview by remember { mutableStateOf(false) }
+    var showCollectionLadderDialog by remember { mutableStateOf(false) }
     var inspectedBadgeId by remember { mutableStateOf<String?>(null) }
     var inspectedHeaderBadgeId by remember { mutableStateOf<String?>(null) }
 
@@ -136,16 +143,10 @@ fun ProfileScreen(
         uiState.ownedCards.sumOf { it.prestigeScore }
     }
 
-    val collectorRank = remember(totalPrestige) {
-        when {
-            totalPrestige >= 15000 -> "Immortal Collector"
-            totalPrestige >= 7500 -> "Mythical Glory"
-            totalPrestige >= 3500 -> "Mythic"
-            totalPrestige >= 1500 -> "Legend"
-            totalPrestige >= 500 -> "Epic"
-            else -> "Warrior"
-        }
+    val collectionTier = remember(totalPrestige) {
+        MlbbCollectionTier.fromPrestige(totalPrestige)
     }
+    val collectorRank = collectionTier.title
 
     val pinnedBadges = remember(uiState.achievements) {
         uiState.achievements.filter { it.isPinned }.take(AchievementCatalog.MAX_PINNED_BADGES)
@@ -208,7 +209,8 @@ fun ProfileScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .testTag("profile_list"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -293,13 +295,11 @@ fun ProfileScreen(
                                     )
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.EmojiEvents,
-                                        contentDescription = null,
-                                        tint = palette.accentPrimary,
-                                        modifier = Modifier.size(16.dp)
+                                    MlbbCollectionBadge(
+                                        tier = collectionTier,
+                                        modifier = Modifier.size(22.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "$collectorRank • $totalPrestige Power",
                                         style = MaterialTheme.typography.labelLarge,
@@ -558,6 +558,239 @@ fun ProfileScreen(
                     accent = palette.accentPrimary,
                     modifier = Modifier.weight(1f)
                 )
+            }
+        }
+
+        // Official MLBB Collection Level Card (shows active badge only; tap to view all 8 obtainable badges)
+        item {
+            val nextTier = collectionTier.nextTier()
+            val tierSpan = ((nextTier?.minPower ?: totalPrestige) - collectionTier.minPower).coerceAtLeast(1)
+            val tierProgress = if (nextTier == null) {
+                1f
+            } else {
+                ((totalPrestige - collectionTier.minPower).toFloat() / tierSpan.toFloat()).coerceIn(0f, 1f)
+            }
+            FrostedGlassCard(
+                cornerRadius = 22.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(22.dp))
+                    .clickable {
+                        onButtonClickSfx()
+                        showCollectionLadderDialog = true
+                    }
+                    .testTag("collection_level_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "COLLECTION LEVEL",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = palette.ink
+                        )
+                        Surface(
+                            color = palette.frostSurface,
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, palette.border)
+                        ) {
+                            Text(
+                                text = "Lv.${collectionTier.levelNumber}/8",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = palette.accentPrimary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Surface(
+                            color = palette.frostSurface,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.8.dp, palette.accentPrimary),
+                            modifier = Modifier
+                                .size(70.dp)
+                                .testTag("collection_current_badge")
+                        ) {
+                            Box(
+                                modifier = Modifier.padding(8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                MlbbCollectionBadge(
+                                    tier = collectionTier,
+                                    dimmed = false,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = collectionTier.title,
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                color = palette.ink
+                            )
+                            Text(
+                                text = if (nextTier != null) {
+                                    "${nextTier.minPower - totalPrestige} Power to ${nextTier.title}"
+                                } else {
+                                    "Max Tier Unlocked: World Collector!"
+                                },
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                color = palette.muted
+                            )
+                            LinearProgressIndicator(
+                                progress = { tierProgress },
+                                color = palette.accentPrimary,
+                                trackColor = palette.frostSurface,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(7.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Tap to view all 8 obtainable badges",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = palette.accentPrimary
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "View all Collection Level badges",
+                            tint = palette.accentPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            if (showCollectionLadderDialog) {
+                Dialog(onDismissRequest = { showCollectionLadderDialog = false }) {
+                    FrostedGlassCard(
+                        cornerRadius = 24.dp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("collection_level_dialog")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "All Collection Badges",
+                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                        color = palette.ink
+                                    )
+                                    Text(
+                                        text = "Rarest (World) to Entry (Novice)",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                        color = palette.muted
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { showCollectionLadderDialog = false },
+                                    modifier = Modifier.testTag("collection_level_dialog_close")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Close collection badges dialog",
+                                        tint = palette.ink
+                                    )
+                                }
+                            }
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("collection_level_ladder"),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                MlbbCollectionTier.RAREST_LEFT_TO_RIGHT.chunked(4).forEach { rowTiers ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        rowTiers.forEach { tier ->
+                                            val isCurrent = tier == collectionTier
+                                            val isUnlocked = totalPrestige >= tier.minPower
+                                            Surface(
+                                                color = if (isCurrent) palette.frostSurface else palette.canvas,
+                                                shape = RoundedCornerShape(12.dp),
+                                                border = BorderStroke(
+                                                    width = if (isCurrent) 2.dp else 1.dp,
+                                                    color = if (isCurrent) palette.accentPrimary else palette.border
+                                                ),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .testTag("collection_tier_${tier.levelNumber}")
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier.size(46.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        MlbbCollectionBadge(
+                                                            tier = tier,
+                                                            dimmed = !isUnlocked,
+                                                            modifier = Modifier.fillMaxSize()
+                                                        )
+                                                    }
+                                                    Text(
+                                                        text = tier.title.removeSuffix(" Collector"),
+                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                            fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.Bold,
+                                                            fontSize = 10.sp
+                                                        ),
+                                                        color = if (isCurrent) palette.accentPrimary else palette.ink,
+                                                        textAlign = TextAlign.Center,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Text(
+                                                        text = if (isCurrent) "ACTIVE" else "${tier.minPower} PWR",
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                        color = if (isCurrent) palette.accentPrimary else palette.muted,
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

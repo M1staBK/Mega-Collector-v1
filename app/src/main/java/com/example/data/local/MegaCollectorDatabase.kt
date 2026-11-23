@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         OwnedCardEntity::class,
         TradeListingEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class MegaCollectorDatabase : RoomDatabase() {
@@ -32,6 +32,13 @@ abstract class MegaCollectorDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DELETE FROM owned_cards")
+                db.execSQL("DELETE FROM trade_listings")
+            }
+        }
+
         fun getInstance(context: Context): MegaCollectorDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -39,7 +46,7 @@ abstract class MegaCollectorDatabase : RoomDatabase() {
                     MegaCollectorDatabase::class.java,
                     "mega_collector_db"
                 )
-                    .addMigrations(MIGRATION_2_3)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }

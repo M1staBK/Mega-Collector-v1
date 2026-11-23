@@ -42,6 +42,9 @@ interface CollectorDao {
     @Insert
     suspend fun insertOwnedCard(card: OwnedCardEntity): Long
 
+    @Query("DELETE FROM owned_cards")
+    suspend fun clearOwnedCards()
+
     @Query("DELETE FROM owned_cards WHERE instanceId = :instanceId")
     suspend fun deleteOwnedCardById(instanceId: Long)
 
@@ -56,6 +59,9 @@ interface CollectorDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTradeListing(listing: TradeListingEntity): Long
+
+    @Query("DELETE FROM trade_listings")
+    suspend fun clearTradeListings()
 
     @Query("DELETE FROM trade_listings WHERE id = :listingId")
     suspend fun deleteTradeListingById(listingId: Long)

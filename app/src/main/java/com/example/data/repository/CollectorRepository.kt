@@ -70,6 +70,17 @@ class CollectorRepository(
         DailyRewardTier(7, coinAmount = 350, bonusFreePacks = 2, bonusDiamonds = 8)
     )
 
+    suspend fun applyFreshStartIfNeeded(): Boolean {
+        val didReset = prefs.applyFreshStartResetIfNeeded()
+        if (didReset) {
+            withContext(Dispatchers.IO) {
+                dao.clearTradeListings()
+                dao.clearOwnedCards()
+            }
+        }
+        return didReset
+    }
+
     suspend fun syncQuestPeriodsOnLaunch() {
         prefs.syncQuestPeriodsIfNeeded(currentLocalEpochDay(), currentLocalWeekKey())
     }

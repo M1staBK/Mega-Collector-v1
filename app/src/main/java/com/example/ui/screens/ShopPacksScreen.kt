@@ -77,6 +77,8 @@ import com.example.model.SkinRarity
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.DiamondsPill
 import com.example.ui.components.FrostedGlassCard
+import com.example.model.MlbbCollectionTier
+import com.example.ui.components.MlbbCollectionBadge
 import com.example.ui.components.MlbbDexCreditCard
 import com.example.ui.components.SettingsGearButton
 import com.example.ui.theme.CollectorTheme
@@ -129,19 +131,23 @@ fun ShopPacksScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.weight(1f)
                         ) {
+                            val collectionTier = remember(uiState.ownedCards) {
+                                MlbbCollectionTier.fromPrestige(uiState.ownedCards.sumOf { it.prestigeScore })
+                            }
                             Surface(
                                 color = palette.frostSurface,
                                 shape = RoundedCornerShape(14.dp),
                                 border = BorderStroke(1.2.dp, palette.accentPrimary.copy(alpha = 0.55f)),
                                 shadowElevation = 2.dp,
-                                modifier = Modifier.size(42.dp)
+                                modifier = Modifier.size(44.dp)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.WorkspacePremium,
-                                        contentDescription = null,
-                                        tint = palette.accentPrimary,
-                                        modifier = Modifier.size(24.dp)
+                                Box(
+                                    modifier = Modifier.padding(5.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    MlbbCollectionBadge(
+                                        tier = collectionTier,
+                                        modifier = Modifier.fillMaxSize()
                                     )
                                 }
                             }

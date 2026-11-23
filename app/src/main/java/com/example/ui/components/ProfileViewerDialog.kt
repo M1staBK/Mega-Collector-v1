@@ -50,6 +50,7 @@ import coil.compose.AsyncImage
 import com.example.model.AchievementBadgeDefinition
 import com.example.model.AchievementCatalog
 import com.example.model.CollectorPublicProfile
+import com.example.model.MlbbCollectionTier
 import com.example.ui.theme.CollectorTheme
 
 @Composable
@@ -120,26 +121,27 @@ fun ProfileViewerDialog(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            val resolvedTier = MlbbCollectionTier.RAREST_LEFT_TO_RIGHT
+                                .firstOrNull { it.title.equals(profile.rankTitle, ignoreCase = true) }
+                                ?: MlbbCollectionTier.fromPrestige(profile.prestigeScore)
                             Surface(
-                                color = profile.avatarColor.copy(alpha = 0.15f),
+                                color = palette.frostSurface,
                                 shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, profile.avatarColor.copy(alpha = 0.55f))
+                                border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.55f))
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.WorkspacePremium,
-                                        contentDescription = null,
-                                        tint = profile.avatarColor,
-                                        modifier = Modifier.size(13.dp)
+                                    MlbbCollectionBadge(
+                                        tier = resolvedTier,
+                                        modifier = Modifier.size(16.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     Text(
                                         text = profile.rankTitle,
                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = profile.avatarColor
+                                        color = palette.accentPrimary
                                     )
                                 }
                             }

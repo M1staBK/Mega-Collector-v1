@@ -121,8 +121,27 @@ import com.example.ui.theme.StudioGoldBright
 import com.example.ui.theme.StudioGoldText
 import com.example.ui.theme.rememberSafeHapticPerformer
 import com.example.ui.viewmodel.MegaCollectorUiState
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.core.graphics.drawable.toBitmap
+import coil.Coil
+import coil.request.SuccessResult
+import com.example.model.MlbbCollectionTier
+import com.example.ui.components.MlbbChestStyle
+import com.example.ui.components.MlbbCollectionBadge
+import com.example.ui.components.MlbbTreasureChest
+import com.example.ui.components.buildMlbbSquareImageRequest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
@@ -328,7 +347,7 @@ fun PlayArcadeScreen(
     }
 }
 
-private data class WheelSlice(
+internal data class WheelSlice(
     val shortLabel: String,
     val rewardTitle: String,
     val coins: Int,
@@ -338,15 +357,19 @@ private data class WheelSlice(
     val weight: Int
 )
 
-private val COLLECTOR_WHEEL_SLICES = listOf(
-    WheelSlice("20 🪙", "+20 Coins", coins = 20, diamonds = 0, freePacks = 0, sliceColor = Color(0xFF334155), weight = 24),
-    WheelSlice("1 💎", "+1 Diamond", coins = 0, diamonds = 1, freePacks = 0, sliceColor = Color(0xFF0EA5E9), weight = 20),
-    WheelSlice("40 🪙", "+40 Coins", coins = 40, diamonds = 0, freePacks = 0, sliceColor = Color(0xFFD97706), weight = 18),
-    WheelSlice("3 💎", "+3 Diamonds", coins = 0, diamonds = 3, freePacks = 0, sliceColor = Color(0xFF6366F1), weight = 12),
-    WheelSlice("75 🪙", "+75 Coins", coins = 75, diamonds = 0, freePacks = 0, sliceColor = Color(0xFF10B981), weight = 10),
-    WheelSlice("PACK!", "+1 Free Pack", coins = 0, diamonds = 0, freePacks = 1, sliceColor = Color(0xFFE54D67), weight = 6),
-    WheelSlice("30 🪙", "+30 Coins", coins = 30, diamonds = 0, freePacks = 0, sliceColor = Color(0xFF475569), weight = 18),
-    WheelSlice("5 💎", "+5 Diamonds", coins = 0, diamonds = 5, freePacks = 0, sliceColor = Color(0xFF8B5CF6), weight = 6)
+internal val COLLECTOR_WHEEL_SLICES = listOf(
+    WheelSlice("15 🪙", "+15 Coins", coins = 15, diamonds = 0, freePacks = 0, sliceColor = Color(0xFF334155), weight = 22),
+    WheelSlice("1 💎", "+1 Diamond", coins = 0, diamonds = 1, freePacks = 0, sliceColor = Color(0xFF0EA5E9), weight = 18),
+    WheelSlice("25 🪙", "+25 Coins", coins = 25, diamonds = 0, freePacks = 0, sliceColor = Color(0xFFD97706), weight = 18),
+    WheelSlice("2 💎", "+2 Diamonds", coins = 0, diamonds = 2, freePacks = 0, sliceColor = Color(0xFF6366F1), weight = 14),
+    WheelSlice("40 🪙", "+40 Coins", coins = 40, diamonds = 0, freePacks = 0, sliceColor = Color(0xFF10B981), weight = 15),
+    WheelSlice("PACK!", "+1 Free Pack", coins = 0, diamonds = 0, freePacks = 1, sliceColor = Color(0xFFE54D67), weight = 5),
+    WheelSlice("20 🪙", "+20 Coins", coins = 20, diamonds = 0, freePacks = 0, sliceColor = Color(0xFF475569), weight = 20),
+    WheelSlice("3 💎", "+3 Diamonds", coins = 0, diamonds = 3, freePacks = 0, sliceColor = Color(0xFF8B5CF6), weight = 10),
+    WheelSlice("60 🪙", "+60 Coins", coins = 60, diamonds = 0, freePacks = 0, sliceColor = Color(0xFF059669), weight = 10),
+    WheelSlice("1 💎", "+1 Diamond", coins = 0, diamonds = 1, freePacks = 0, sliceColor = Color(0xFF0284C7), weight = 15),
+    WheelSlice("90 🪙", "+90 Coins", coins = 90, diamonds = 0, freePacks = 0, sliceColor = Color(0xFFB45309), weight = 5),
+    WheelSlice("5 💎", "+5 Diamonds", coins = 0, diamonds = 5, freePacks = 0, sliceColor = Color(0xFF7C3AED), weight = 4)
 )
 
 @Composable
@@ -474,7 +497,9 @@ private fun HourlyPrizeWheelSection(
                     textMeasurer = textMeasurer,
                     rimColor = StudioGold,
                     hubColor = palette.cardSurface,
-                    modifier = Modifier.size(214.dp)
+                    modifier = Modifier
+                        .size(214.dp)
+                        .testTag("prize_wheel_canvas")
                 )
 
                 // Top stationary triangle pointer
@@ -564,12 +589,12 @@ private fun PrizeWheelCanvas(
                     useCenter = true,
                     topLeft = Offset(center.x - radius, center.y - radius),
                     size = Size(radius * 2f, radius * 2f),
-                    style = Stroke(width = 2.dp.toPx())
+                    style = Stroke(width = 1.6.dp.toPx())
                 )
 
                 val midAngleDeg = startAngle + sweep / 2f
                 val rad = Math.toRadians(midAngleDeg.toDouble())
-                val textDist = radius * 0.63f
+                val textDist = radius * 0.67f
                 val tx = center.x + (textDist * cos(rad)).toFloat()
                 val ty = center.y + (textDist * sin(rad)).toFloat()
 
@@ -577,7 +602,7 @@ private fun PrizeWheelCanvas(
                     text = slice.shortLabel,
                     style = TextStyle(
                         color = Color.White,
-                        fontSize = 11.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
                 )
@@ -1458,9 +1483,15 @@ private fun MysteryVaultPickSection(
 ) {
     val palette = CollectorTheme.colors
     val performHaptic = rememberSafeHapticPerformer()
+    var roundNonce by remember { mutableIntStateOf(Random.nextInt(100_000)) }
     var roundSeed by remember { mutableIntStateOf(0) }
-    val chests = remember(roundSeed) { MYSTERY_CHEST_POOL.shuffled(Random(roundSeed + 17)) }
-    var pickedIndex by remember(roundSeed) { mutableIntStateOf(-1) }
+    val chests = remember(roundNonce, roundSeed) {
+        MYSTERY_CHEST_POOL.shuffled(Random(roundNonce + roundSeed * 43 + 17))
+    }
+    val chestStyles = remember(roundNonce, roundSeed) {
+        MlbbChestStyle.entries.shuffled(Random(roundNonce + roundSeed * 131 + 29)).take(5)
+    }
+    var pickedIndex by remember(roundNonce, roundSeed) { mutableIntStateOf(-1) }
     val hasCharges = status.charges > 0
     val revealed = pickedIndex >= 0
 
@@ -1494,9 +1525,9 @@ private fun MysteryVaultPickSection(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = if (revealed) {
-                    "Opened chest #${pickedIndex + 1} for ${chests[pickedIndex].fullLabel}!"
+                    "Opened chest #${pickedIndex + 1} for ${chests[pickedIndex].fullLabel}! The other 4 stay sealed."
                 } else {
-                    "Pick 1 of 5 sealed vault chests to uncover Coins, Diamonds, or a Free Pack!"
+                    "Pick 1 of 5 sealed MLBB chests — unpicked rewards stay hidden in suspense!"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = palette.muted
@@ -1510,6 +1541,12 @@ private fun MysteryVaultPickSection(
             ) {
                 chests.forEachIndexed { idx, prize ->
                     val isPicked = pickedIndex == idx
+                    val chestStyle = chestStyles[idx]
+                    val labelText = when {
+                        isPicked -> prize.shortLabel
+                        revealed -> "???"
+                        else -> "#${idx + 1}"
+                    }
                     Surface(
                         color = when {
                             isPicked -> palette.buttonPrimary
@@ -1523,13 +1560,13 @@ private fun MysteryVaultPickSection(
                             width = if (isPicked) 2.dp else 1.2.dp,
                             color = when {
                                 isPicked -> palette.accentPrimary
-                                hasCharges && !revealed -> palette.accentPrimary.copy(alpha = 0.45f)
+                                hasCharges && !revealed -> palette.accentPrimary.copy(alpha = 0.55f)
                                 else -> palette.border
                             }
                         ),
                         modifier = Modifier
                             .weight(1f)
-                            .height(82.dp)
+                            .height(104.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .clickable(enabled = hasCharges && !revealed) {
                                 performHaptic(HapticFeedbackType.LongPress)
@@ -1541,40 +1578,30 @@ private fun MysteryVaultPickSection(
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(4.dp),
+                                .padding(horizontal = 4.dp, vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                            verticalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                imageVector = if (revealed) {
-                                    when {
-                                        prize.freePacks > 0 -> Icons.Default.CardGiftcard
-                                        prize.diamonds > 0 -> Icons.Default.Diamond
-                                        else -> Icons.Default.MonetizationOn
-                                    }
-                                } else {
-                                    Icons.Default.HelpOutline
-                                },
-                                contentDescription = if (revealed) prize.fullLabel else "Mystery Chest ${idx + 1}",
-                                tint = when {
-                                    isPicked -> Color.White
-                                    revealed -> palette.accentPrimary
-                                    hasCharges -> palette.accentPrimary
-                                    else -> palette.muted
-                                },
-                                modifier = Modifier.size(24.dp)
+                            MlbbTreasureChest(
+                                style = chestStyle,
+                                opened = isPicked,
+                                highlighted = isPicked,
+                                dimmed = revealed && !isPicked,
+                                accentColor = if (isPicked) Color(0xFFFFDE59) else palette.skyAccent,
+                                contentDescription = if (isPicked) prize.fullLabel else "Sealed MLBB Chest ${idx + 1}",
+                                modifier = Modifier.size(54.dp)
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = if (revealed) prize.shortLabel else "#${idx + 1}",
+                                text = labelText,
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
                                 color = when {
                                     isPicked -> Color.White
-                                    revealed -> palette.ink
+                                    revealed -> palette.muted
                                     hasCharges -> palette.ink
                                     else -> palette.muted
                                 },
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -1629,15 +1656,21 @@ private fun MemoryBlitzSection(
     onButtonClickSfx: () -> Unit
 ) {
     val palette = CollectorTheme.colors
+    val context = LocalContext.current
     val performHaptic = rememberSafeHapticPerformer()
     var gameSeed by remember { mutableIntStateOf(0) }
     val hasCharges = status.charges > 0
 
     val deck = remember(gameSeed, catalog.size) {
-        val chosenSkins = if (catalog.size >= 3) {
-            catalog.shuffled(Random(gameSeed + 101)).take(3)
-        } else {
-            emptyList()
+        val imageSkins = catalog.filter { it.imageUrl.isNotBlank() }
+        val chosenSkins = when {
+            gameSeed == 0 && imageSkins.size >= 3 ->
+                imageSkins.take(18).shuffled(Random(101)).take(3)
+            imageSkins.size >= 3 ->
+                imageSkins.shuffled(Random(gameSeed + 101)).take(3)
+            catalog.size >= 3 ->
+                catalog.shuffled(Random(gameSeed + 101)).take(3)
+            else -> emptyList()
         }
         val pairs = if (chosenSkins.size == 3) {
             chosenSkins.mapIndexed { idx, skin ->
@@ -1645,9 +1678,9 @@ private fun MemoryBlitzSection(
             }
         } else {
             listOf(
-                Triple("legend", "Legend", "") to 0,
-                Triple("collector", "Collector", "") to 1,
-                Triple("prism", "Prism", "") to 2
+                Triple("world", "World", "") to 0,
+                Triple("mega", "Mega", "") to 1,
+                Triple("expert", "Expert", "") to 2
             )
         }
         pairs.flatMapIndexed { pIdx, (info, iconIdx) ->
@@ -1656,6 +1689,31 @@ private fun MemoryBlitzSection(
                 MemoryTileItem(pIdx * 2 + 1, info.first, info.second, info.third, iconIdx)
             )
         }.shuffled(Random(gameSeed + 404))
+    }
+
+    val decodedBitmaps = remember(gameSeed, deck) { mutableStateMapOf<String, ImageBitmap>() }
+    LaunchedEffect(deck) {
+        val urls = deck.map { it.imageUrl }.filter { it.isNotBlank() }.distinct()
+        if (urls.isNotEmpty()) {
+            val loader = Coil.imageLoader(context)
+            withContext(Dispatchers.IO) {
+                coroutineScope {
+                    urls.map { url ->
+                        async {
+                            if (decodedBitmaps.containsKey(url)) return@async
+                            val req = buildMlbbSquareImageRequest(context, url, crossfadeMs = 0)
+                            val result = runCatching { loader.execute(req) }.getOrNull()
+                            if (result is SuccessResult) {
+                                val bmp = runCatching { result.drawable.toBitmap().asImageBitmap() }.getOrNull()
+                                if (bmp != null) {
+                                    decodedBitmaps[url] = bmp
+                                }
+                            }
+                        }
+                    }.awaitAll()
+                }
+            }
+        }
     }
 
     var matchedKeys by remember(gameSeed) { mutableStateOf<Set<String>>(emptySet()) }
@@ -1678,7 +1736,17 @@ private fun MemoryBlitzSection(
                     onCompleteMatch(moves, coins, diamonds)
                 }
             } else {
-                delay(650L)
+                // Ensure both flipped hero cards are rendered cleanly before starting the peek window
+                var waited = 0L
+                while (waited < 450L && (
+                    (a.imageUrl.isNotBlank() && !decodedBitmaps.containsKey(a.imageUrl)) ||
+                        (b.imageUrl.isNotBlank() && !decodedBitmaps.containsKey(b.imageUrl))
+                    )
+                ) {
+                    delay(45L)
+                    waited += 45L
+                }
+                delay(700L)
                 flippedIndices = emptyList()
             }
         }
@@ -1724,6 +1792,12 @@ private fun MemoryBlitzSection(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            val fallbackTiers = listOf(
+                MlbbCollectionTier.WORLD,
+                MlbbCollectionTier.MEGA,
+                MlbbCollectionTier.EXPERT
+            )
+
             for (row in 0 until 2) {
                 Row(
                     modifier = Modifier
@@ -1736,22 +1810,18 @@ private fun MemoryBlitzSection(
                         val tile = deck[idx]
                         val isMatched = tile.pairKey in matchedKeys
                         val isFaceUp = isMatched || idx in flippedIndices
-                        val fallbackIcons = listOf(
-                            Icons.Default.WorkspacePremium,
-                            Icons.Default.AutoAwesome,
-                            Icons.Default.Style
-                        )
+                        val preloadedBmp = decodedBitmaps[tile.imageUrl]
 
                         Surface(
                             color = when {
                                 isMatched -> palette.frostSurface
-                                isFaceUp -> palette.cardSurface
+                                isFaceUp -> palette.frostSurface
                                 hasCharges -> palette.buttonPrimary
                                 else -> palette.abyss
                             },
                             shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(
-                                width = if (isMatched || isFaceUp) 1.5.dp else 1.dp,
+                                width = if (isMatched || isFaceUp) 1.6.dp else 1.dp,
                                 color = when {
                                     isMatched -> palette.accentPrimary
                                     isFaceUp -> palette.skyAccent
@@ -1779,35 +1849,96 @@ private fun MemoryBlitzSection(
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (isFaceUp) {
-                                    if (tile.imageUrl.isNotBlank()) {
-                                        SubcomposeAsyncImage(
-                                            model = rememberMlbbSquareImageRequest(tile.imageUrl),
-                                            contentDescription = tile.title,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    } else {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Icon(
-                                                imageVector = fallbackIcons[tile.fallbackIconIdx % fallbackIcons.size],
+                                    when {
+                                        preloadedBmp != null -> {
+                                            Image(
+                                                bitmap = preloadedBmp,
                                                 contentDescription = tile.title,
-                                                tint = palette.accentPrimary,
-                                                modifier = Modifier.size(26.dp)
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
                                             )
-                                            Text(
-                                                text = tile.title,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = palette.ink,
-                                                maxLines = 1
+                                        }
+                                        tile.imageUrl.isNotBlank() -> {
+                                            SubcomposeAsyncImage(
+                                                model = rememberMlbbSquareImageRequest(tile.imageUrl, crossfadeMs = 0),
+                                                contentDescription = tile.title,
+                                                contentScale = ContentScale.Crop,
+                                                loading = {
+                                                    Column(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(palette.frostSurface)
+                                                            .padding(6.dp),
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center
+                                                    ) {
+                                                        MlbbCollectionBadge(
+                                                            tier = fallbackTiers[tile.fallbackIconIdx % fallbackTiers.size],
+                                                            modifier = Modifier.size(32.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Text(
+                                                            text = tile.title,
+                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                            color = palette.ink,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            textAlign = TextAlign.Center
+                                                        )
+                                                    }
+                                                },
+                                                error = {
+                                                    Column(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(palette.frostSurface)
+                                                            .padding(6.dp),
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center
+                                                    ) {
+                                                        MlbbCollectionBadge(
+                                                            tier = fallbackTiers[tile.fallbackIconIdx % fallbackTiers.size],
+                                                            modifier = Modifier.size(32.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Text(
+                                                            text = tile.title,
+                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                            color = palette.ink,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            textAlign = TextAlign.Center
+                                                        )
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxSize()
                                             )
+                                        }
+                                        else -> {
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier.padding(6.dp)
+                                            ) {
+                                                MlbbCollectionBadge(
+                                                    tier = fallbackTiers[tile.fallbackIconIdx % fallbackTiers.size],
+                                                    modifier = Modifier.size(34.dp)
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = tile.title,
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = palette.ink,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
                                         }
                                     }
                                 } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Stars,
-                                        contentDescription = "Hidden memory card",
-                                        tint = if (hasCharges) Color.White.copy(alpha = 0.90f) else palette.muted,
-                                        modifier = Modifier.size(26.dp)
+                                    MlbbCollectionBadge(
+                                        tier = MlbbCollectionTier.EXPERT,
+                                        dimmed = !hasCharges,
+                                        modifier = Modifier.size(34.dp)
                                     )
                                 }
                             }

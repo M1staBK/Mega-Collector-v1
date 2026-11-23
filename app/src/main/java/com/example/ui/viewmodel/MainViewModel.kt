@@ -25,6 +25,7 @@ import com.example.model.CollectorPublicProfile
 import com.example.model.DailyRewardTier
 import com.example.model.DecodedTradeSlip
 import com.example.model.DiamondExchangeOption
+import com.example.model.MlbbCollectionTier
 import com.example.model.OwnedCard
 import com.example.model.P2PTradeListing
 import com.example.model.PackBundleOption
@@ -34,9 +35,14 @@ import com.example.model.QuizQuestionBank
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.TradeListing
+import com.example.ui.components.buildMlbbCardImageRequest
+import com.example.ui.components.buildMlbbSquareImageRequest
 import com.example.ui.theme.ThemeAccentOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,8 +54,11 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicInteger
 
 sealed interface CatalogSyncStatus {
     data object Idle : CatalogSyncStatus
@@ -110,6 +119,7 @@ data class MegaCollectorUiState(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val db = MegaCollectorDatabase.getInstance(application)
     private val prefs = PlayerPreferencesStore(application)
+    private val initialBootTheme = prefs.readBootThemeSync()
     val repository = CollectorRepository(db.collectorDao(), prefs)
     val soundEngine = PackSoundEngine(application)
     private val firestoreService = FirestoreCollectorService(application)
@@ -246,6 +256,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000L),
         initialValue = MegaCollectorUiState(
+            wallet = PlayerWalletState(
+                themeAccentId = initialBootTheme.themeAccentId,
+                darkModeEnabled = initialBootTheme.darkModeEnabled,
+                vibrationEnabled = initialBootTheme.vibrationEnabled,
+                soundMuted = initialBootTheme.soundMuted
+            ),
             isPreloading = !isRobolectricEnv(),
             preloadProgress = if (isRobolectricEnv()) 1f else 0.08f
         )
@@ -259,14 +275,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun runStartupPreload() {
         val ctx = getApplication<Application>()
-        _preloadProgress.value = 0.14f
+        _preloadProgress.value = 0.12f
+        val didReset = repository.applyFreshStartIfNeeded()
+        if (didReset) {
+            syncCloudProfileNow()
+        }
         repository.syncQuestPeriodsOnLaunch()
         val count = db.collectorDao().getCatalogCount()
         val wallet = repository.walletFlow.first()
         soundEngine.setMuted(wallet.soundMuted)
-        _preloadProgress.value = 0.28f
+        _preloadProgress.value = 0.24f
 
-        // Decode bundled artwork drawables into memory/decoder caches cleanly off the main thread
+        // Decode bundled artwork drawables into memory caches off the main thread
         withContext(Dispatchers.IO) {
             val drawables = listOf(
                 R.drawable.img_pack_mythic,
@@ -278,7 +298,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching {
                     BitmapFactory.decodeResource(ctx.resources, resId, opts)?.recycle()
                 }
-                _preloadProgress.value = 0.28f + 0.18f * ((idx + 1).toFloat() / drawables.size)
+                _preloadProgress.value = 0.24f + 0.14f * ((idx + 1).toFloat() / drawables.size)
             }
         }
 
@@ -291,13 +311,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         if (within24h) {
             _syncStatus.value = CatalogSyncStatus.Synced(count)
+        } else if (!isRobolectricEnv()) {
+            _syncStatus.value = CatalogSyncStatus.Syncing(0, "Connecting to mlbbdex.com...")
+            repository.syncSkinsFromApi { synced, stage ->
+                _syncStatus.value = CatalogSyncStatus.Syncing(synced, stage)
+            }
+                .onSuccess { syncedCount ->
+                    _syncStatus.value = CatalogSyncStatus.Synced(syncedCount)
+                }
+                .onFailure { err ->
+                    _syncStatus.value = CatalogSyncStatus.Error(
+                        err.localizedMessage ?: "Could not reach mlbbdex.com/api/v1/skins/"
+                    )
+                }
         } else {
             syncCatalog()
         }
+        _preloadProgress.value = 0.45f
 
-        // Pre-warm Coil cache for owned & starter catalog art inside a strict bounded timeout
+        // Concrete parallel Coil cache pre-warming with exact card & square transform keys
         val ownedUrls = db.collectorDao().getAllOwnedOnce().map { it.imageUrl }
-        val catalogUrls = db.collectorDao().getAllCatalogOnce().take(18).map { it.imageUrl }
+        val catalogUrls = db.collectorDao().getAllCatalogOnce()
+            .asSequence()
+            .map { it.imageUrl }
+            .filter { it.isNotBlank() }
+            .take(18)
+            .toList()
         val preloadUrls = (ownedUrls + catalogUrls)
             .asSequence()
             .filter { it.isNotBlank() }
@@ -307,36 +346,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         if (!isRobolectricEnv() && preloadUrls.isNotEmpty()) {
             val loader = Coil.imageLoader(ctx)
-            withTimeoutOrNull(1400L) {
-                preloadUrls.forEachIndexed { idx, url ->
-                    val req = ImageRequest.Builder(ctx)
-                        .data(url)
-                        .size(600, 600)
-                        .diskCachePolicy(CachePolicy.ENABLED)
-                        .memoryCachePolicy(CachePolicy.ENABLED)
-                        .build()
-                    runCatching { loader.execute(req) }
-                    _preloadProgress.value = (0.48f + 0.44f * ((idx + 1).toFloat() / preloadUrls.size)).coerceAtMost(0.94f)
+            val completed = AtomicInteger(0)
+            val total = preloadUrls.size
+            val semaphore = Semaphore(6)
+            withTimeoutOrNull(4200L) {
+                coroutineScope {
+                    preloadUrls.map { url ->
+                        async(Dispatchers.IO) {
+                            semaphore.withPermit {
+                                runCatching {
+                                    loader.execute(buildMlbbSquareImageRequest(ctx, url, crossfadeMs = 0))
+                                }
+                                runCatching {
+                                    loader.execute(buildMlbbCardImageRequest(ctx, url, crossfadeMs = 0))
+                                }
+                                val done = completed.incrementAndGet()
+                                _preloadProgress.value =
+                                    (0.45f + 0.48f * (done.toFloat() / total.coerceAtLeast(1)))
+                                        .coerceAtMost(0.95f)
+                            }
+                        }
+                    }.awaitAll()
                 }
             }
         }
 
-        // Finish smooth progress fill so the bar always feels deliberate and polished
+        // Smooth finish of the loading progress bar before revealing studio
         if (!isRobolectricEnv()) {
-            val steps = listOf(0.86f, 0.94f, 1.0f)
+            val steps = listOf(0.88f, 0.95f, 1.0f)
             for (target in steps) {
                 if (_preloadProgress.value < target) {
                     _preloadProgress.value = target
-                    delay(75L)
+                    delay(65L)
                 }
             }
-            delay(110L)
+            delay(90L)
         } else {
             _preloadProgress.value = 1f
         }
         _isPreloading.value = false
 
-        // Continue silent background warming for additional owned cards
+        // Continue silent background warming for additional owned/catalog cards
         warmImageUrls(ownedUrls.drop(18))
     }
 
@@ -412,12 +462,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .distinct()
             .take(24)
             .forEach { url ->
-                val req = ImageRequest.Builder(ctx)
-                    .data(url)
-                    .size(920, 920)
-                    .diskCachePolicy(CachePolicy.ENABLED)
-                    .build()
-                loader.enqueue(req)
+                loader.enqueue(buildMlbbSquareImageRequest(ctx, url, crossfadeMs = 0))
+                loader.enqueue(buildMlbbCardImageRequest(ctx, url, crossfadeMs = 0))
             }
     }
 
@@ -427,14 +473,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val wallet = repository.walletFlow.first()
             val owned = db.collectorDao().getAllOwnedOnce().map { it.toDomain() }
             val prestige = owned.sumOf { it.prestigeScore }
-            val rank = when {
-                prestige >= 15000 -> "Immortal Collector"
-                prestige >= 7500 -> "Mythical Glory"
-                prestige >= 3500 -> "Mythic"
-                prestige >= 1500 -> "Legend"
-                prestige >= 500 -> "Epic"
-                else -> "Warrior"
-            }
+            val rank = MlbbCollectionTier.fromPrestige(prestige).title
             val pinned = AchievementCatalog.evaluate(wallet, owned)
                 .filter { it.isPinned }
                 .map { it.definition.id }

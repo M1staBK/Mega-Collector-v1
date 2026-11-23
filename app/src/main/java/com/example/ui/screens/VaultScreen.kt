@@ -161,24 +161,6 @@ fun VaultScreen(
                         )
                     )
             ) {
-                // Translucent Orb Watermark on right matching screenshot
-                Canvas(modifier = Modifier.matchParentSize()) {
-                    val c = Offset(size.width * 0.88f, size.height * 0.62f)
-                    val r = size.height * 0.44f
-                    drawCircle(
-                        color = palette.accentPrimary.copy(alpha = if (palette.isDark) 0.14f else 0.11f),
-                        radius = r,
-                        center = c,
-                        style = Stroke(width = 3.dp.toPx())
-                    )
-                    drawCircle(
-                        color = palette.accentPrimary.copy(alpha = if (palette.isDark) 0.12f else 0.09f),
-                        radius = r * 0.34f,
-                        center = c,
-                        style = Stroke(width = 2.5.dp.toPx())
-                    )
-                }
-
                 Icon(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,

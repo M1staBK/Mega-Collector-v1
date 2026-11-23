@@ -27,6 +27,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -134,15 +137,18 @@ private enum class VaultSubTab(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(
-                android.graphics.Color.TRANSPARENT,
-                android.graphics.Color.TRANSPARENT
-            ),
-            navigationBarStyle = SystemBarStyle.light(
+        val initialBootTheme = com.example.data.local.PlayerPreferencesStore(applicationContext).readBootThemeSync()
+        val initialBarStyle = if (initialBootTheme.darkModeEnabled) {
+            SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(
                 android.graphics.Color.TRANSPARENT,
                 android.graphics.Color.TRANSPARENT
             )
+        }
+        enableEdgeToEdge(
+            statusBarStyle = initialBarStyle,
+            navigationBarStyle = initialBarStyle
         )
         setContent {
             MegaCollectorRoot(
@@ -243,12 +249,26 @@ fun MegaCollectorApp(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    var activeTab by rememberSaveable { mutableStateOf(CollectorTab.PACKS) }
-    var vaultSubTab by rememberSaveable { mutableStateOf(VaultSubTab.COLLECTION) }
+    val mainPagerState = rememberPagerState(
+        initialPage = CollectorTab.PACKS.ordinal,
+        pageCount = { CollectorTab.entries.size }
+    )
+    val vaultPagerState = rememberPagerState(
+        initialPage = VaultSubTab.COLLECTION.ordinal,
+        pageCount = { VaultSubTab.entries.size }
+    )
+    val activeTab = CollectorTab.entries[mainPagerState.currentPage]
     var inspectingCardId by rememberSaveable { mutableStateOf<Long?>(null) }
     var preselectedTradeCard by remember { mutableStateOf<OwnedCard?>(null) }
     val activeAccent = remember(uiState.wallet.themeAccentId) {
         ThemeAccentOption.fromId(uiState.wallet.themeAccentId)
+    }
+
+    fun navigateToTab(tab: CollectorTab, subTab: VaultSubTab? = null) {
+        if (subTab != null) {
+            scope.launch { vaultPagerState.animateScrollToPage(subTab.ordinal) }
+        }
+        scope.launch { mainPagerState.animateScrollToPage(tab.ordinal) }
     }
 
     val claimableQuestCount = remember(uiState.quests) {
@@ -327,7 +347,7 @@ fun MegaCollectorApp(
                                                 selected = selected,
                                                 onClick = {
                                                     viewModel.playClick()
-                                                    activeTab = tab
+                                                    navigateToTab(tab)
                                                 },
                                                 icon = {
                                                     BadgedBox(
@@ -387,7 +407,7 @@ fun MegaCollectorApp(
                                             selected = selected,
                                             onClick = {
                                                 viewModel.playClick()
-                                                activeTab = tab
+                                                navigateToTab(tab)
                                             },
                                             icon = {
                                                 Icon(
@@ -409,8 +429,15 @@ fun MegaCollectorApp(
                                 }
                             }
 
-                            Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                                when (activeTab) {
+                            HorizontalPager(
+                                state = mainPagerState,
+                                beyondViewportPageCount = 0,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxSize()
+                                    .testTag("main_tab_pager")
+                            ) { page ->
+                                when (CollectorTab.entries[page]) {
                                     CollectorTab.PLAY -> PlayArcadeScreen(
                                         uiState = uiState,
                                         onClaimScratcherPrize = viewModel::claimScratcherPrize,
@@ -430,8 +457,7 @@ fun MegaCollectorApp(
                                         uiState = uiState,
                                         onClaimQuest = viewModel::claimQuest,
                                         onGoToBinder = {
-                                            activeTab = CollectorTab.VAULT
-                                            vaultSubTab = VaultSubTab.COLLECTION
+                                            navigateToTab(CollectorTab.VAULT, VaultSubTab.COLLECTION)
                                         },
                                         onOpenSettings = {},
                                         onButtonClickSfx = viewModel::playClick,
@@ -448,11 +474,10 @@ fun MegaCollectorApp(
                                         },
                                         onOpenPackBundle = viewModel::openPackBundle,
                                         onExchangeDiamondsForCoins = viewModel::exchangeDiamondsForCoins,
-                                        onGoToArcade = { activeTab = CollectorTab.PLAY },
-                                        onGoToMissions = { activeTab = CollectorTab.QUESTS },
+                                        onGoToArcade = { navigateToTab(CollectorTab.PLAY) },
+                                        onGoToMissions = { navigateToTab(CollectorTab.QUESTS) },
                                         onGoToBinder = {
-                                            activeTab = CollectorTab.VAULT
-                                            vaultSubTab = VaultSubTab.COLLECTION
+                                            navigateToTab(CollectorTab.VAULT, VaultSubTab.COLLECTION)
                                         },
                                         onOpenSettings = {},
                                         onButtonClickSfx = viewModel::playClick
@@ -462,11 +487,11 @@ fun MegaCollectorApp(
                                         uiState = uiState,
                                         currentUser = currentUser,
                                         isSigningIn = isSigningIn,
-                                        vaultSubTab = vaultSubTab,
+                                        vaultPagerState = vaultPagerState,
                                         preselectedTradeCard = preselectedTradeCard,
                                         onSelectSubTab = { sub ->
                                             viewModel.playClick()
-                                            vaultSubTab = sub
+                                            scope.launch { vaultPagerState.animateScrollToPage(sub.ordinal) }
                                         },
                                         onInspectCard = { id ->
                                             viewModel.playClick()
@@ -574,8 +599,7 @@ fun MegaCollectorApp(
                         preselectedTradeCard = card
                         inspectingCardId = null
                         viewModel.closePackSession()
-                        activeTab = CollectorTab.VAULT
-                        vaultSubTab = VaultSubTab.TRADE
+                        navigateToTab(CollectorTab.VAULT, VaultSubTab.TRADE)
                     },
                     onButtonClickSfx = viewModel::playClick
                 )
@@ -597,7 +621,7 @@ private fun VaultTabHost(
     uiState: MegaCollectorUiState,
     currentUser: AuthenticatedUser?,
     isSigningIn: Boolean,
-    vaultSubTab: VaultSubTab,
+    vaultPagerState: PagerState,
     preselectedTradeCard: OwnedCard?,
     onSelectSubTab: (VaultSubTab) -> Unit,
     onInspectCard: (Long) -> Unit,
@@ -618,6 +642,7 @@ private fun VaultTabHost(
     onButtonClickSfx: () -> Unit
 ) {
     val palette = CollectorTheme.colors
+    val vaultSubTab = VaultSubTab.entries[vaultPagerState.currentPage]
     val misprintCount = remember(uiState.ownedCards) { uiState.ownedCards.count { it.isMisprint } }
 
     Column(
@@ -772,8 +797,15 @@ private fun VaultTabHost(
             }
         }
 
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            when (vaultSubTab) {
+        HorizontalPager(
+            state = vaultPagerState,
+            beyondViewportPageCount = 0,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .testTag("vault_subtab_pager")
+        ) { subPage ->
+            when (VaultSubTab.entries[subPage]) {
                 VaultSubTab.COLLECTION -> VaultScreen(
                     uiState = uiState,
                     onInspectCard = onInspectCard,

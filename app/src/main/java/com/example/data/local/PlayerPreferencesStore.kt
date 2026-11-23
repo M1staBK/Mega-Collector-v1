@@ -129,7 +129,39 @@ data class HourlyChargeStatus(
     val msUntilNextCharge: Long
 )
 
+data class BootThemePrefs(
+    val themeAccentId: String = "SKY_COBALT",
+    val darkModeEnabled: Boolean = false,
+    val vibrationEnabled: Boolean = true,
+    val soundMuted: Boolean = false
+)
+
 class PlayerPreferencesStore(private val context: Context) {
+    private val bootPrefs by lazy {
+        context.applicationContext.getSharedPreferences("mega_collector_boot_theme", Context.MODE_PRIVATE)
+    }
+
+    fun readBootThemeSync(): BootThemePrefs = BootThemePrefs(
+        themeAccentId = bootPrefs.getString("theme_accent_id", "SKY_COBALT") ?: "SKY_COBALT",
+        darkModeEnabled = bootPrefs.getBoolean("dark_mode_enabled", false),
+        vibrationEnabled = bootPrefs.getBoolean("vibration_enabled", true),
+        soundMuted = bootPrefs.getBoolean("sound_muted", false)
+    )
+
+    private fun mirrorBootTheme(
+        themeAccentId: String? = null,
+        darkModeEnabled: Boolean? = null,
+        vibrationEnabled: Boolean? = null,
+        soundMuted: Boolean? = null
+    ) {
+        bootPrefs.edit().apply {
+            if (themeAccentId != null) putString("theme_accent_id", themeAccentId)
+            if (darkModeEnabled != null) putBoolean("dark_mode_enabled", darkModeEnabled)
+            if (vibrationEnabled != null) putBoolean("vibration_enabled", vibrationEnabled)
+            if (soundMuted != null) putBoolean("sound_muted", soundMuted)
+        }.apply()
+    }
+
     private object Keys {
         val COINS = intPreferencesKey("arena_gold")
         val DIAMONDS = intPreferencesKey("player_diamonds")
@@ -186,9 +218,20 @@ class PlayerPreferencesStore(private val context: Context) {
         val COMMUNITY_MYTHIC = intPreferencesKey("community_mythic")
         val COMMUNITY_TRADES = intPreferencesKey("community_trades")
         val CLAIMED_COMMUNITY_QUESTS = stringSetPreferencesKey("claimed_community_quests")
+        val FRESH_START_APPLIED_VERSION = intPreferencesKey("fresh_start_applied_version")
     }
 
     val walletFlow: Flow<PlayerWalletState> = context.collectorDataStore.data.map { prefs ->
+        val accentId = prefs[Keys.THEME_ACCENT_ID] ?: "SKY_COBALT"
+        val darkMode = prefs[Keys.DARK_MODE_ENABLED] ?: false
+        val vibration = prefs[Keys.VIBRATION_ENABLED] ?: true
+        val muted = prefs[Keys.SOUND_MUTED] ?: false
+        mirrorBootTheme(
+            themeAccentId = accentId,
+            darkModeEnabled = darkMode,
+            vibrationEnabled = vibration,
+            soundMuted = muted
+        )
         PlayerWalletState(
             coins = prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS,
             diamonds = prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS,
@@ -684,27 +727,92 @@ class PlayerPreferencesStore(private val context: Context) {
     }
 
     suspend fun setSoundMuted(muted: Boolean) {
+        mirrorBootTheme(soundMuted = muted)
         context.collectorDataStore.edit { prefs ->
             prefs[Keys.SOUND_MUTED] = muted
         }
     }
 
     suspend fun setDarkModeEnabled(enabled: Boolean) {
+        mirrorBootTheme(darkModeEnabled = enabled)
         context.collectorDataStore.edit { prefs ->
             prefs[Keys.DARK_MODE_ENABLED] = enabled
         }
     }
 
     suspend fun setVibrationEnabled(enabled: Boolean) {
+        mirrorBootTheme(vibrationEnabled = enabled)
         context.collectorDataStore.edit { prefs ->
             prefs[Keys.VIBRATION_ENABLED] = enabled
         }
     }
 
     suspend fun setThemeAccentId(accentId: String) {
+        mirrorBootTheme(themeAccentId = accentId)
         context.collectorDataStore.edit { prefs ->
             prefs[Keys.THEME_ACCENT_ID] = accentId
         }
+    }
+
+    /**
+     * One-time idempotent reset to wipe old saved inventory/progress for a fresh start while
+     * preserving the player's theme accent, dark mode, sound/vibration choices, and catalog cache.
+     */
+    suspend fun applyFreshStartResetIfNeeded(): Boolean {
+        var didReset = false
+        context.collectorDataStore.edit { prefs ->
+            val appliedVersion = prefs[Keys.FRESH_START_APPLIED_VERSION] ?: 0
+            if (appliedVersion < CURRENT_FRESH_START_VERSION) {
+                didReset = true
+                prefs[Keys.COINS] = PlayerWalletState.DEFAULT_STARTER_COINS
+                prefs[Keys.DIAMONDS] = PlayerWalletState.DEFAULT_STARTER_DIAMONDS
+                prefs[Keys.LAST_DAILY_EPOCH_DAY] = -1L
+                prefs[Keys.DAILY_STREAK_COUNT] = 0
+                prefs[Keys.TOTAL_PACKS_OPENED] = 0
+                prefs[Keys.TOTAL_COINS_RECYCLED] = 0
+                prefs[Keys.BONUS_FREE_PACKS] = 1
+                prefs[Keys.PINNED_BADGE_IDS] = emptySet()
+                prefs[Keys.TOTAL_WHEEL_SPINS] = 0
+                prefs[Keys.TOTAL_QUIZZES_COMPLETED] = 0
+                prefs[Keys.TOTAL_CARDS_RECYCLED_LIFETIME] = 0
+                prefs[Keys.TOTAL_TRADES_COMPLETED] = 0
+
+                prefs[Keys.SCRATCHER_CHARGES] = PlayerWalletState.MAX_HOURLY_CHARGES
+                prefs[Keys.SCRATCHER_LAST_REFILL_MS] = 0L
+                prefs[Keys.PRISM_CHARGES] = PlayerWalletState.MAX_HOURLY_CHARGES
+                prefs[Keys.PRISM_LAST_REFILL_MS] = 0L
+                prefs[Keys.WHEEL_CHARGES] = PlayerWalletState.MAX_HOURLY_CHARGES
+                prefs[Keys.WHEEL_LAST_REFILL_MS] = 0L
+                prefs[Keys.MYSTERY_PICK_CHARGES] = PlayerWalletState.MAX_HOURLY_CHARGES
+                prefs[Keys.MYSTERY_PICK_LAST_REFILL_MS] = 0L
+                prefs[Keys.MEMORY_MATCH_CHARGES] = PlayerWalletState.MAX_HOURLY_CHARGES
+                prefs[Keys.MEMORY_MATCH_LAST_REFILL_MS] = 0L
+                prefs[Keys.QUIZ_LAST_COMPLETED_MS] = 0L
+
+                prefs[Keys.QUEST_DAILY_EPOCH_DAY] = -1L
+                prefs[Keys.DAILY_PACKS_OPENED] = 0
+                prefs[Keys.DAILY_EPIC_PLUS] = 0
+                prefs[Keys.DAILY_SCRATCHERS_DONE] = 0
+                prefs[Keys.DAILY_MINIGAMES_WON] = 0
+                prefs[Keys.CLAIMED_DAILY_QUESTS] = emptySet()
+
+                prefs[Keys.QUEST_WEEKLY_KEY] = -1L
+                prefs[Keys.WEEKLY_PACKS_OPENED] = 0
+                prefs[Keys.WEEKLY_LUCKYBOX_PLUS] = 0
+                prefs[Keys.WEEKLY_CARDS_RECYCLED] = 0
+                prefs[Keys.WEEKLY_MINIGAMES_WON] = 0
+                prefs[Keys.CLAIMED_WEEKLY_QUESTS] = emptySet()
+
+                prefs[Keys.COMMUNITY_PACKS_OPENED] = 0
+                prefs[Keys.COMMUNITY_EPIC_PLUS] = 0
+                prefs[Keys.COMMUNITY_MYTHIC] = 0
+                prefs[Keys.COMMUNITY_TRADES] = 0
+                prefs[Keys.CLAIMED_COMMUNITY_QUESTS] = emptySet()
+
+                prefs[Keys.FRESH_START_APPLIED_VERSION] = CURRENT_FRESH_START_VERSION
+            }
+        }
+        return didReset
     }
 
     private fun resetDailyIfNeeded(prefs: androidx.datastore.preferences.core.MutablePreferences, todayEpochDay: Long) {
@@ -733,5 +841,6 @@ class PlayerPreferencesStore(private val context: Context) {
 
     companion object {
         const val CURRENT_CATALOG_SCHEMA_VERSION = 3
+        const val CURRENT_FRESH_START_VERSION = 1
     }
 }

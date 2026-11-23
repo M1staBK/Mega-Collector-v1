@@ -90,7 +90,9 @@ import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.draw.clip
+import android.content.Context
 import com.example.model.BadgeIconStyle
+import com.example.model.MlbbCollectionTier
 import com.example.model.SkinRarity
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.MoonlightNight
@@ -123,41 +125,57 @@ fun ProvideCollectorSettings(
     CompositionLocalProvider(LocalCollectorSettings provides controller, content = content)
 }
 
+fun buildMlbbCardImageRequest(
+    context: Context,
+    url: String,
+    crossfadeMs: Int = 120
+): ImageRequest {
+    val builder = ImageRequest.Builder(context.applicationContext)
+        .data(url)
+        .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) MegaCollector/3.0")
+        .addHeader("Accept", "image/webp,image/png,image/jpeg,*/*")
+        .size(920, 1320)
+        .precision(Precision.EXACT)
+        .allowHardware(false)
+        .transformations(CardDetailUpscaleTransformation(url, targetMinPx = 920))
+        .diskCachePolicy(CachePolicy.ENABLED)
+        .memoryCachePolicy(CachePolicy.ENABLED)
+    if (crossfadeMs > 0) builder.crossfade(crossfadeMs) else builder.crossfade(false)
+    return builder.build()
+}
+
+fun buildMlbbSquareImageRequest(
+    context: Context,
+    url: String,
+    crossfadeMs: Int = 120
+): ImageRequest {
+    val builder = ImageRequest.Builder(context.applicationContext)
+        .data(url)
+        .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) MegaCollector/3.0")
+        .addHeader("Accept", "image/webp,image/png,image/jpeg,*/*")
+        .size(920, 920)
+        .precision(Precision.EXACT)
+        .allowHardware(false)
+        .transformations(CharacterFocusSquareTransformation(url))
+        .diskCachePolicy(CachePolicy.ENABLED)
+        .memoryCachePolicy(CachePolicy.ENABLED)
+    if (crossfadeMs > 0) builder.crossfade(crossfadeMs) else builder.crossfade(false)
+    return builder.build()
+}
+
 @Composable
 fun rememberMlbbImageRequest(url: String): ImageRequest {
     val context = LocalContext.current
     return remember(url, context) {
-        ImageRequest.Builder(context)
-            .data(url)
-            .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) MegaCollector/3.0")
-            .addHeader("Accept", "image/webp,image/png,image/jpeg,*/*")
-            .size(920, 1320)
-            .precision(Precision.EXACT)
-            .allowHardware(false)
-            .transformations(CardDetailUpscaleTransformation(url, targetMinPx = 920))
-            .diskCachePolicy(CachePolicy.ENABLED)
-            .memoryCachePolicy(CachePolicy.ENABLED)
-            .crossfade(120)
-            .build()
+        buildMlbbCardImageRequest(context, url)
     }
 }
 
 @Composable
-fun rememberMlbbSquareImageRequest(url: String): ImageRequest {
+fun rememberMlbbSquareImageRequest(url: String, crossfadeMs: Int = 120): ImageRequest {
     val context = LocalContext.current
-    return remember(url, context) {
-        ImageRequest.Builder(context)
-            .data(url)
-            .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) MegaCollector/3.0")
-            .addHeader("Accept", "image/webp,image/png,image/jpeg,*/*")
-            .size(920, 920)
-            .precision(Precision.EXACT)
-            .allowHardware(false)
-            .transformations(CharacterFocusSquareTransformation(url))
-            .diskCachePolicy(CachePolicy.ENABLED)
-            .memoryCachePolicy(CachePolicy.ENABLED)
-            .crossfade(120)
-            .build()
+    return remember(url, context, crossfadeMs) {
+        buildMlbbSquareImageRequest(context, url, crossfadeMs)
     }
 }
 
@@ -228,29 +246,6 @@ fun SkyStudioBackdrop(
                 ),
                 radius = w * 0.65f,
                 center = Offset(w * 0.14f, h * 0.68f)
-            )
-
-            // Subtle geometric orb watermark (upper-left & lower-right) inspired by TCG studio cards
-            val orbCenterTop = Offset(w * 0.12f, h * 0.12f)
-            drawCircle(
-                color = palette.orbWatermark,
-                radius = w * 0.20f,
-                center = orbCenterTop,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
-            )
-            drawCircle(
-                color = palette.orbWatermark,
-                radius = w * 0.06f,
-                center = orbCenterTop,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
-            )
-
-            val orbCenterBottom = Offset(w * 0.88f, h * 0.86f)
-            drawCircle(
-                color = palette.orbWatermark,
-                radius = w * 0.24f,
-                center = orbCenterBottom,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
             )
         }
         content()
@@ -915,14 +910,15 @@ fun AppPreloadOverlay(
                 shape = RoundedCornerShape(28.dp),
                 shadowElevation = 10.dp,
                 border = BorderStroke(1.6.dp, palette.accentPrimary.copy(alpha = 0.55f)),
-                modifier = Modifier.size(88.dp)
+                modifier = Modifier.size(92.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.WorkspacePremium,
-                        contentDescription = "MEGA COLLECTOR",
-                        tint = palette.accentPrimary,
-                        modifier = Modifier.size(46.dp)
+                Box(
+                    modifier = Modifier.padding(12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MlbbCollectionBadge(
+                        tier = MlbbCollectionTier.WORLD,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }
