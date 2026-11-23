@@ -130,9 +130,9 @@ fun ShopPacksScreen(
                             modifier = Modifier.weight(1f)
                         ) {
                             Surface(
-                                color = palette.goldSurfaceTint,
+                                color = palette.frostSurface,
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.2.dp, palette.gold.copy(alpha = 0.65f)),
+                                border = BorderStroke(1.2.dp, palette.accentPrimary.copy(alpha = 0.55f)),
                                 shadowElevation = 2.dp,
                                 modifier = Modifier.size(42.dp)
                             ) {
@@ -140,7 +140,7 @@ fun ShopPacksScreen(
                                     Icon(
                                         imageVector = Icons.Default.WorkspacePremium,
                                         contentDescription = null,
-                                        tint = palette.gold,
+                                        tint = palette.accentPrimary,
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }
@@ -225,7 +225,7 @@ fun ShopPacksScreen(
                             Icon(
                                 imageVector = Icons.Default.CalendarMonth,
                                 contentDescription = null,
-                                tint = palette.gold,
+                                tint = palette.accentPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -240,8 +240,8 @@ fun ShopPacksScreen(
                             Button(
                                 onClick = onClaimDailyReward,
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = palette.gold,
-                                    contentColor = palette.goldButtonContent
+                                    containerColor = palette.buttonPrimary,
+                                    contentColor = Color.White
                                 ),
                                 shape = RoundedCornerShape(999.dp),
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
@@ -427,7 +427,7 @@ fun ShopPacksScreen(
                                                 fontWeight = FontWeight.ExtraBold,
                                                 fontSize = 21.sp
                                             ),
-                                            color = StudioGoldText
+                                            color = palette.accentPrimary
                                         )
                                         Text(
                                             text = "Coins",
@@ -463,16 +463,16 @@ fun ShopPacksScreen(
 
                                 if (option.bonusLabel != null) {
                                     Surface(
-                                        color = Color(0xFFFFECB3),
+                                        color = palette.frostSurface,
                                         shape = RoundedCornerShape(999.dp),
-                                        border = BorderStroke(1.dp, StudioGold.copy(alpha = 0.65f)),
+                                        border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.65f)),
                                         shadowElevation = 2.dp,
                                         modifier = Modifier.zIndex(2f)
                                     ) {
                                         Text(
                                             text = option.bonusLabel,
                                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
-                                            color = Color(0xFF7A4B00),
+                                            color = palette.accentPrimary,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                         )
                                     }
@@ -672,7 +672,7 @@ private fun BundlePurchaseCard(
         FrostedGlassCard(
             cornerRadius = 22.dp,
             borderColor = if (bundle.discountPercent > 0) {
-                palette.gold.copy(alpha = 0.45f)
+                palette.accentPrimary.copy(alpha = 0.50f)
             } else {
                 palette.glassHighlight
             },
@@ -701,7 +701,7 @@ private fun BundlePurchaseCard(
                         shape = RoundedCornerShape(999.dp),
                         border = BorderStroke(
                             1.1.dp,
-                            if (canAffordCoins) palette.gold.copy(alpha = 0.55f) else palette.border
+                            if (canAffordCoins) palette.accentPrimary.copy(alpha = 0.55f) else palette.border
                         ),
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
@@ -714,7 +714,7 @@ private fun BundlePurchaseCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Surface(
-                                color = if (canAffordCoins) palette.gold else SlateMuted.copy(alpha = 0.4f),
+                                color = if (canAffordCoins) palette.buttonPrimary else SlateMuted.copy(alpha = 0.4f),
                                 shape = CircleShape,
                                 modifier = Modifier.size(18.dp)
                             ) {
@@ -722,7 +722,7 @@ private fun BundlePurchaseCard(
                                     Icon(
                                         imageVector = Icons.Default.MonetizationOn,
                                         contentDescription = null,
-                                        tint = if (canAffordCoins) palette.goldButtonContent else Color.White,
+                                        tint = Color.White,
                                         modifier = Modifier.size(13.dp)
                                     )
                                 }
@@ -798,9 +798,9 @@ private fun BundlePurchaseCard(
 
         if (bundle.badgeText != null) {
             Surface(
-                color = Color(0xFFFFE59E),
+                color = palette.buttonPrimary,
                 shape = RoundedCornerShape(999.dp),
-                border = BorderStroke(1.dp, StudioGold.copy(alpha = 0.7f)),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.65f)),
                 shadowElevation = 2.dp,
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -810,7 +810,7 @@ private fun BundlePurchaseCard(
                 Text(
                     text = bundle.badgeText,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
-                    color = Color(0xFF7A4B00),
+                    color = Color.White,
                     modifier = Modifier.padding(horizontal = 9.dp, vertical = 2.dp)
                 )
             }
@@ -827,16 +827,12 @@ private fun DailyTierTile(
 ) {
     val palette = CollectorTheme.colors
     val borderColor = when {
-        isCurrentClaimable -> StudioGold
+        isCurrentClaimable -> palette.accentPrimary
         isClaimed -> palette.glassHighlight
         else -> palette.border
     }
     Surface(
-        color = if (isCurrentClaimable) {
-            palette.goldSurfaceTint
-        } else {
-            palette.cardSurface.copy(alpha = if (palette.isDark) 0.94f else 0.86f)
-        },
+        color = if (isCurrentClaimable) palette.frostSurface else palette.cardSurface,
         shape = RoundedCornerShape(18.dp),
         shadowElevation = if (isCurrentClaimable) 5.dp else 2.dp,
         border = BorderStroke(if (isCurrentClaimable) 1.8.dp else 1.2.dp, borderColor),
@@ -852,13 +848,13 @@ private fun DailyTierTile(
             Text(
                 text = "Day ${tier.dayIndex}",
                 style = MaterialTheme.typography.labelSmall,
-                color = if (isCurrentClaimable) StudioGoldText else SlateMuted
+                color = if (isCurrentClaimable) palette.accentPrimary else SlateMuted
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "+${tier.coinAmount}",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
-                color = if (isClaimed) palette.ink else StudioGoldText
+                color = if (isClaimed) palette.ink else palette.accentPrimary
             )
             Text(
                 text = "Coins",
@@ -882,13 +878,13 @@ private fun DailyTierTile(
             if (tier.bonusFreePacks > 0) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Surface(
-                    color = MisprintMagenta.copy(alpha = 0.16f),
+                    color = palette.buttonPrimary.copy(alpha = 0.14f),
                     shape = RoundedCornerShape(999.dp)
                 ) {
                     Text(
                         text = "+${tier.bonusFreePacks} Pack",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MisprintMagenta,
+                        color = palette.accentPrimary,
                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                     )
                 }

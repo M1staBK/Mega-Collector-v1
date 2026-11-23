@@ -293,6 +293,9 @@ class CollectorRepository(
                 val anomaly = if (isMisprint) MisprintAnomaly.entries.random() else null
                 val serialCode = if (isMisprint) "1/1 • MP-${randomHex4()}" else "STD-${randomHex4()}"
 
+                val isHolographic = (actualRarity.tierRank >= SkinRarity.COLLECTOR.tierRank) &&
+                    Random.nextDouble() < (if (actualRarity == SkinRarity.LEGEND) 0.70 else 0.45)
+
                 if (actualRarity.tierRank >= SkinRarity.EPIC.tierRank) epicPlusCount++
                 if (actualRarity.tierRank >= SkinRarity.LUCKYBOX.tierRank) luckyboxPlusCount++
                 if (isMisprint || actualRarity.tierRank >= SkinRarity.COLLECTOR.tierRank) mythicOrMisprintCount++
@@ -305,6 +308,7 @@ class CollectorRepository(
                     rawTier = chosenSkin.rawTier,
                     rarityName = actualRarity.name,
                     imageUrl = chosenSkin.imageUrl,
+                    isHolographic = isHolographic,
                     isMisprint = isMisprint,
                     misprintAnomalyName = anomaly?.name,
                     serialCode = serialCode,
@@ -466,6 +470,38 @@ class CollectorRepository(
         )
         if (ok) Result.success(Unit)
         else Result.failure(IllegalStateException("Prize Wheel recharging! +1 spin every hour (max 3)."))
+    }
+
+    suspend fun consumeMysteryPickChargeAndAward(
+        coinReward: Int,
+        diamondReward: Int,
+        freePackReward: Int
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val ok = prefs.consumeMysteryPickChargeAndAward(
+            coinReward = coinReward,
+            diamondReward = diamondReward,
+            freePackReward = freePackReward,
+            nowMs = System.currentTimeMillis(),
+            todayEpochDay = currentLocalEpochDay(),
+            currentWeekKey = currentLocalWeekKey()
+        )
+        if (ok) Result.success(Unit)
+        else Result.failure(IllegalStateException("Mystery Vault recharging! +1 pick every hour (max 3)."))
+    }
+
+    suspend fun consumeMemoryMatchChargeAndAward(
+        coinReward: Int,
+        diamondReward: Int
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val ok = prefs.consumeMemoryMatchChargeAndAward(
+            coinReward = coinReward,
+            diamondReward = diamondReward,
+            nowMs = System.currentTimeMillis(),
+            todayEpochDay = currentLocalEpochDay(),
+            currentWeekKey = currentLocalWeekKey()
+        )
+        if (ok) Result.success(Unit)
+        else Result.failure(IllegalStateException("Memory Blitz recharging! +1 round every hour (max 3)."))
     }
 
     suspend fun togglePinnedBadge(badgeId: String): Boolean =

@@ -68,6 +68,7 @@ import com.example.ui.viewmodel.MegaCollectorUiState
 private enum class VaultFilter(val label: String) {
     ALL("All"),
     MISPRINTS("1/1 Misprints"),
+    HOLO("Holo"),
     DUPLICATES("Duplicates"),
     LEGEND("Legend"),
     COLLECTOR("Collector"),
@@ -112,6 +113,7 @@ fun VaultScreen(
             val matchesFilter = when (selectedFilter) {
                 VaultFilter.ALL -> true
                 VaultFilter.MISPRINTS -> card.isMisprint
+                VaultFilter.HOLO -> card.isHolographicEdition
                 VaultFilter.DUPLICATES -> (countByCatalog[card.catalogId] ?: 1) > 1
                 VaultFilter.LEGEND -> card.rarity == SkinRarity.LEGEND
                 VaultFilter.COLLECTOR -> card.rarity == SkinRarity.COLLECTOR
@@ -180,7 +182,7 @@ fun VaultScreen(
                 Icon(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
-                    tint = palette.gold.copy(alpha = 0.75f),
+                    tint = palette.accentPrimary.copy(alpha = 0.75f),
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(14.dp)
@@ -208,9 +210,9 @@ fun VaultScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Surface(
-                                color = palette.goldSurfaceTint,
+                                color = palette.frostSurface,
                                 shape = CircleShape,
-                                border = BorderStroke(1.5.dp, palette.gold),
+                                border = BorderStroke(1.5.dp, palette.accentPrimary),
                                 shadowElevation = 2.dp,
                                 modifier = Modifier.size(34.dp)
                             ) {
@@ -218,7 +220,7 @@ fun VaultScreen(
                                     Icon(
                                         imageVector = Icons.Default.WorkspacePremium,
                                         contentDescription = null,
-                                        tint = palette.gold,
+                                        tint = palette.accentPrimary,
                                         modifier = Modifier.size(19.dp)
                                     )
                                 }
@@ -294,7 +296,7 @@ fun VaultScreen(
             )
 
             Surface(
-                color = palette.cardSurface.copy(alpha = 0.90f),
+                color = palette.cardSurface,
                 shape = CircleShape,
                 shadowElevation = 2.dp,
                 border = BorderStroke(1.2.dp, palette.glassHighlight)
@@ -323,6 +325,7 @@ fun VaultScreen(
 
         // Pill Filter Chips Row
         LazyRow(
+            modifier = Modifier.testTag("vault_filter_row"),
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -332,7 +335,7 @@ fun VaultScreen(
                     color = if (selected) {
                         palette.buttonPrimary
                     } else {
-                        palette.cardSurface.copy(alpha = if (palette.isDark) 0.90f else 0.84f)
+                        palette.cardSurface
                     },
                     shape = RoundedCornerShape(999.dp),
                     shadowElevation = if (selected) 3.dp else 1.dp,
@@ -347,6 +350,7 @@ fun VaultScreen(
                             onButtonClickSfx()
                             selectedFilter = filter
                         }
+                        .testTag("vault_filter_${filter.name.lowercase()}")
                 ) {
                     Text(
                         text = filter.label,
@@ -413,9 +417,9 @@ private fun VaultGridCardItem(
 
         if (duplicateCount > 1) {
             Surface(
-                color = MoonlightNight.copy(alpha = 0.92f),
+                color = palette.cardSurface,
                 shape = RoundedCornerShape(999.dp),
-                border = BorderStroke(1.dp, StudioGoldBright),
+                border = BorderStroke(1.dp, palette.accentPrimary),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 8.dp, end = 8.dp)
@@ -423,7 +427,7 @@ private fun VaultGridCardItem(
                 Text(
                     text = "x$duplicateCount",
                     style = MaterialTheme.typography.labelSmall,
-                    color = StudioGoldBright,
+                    color = palette.accentPrimary,
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                 )
             }

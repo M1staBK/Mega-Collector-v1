@@ -231,7 +231,7 @@ fun ProfileScreen(
                                     .clip(CircleShape)
                                     .background(
                                         Brush.linearGradient(
-                                            listOf(palette.accentPrimary, StudioGold)
+                                            listOf(palette.buttonPrimary, palette.skyAccent)
                                         )
                                     ),
                                 contentAlignment = Alignment.Center
@@ -296,14 +296,14 @@ fun ProfileScreen(
                                     Icon(
                                         imageVector = Icons.Default.EmojiEvents,
                                         contentDescription = null,
-                                        tint = StudioGold,
+                                        tint = palette.accentPrimary,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = "$collectorRank • $totalPrestige Power",
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = StudioGoldText
+                                        color = palette.accentPrimary
                                     )
                                 }
                             }
@@ -337,7 +337,7 @@ fun ProfileScreen(
                         Surface(
                             color = SkyFrost,
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, palette.mintAccent.copy(alpha = 0.55f)),
+                            border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.45f)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("optional_google_signin_card")
@@ -442,11 +442,11 @@ fun ProfileScreen(
                                 val def = badge.definition
                                 val selected = inspectedHeaderBadgeId == def.id
                                 Surface(
-                                    color = def.accentColor.copy(alpha = if (selected) 0.24f else 0.14f),
+                                    color = if (selected) palette.buttonPrimary.copy(alpha = 0.16f) else palette.frostSurface,
                                     shape = CircleShape,
                                     border = BorderStroke(
                                         width = if (selected) 2.dp else 1.2.dp,
-                                        color = def.accentColor.copy(alpha = if (selected) 1f else 0.65f)
+                                        color = palette.accentPrimary.copy(alpha = if (selected) 1f else 0.55f)
                                     ),
                                     modifier = Modifier
                                         .size(44.dp)
@@ -472,7 +472,7 @@ fun ProfileScreen(
                                         Icon(
                                             imageVector = BadgeIconVector(def.iconStyle),
                                             contentDescription = def.title,
-                                            tint = def.accentColor,
+                                            tint = palette.accentPrimary,
                                             modifier = Modifier.size(21.dp)
                                         )
                                     }
@@ -487,9 +487,9 @@ fun ProfileScreen(
                         AnimatedVisibility(visible = inspectedHeaderBadge != null) {
                             inspectedHeaderBadge?.let { b ->
                                 Surface(
-                                    color = b.definition.accentColor.copy(alpha = 0.10f),
+                                    color = palette.frostSurface,
                                     shape = RoundedCornerShape(10.dp),
-                                    border = BorderStroke(1.dp, b.definition.accentColor.copy(alpha = 0.45f)),
+                                    border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.45f)),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(top = 8.dp)
@@ -523,13 +523,13 @@ fun ProfileScreen(
                 StatTile(
                     label = "Unique Skins",
                     value = "$uniqueSkinCount",
-                    accent = StudioGoldText,
+                    accent = palette.accentPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 StatTile(
                     label = "1/1 Misprints",
                     value = "$misprintCount",
-                    accent = palette.misprintLabel,
+                    accent = palette.accentPrimary,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -543,13 +543,13 @@ fun ProfileScreen(
                 StatTile(
                     label = "Packs Opened",
                     value = "${uiState.wallet.totalPacksOpened}",
-                    accent = InkSlate,
+                    accent = palette.accentPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 StatTile(
                     label = "Trades Done",
                     value = "${uiState.wallet.totalTradesCompleted}",
-                    accent = RarityUncommon,
+                    accent = palette.accentPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 StatTile(
@@ -641,7 +641,7 @@ fun ProfileScreen(
                             Surface(
                                 color = SkyFrost,
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.2.dp, def.accentColor.copy(alpha = 0.6f)),
+                                border = BorderStroke(1.2.dp, palette.accentPrimary.copy(alpha = 0.55f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("achievement_inspector_card")
@@ -662,7 +662,7 @@ fun ProfileScreen(
                                             Icon(
                                                 imageVector = BadgeIconVector(def.iconStyle),
                                                 contentDescription = def.title,
-                                                tint = def.accentColor,
+                                                tint = palette.accentPrimary,
                                                 modifier = Modifier.size(20.dp)
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
@@ -682,13 +682,13 @@ fun ProfileScreen(
                                         Text(
                                             text = "${badge.currentProgress.coerceAtMost(def.targetCount)}/${def.targetCount}",
                                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                            color = if (badge.isUnlocked) def.accentColor else SlateMuted
+                                            color = if (badge.isUnlocked) palette.accentPrimary else SlateMuted
                                         )
                                     }
 
                                     LinearProgressIndicator(
                                         progress = { badge.progressFraction },
-                                        color = if (badge.isUnlocked) def.accentColor else palette.accentPrimary,
+                                        color = palette.accentPrimary,
                                         trackColor = PureWhiteCard,
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -700,8 +700,8 @@ fun ProfileScreen(
                                         Button(
                                             onClick = { onTogglePinnedBadge(badge) },
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (badge.isPinned) SlateMuted else StudioGold,
-                                                contentColor = if (badge.isPinned) Color.White else palette.goldButtonContent
+                                                containerColor = if (badge.isPinned) SlateMuted else palette.buttonPrimary,
+                                                contentColor = Color.White
                                             ),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier
@@ -930,9 +930,9 @@ private fun AchievementIconMedallion(
     val palette = CollectorTheme.colors
     val def = badge.definition
     val borderColor = when {
-        isInspected -> DeepCobalt
-        badge.isPinned -> StudioGold
-        badge.isUnlocked -> def.accentColor.copy(alpha = 0.65f)
+        isInspected -> palette.buttonPrimary
+        badge.isPinned -> palette.accentPrimary
+        badge.isUnlocked -> palette.accentPrimary.copy(alpha = 0.55f)
         else -> palette.border
     }
 
@@ -953,7 +953,7 @@ private fun AchievementIconMedallion(
             }
             .clickable(onClick = onClick)
             .testTag("achievement_badge_${def.id}"),
-        color = if (badge.isUnlocked) def.accentColor.copy(alpha = 0.14f) else palette.canvas.copy(alpha = 0.72f),
+        color = if (badge.isUnlocked) palette.frostSurface else palette.canvas,
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(if (isInspected || badge.isPinned) 2.dp else 1.dp, borderColor)
     ) {
@@ -961,14 +961,14 @@ private fun AchievementIconMedallion(
             Icon(
                 imageVector = BadgeIconVector(def.iconStyle),
                 contentDescription = def.title,
-                tint = if (badge.isUnlocked) def.accentColor else palette.muted.copy(alpha = 0.45f),
+                tint = if (badge.isUnlocked) palette.accentPrimary else palette.muted.copy(alpha = 0.45f),
                 modifier = Modifier
                     .size(28.dp)
                     .alpha(if (badge.isUnlocked) 1f else 0.55f)
             )
             if (badge.isPinned) {
                 Surface(
-                    color = StudioGold,
+                    color = palette.buttonPrimary,
                     shape = CircleShape,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -979,7 +979,7 @@ private fun AchievementIconMedallion(
                         Icon(
                             imageVector = Icons.Default.PushPin,
                             contentDescription = "Pinned",
-                            tint = palette.goldButtonContent,
+                            tint = Color.White,
                             modifier = Modifier.size(10.dp)
                         )
                     }
@@ -1010,9 +1010,9 @@ private fun HistoryEventRow(event: CollectorHistoryEvent) {
         CollectorHistoryType.PROFILE -> Icons.Default.Person
     }
     val tint = when (event.eventType) {
-        CollectorHistoryType.PULL -> event.rarity?.primaryColor ?: palette.accentPrimary
-        CollectorHistoryType.TRADE -> RarityUncommon
-        CollectorHistoryType.RECYCLE -> StudioGoldText
+        CollectorHistoryType.PULL -> palette.accentPrimary
+        CollectorHistoryType.TRADE -> palette.accentPrimary
+        CollectorHistoryType.RECYCLE -> palette.accentPrimary
         CollectorHistoryType.MINIGAME -> palette.accentPrimary
         CollectorHistoryType.PROFILE -> SlateMuted
     }
@@ -1067,7 +1067,7 @@ private fun HistoryEventRow(event: CollectorHistoryEvent) {
                     Text(
                         text = "${if (event.coinDelta > 0) "+" else ""}${event.coinDelta} 🪙",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = StudioGoldText
+                        color = palette.accentPrimary
                     )
                 }
                 if (event.diamondDelta != 0) {

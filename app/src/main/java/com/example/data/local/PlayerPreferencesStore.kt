@@ -42,6 +42,10 @@ data class PlayerWalletState(
     val prismLastRefillMs: Long = 0L,
     val wheelStoredCharges: Int = MAX_HOURLY_CHARGES,
     val wheelLastRefillMs: Long = 0L,
+    val mysteryPickStoredCharges: Int = MAX_HOURLY_CHARGES,
+    val mysteryPickLastRefillMs: Long = 0L,
+    val memoryMatchStoredCharges: Int = MAX_HOURLY_CHARGES,
+    val memoryMatchLastRefillMs: Long = 0L,
     // 5-Question Hourly Quiz Cooldown (every 1 hour)
     val quizLastCompletedMs: Long = 0L,
     // Lifetime Stats & Pinned Achievement Badges
@@ -79,6 +83,12 @@ data class PlayerWalletState(
 
     fun currentWheelStatus(nowMs: Long): HourlyChargeStatus =
         computeHourlyChargeStatus(wheelStoredCharges, wheelLastRefillMs, nowMs)
+
+    fun currentMysteryPickStatus(nowMs: Long): HourlyChargeStatus =
+        computeHourlyChargeStatus(mysteryPickStoredCharges, mysteryPickLastRefillMs, nowMs)
+
+    fun currentMemoryMatchStatus(nowMs: Long): HourlyChargeStatus =
+        computeHourlyChargeStatus(memoryMatchStoredCharges, memoryMatchLastRefillMs, nowMs)
 
     fun currentQuizCooldownRemainingMs(nowMs: Long): Long {
         if (quizLastCompletedMs <= 0L) return 0L
@@ -145,6 +155,10 @@ class PlayerPreferencesStore(private val context: Context) {
         val PRISM_LAST_REFILL_MS = longPreferencesKey("prism_last_refill_ms")
         val WHEEL_CHARGES = intPreferencesKey("wheel_charges_v1")
         val WHEEL_LAST_REFILL_MS = longPreferencesKey("wheel_last_refill_ms")
+        val MYSTERY_PICK_CHARGES = intPreferencesKey("mystery_pick_charges_v1")
+        val MYSTERY_PICK_LAST_REFILL_MS = longPreferencesKey("mystery_pick_last_refill_ms")
+        val MEMORY_MATCH_CHARGES = intPreferencesKey("memory_match_charges_v1")
+        val MEMORY_MATCH_LAST_REFILL_MS = longPreferencesKey("memory_match_last_refill_ms")
         val QUIZ_LAST_COMPLETED_MS = longPreferencesKey("quiz_last_completed_ms")
 
         val PINNED_BADGE_IDS = stringSetPreferencesKey("pinned_badge_ids")
@@ -199,6 +213,10 @@ class PlayerPreferencesStore(private val context: Context) {
             prismLastRefillMs = prefs[Keys.PRISM_LAST_REFILL_MS] ?: 0L,
             wheelStoredCharges = prefs[Keys.WHEEL_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES,
             wheelLastRefillMs = prefs[Keys.WHEEL_LAST_REFILL_MS] ?: 0L,
+            mysteryPickStoredCharges = prefs[Keys.MYSTERY_PICK_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES,
+            mysteryPickLastRefillMs = prefs[Keys.MYSTERY_PICK_LAST_REFILL_MS] ?: 0L,
+            memoryMatchStoredCharges = prefs[Keys.MEMORY_MATCH_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES,
+            memoryMatchLastRefillMs = prefs[Keys.MEMORY_MATCH_LAST_REFILL_MS] ?: 0L,
             quizLastCompletedMs = prefs[Keys.QUIZ_LAST_COMPLETED_MS] ?: 0L,
             pinnedBadgeIds = prefs[Keys.PINNED_BADGE_IDS] ?: emptySet(),
             totalWheelSpins = prefs[Keys.TOTAL_WHEEL_SPINS] ?: 0,
@@ -423,6 +441,90 @@ class PlayerPreferencesStore(private val context: Context) {
                 }
                 prefs[Keys.TOTAL_WHEEL_SPINS] = (prefs[Keys.TOTAL_WHEEL_SPINS] ?: 0) + 1
 
+                resetDailyIfNeeded(prefs, todayEpochDay)
+                resetWeeklyIfNeeded(prefs, currentWeekKey)
+                prefs[Keys.DAILY_MINIGAMES_WON] = (prefs[Keys.DAILY_MINIGAMES_WON] ?: 0) + 1
+                prefs[Keys.WEEKLY_MINIGAMES_WON] = (prefs[Keys.WEEKLY_MINIGAMES_WON] ?: 0) + 1
+                recorded = true
+            }
+        }
+        return recorded
+    }
+
+    suspend fun consumeMysteryPickChargeAndAward(
+        coinReward: Int,
+        diamondReward: Int,
+        freePackReward: Int,
+        nowMs: Long,
+        todayEpochDay: Long,
+        currentWeekKey: Long
+    ): Boolean {
+        var recorded = false
+        context.collectorDataStore.edit { prefs ->
+            val stored = prefs[Keys.MYSTERY_PICK_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES
+            val lastRefill = prefs[Keys.MYSTERY_PICK_LAST_REFILL_MS] ?: 0L
+            val status = PlayerWalletState.computeHourlyChargeStatus(stored, lastRefill, nowMs)
+            if (status.charges > 0) {
+                val afterSpend = status.charges - 1
+                val newRefillAnchor = when {
+                    status.charges >= PlayerWalletState.MAX_HOURLY_CHARGES -> nowMs
+                    else -> {
+                        val elapsed = (nowMs - lastRefill).coerceAtLeast(0L)
+                        val gained = (elapsed / PlayerWalletState.ONE_HOUR_MS).toInt()
+                        lastRefill + gained * PlayerWalletState.ONE_HOUR_MS
+                    }
+                }
+                prefs[Keys.MYSTERY_PICK_CHARGES] = afterSpend
+                prefs[Keys.MYSTERY_PICK_LAST_REFILL_MS] = newRefillAnchor
+                if (coinReward > 0) {
+                    prefs[Keys.COINS] = (prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS) + coinReward
+                }
+                if (diamondReward > 0) {
+                    prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS) + diamondReward
+                }
+                if (freePackReward > 0) {
+                    prefs[Keys.BONUS_FREE_PACKS] = (prefs[Keys.BONUS_FREE_PACKS] ?: 1) + freePackReward
+                }
+                resetDailyIfNeeded(prefs, todayEpochDay)
+                resetWeeklyIfNeeded(prefs, currentWeekKey)
+                prefs[Keys.DAILY_MINIGAMES_WON] = (prefs[Keys.DAILY_MINIGAMES_WON] ?: 0) + 1
+                prefs[Keys.WEEKLY_MINIGAMES_WON] = (prefs[Keys.WEEKLY_MINIGAMES_WON] ?: 0) + 1
+                recorded = true
+            }
+        }
+        return recorded
+    }
+
+    suspend fun consumeMemoryMatchChargeAndAward(
+        coinReward: Int,
+        diamondReward: Int,
+        nowMs: Long,
+        todayEpochDay: Long,
+        currentWeekKey: Long
+    ): Boolean {
+        var recorded = false
+        context.collectorDataStore.edit { prefs ->
+            val stored = prefs[Keys.MEMORY_MATCH_CHARGES] ?: PlayerWalletState.MAX_HOURLY_CHARGES
+            val lastRefill = prefs[Keys.MEMORY_MATCH_LAST_REFILL_MS] ?: 0L
+            val status = PlayerWalletState.computeHourlyChargeStatus(stored, lastRefill, nowMs)
+            if (status.charges > 0) {
+                val afterSpend = status.charges - 1
+                val newRefillAnchor = when {
+                    status.charges >= PlayerWalletState.MAX_HOURLY_CHARGES -> nowMs
+                    else -> {
+                        val elapsed = (nowMs - lastRefill).coerceAtLeast(0L)
+                        val gained = (elapsed / PlayerWalletState.ONE_HOUR_MS).toInt()
+                        lastRefill + gained * PlayerWalletState.ONE_HOUR_MS
+                    }
+                }
+                prefs[Keys.MEMORY_MATCH_CHARGES] = afterSpend
+                prefs[Keys.MEMORY_MATCH_LAST_REFILL_MS] = newRefillAnchor
+                if (coinReward > 0) {
+                    prefs[Keys.COINS] = (prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS) + coinReward
+                }
+                if (diamondReward > 0) {
+                    prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS) + diamondReward
+                }
                 resetDailyIfNeeded(prefs, todayEpochDay)
                 resetWeeklyIfNeeded(prefs, currentWeekKey)
                 prefs[Keys.DAILY_MINIGAMES_WON] = (prefs[Keys.DAILY_MINIGAMES_WON] ?: 0) + 1

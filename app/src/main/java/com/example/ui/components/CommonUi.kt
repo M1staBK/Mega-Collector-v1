@@ -1,6 +1,8 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -93,7 +95,6 @@ import com.example.model.SkinRarity
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.MoonlightNight
 import com.example.ui.theme.PearlLightInk
-import com.example.ui.theme.RarityUncommon
 import com.example.ui.theme.ThemeAccentOption
 import com.example.ui.viewmodel.CatalogSyncStatus
 import java.text.SimpleDateFormat
@@ -265,12 +266,12 @@ fun FrostedGlassCard(
     content: @Composable () -> Unit
 ) {
     val palette = CollectorTheme.colors
-    val alpha = containerAlpha ?: if (palette.isDark) 0.94f else 0.88f
+    val isDimmed = containerAlpha != null && containerAlpha < 0.99f
     val stroke = borderColor ?: if (palette.isDark) palette.border else palette.glassHighlight
     Surface(
-        color = palette.cardSurface.copy(alpha = alpha),
+        color = if (isDimmed) palette.abyss else palette.cardSurface,
         shape = RoundedCornerShape(cornerRadius),
-        shadowElevation = if (palette.isDark) 4.dp else 5.dp,
+        shadowElevation = if (isDimmed) 0.dp else if (palette.isDark) 4.dp else 5.dp,
         border = BorderStroke(1.3.dp, stroke),
         modifier = modifier,
         content = content
@@ -313,7 +314,7 @@ fun CoinsPill(
     val palette = CollectorTheme.colors
     Surface(
         modifier = modifier,
-        color = palette.cardSurface.copy(alpha = if (palette.isDark) 0.96f else 0.92f),
+        color = palette.cardSurface,
         shape = RoundedCornerShape(999.dp),
         shadowElevation = 3.dp,
         border = BorderStroke(1.2.dp, if (palette.isDark) palette.gold.copy(alpha = 0.55f) else palette.glassHighlight)
@@ -362,7 +363,7 @@ fun DiamondsPill(
     val palette = CollectorTheme.colors
     Surface(
         modifier = modifier,
-        color = palette.cardSurface.copy(alpha = if (palette.isDark) 0.96f else 0.92f),
+        color = palette.cardSurface,
         shape = RoundedCornerShape(999.dp),
         shadowElevation = 3.dp,
         border = BorderStroke(1.2.dp, if (palette.isDark) palette.skyAccent.copy(alpha = 0.55f) else palette.glassHighlight)
@@ -406,7 +407,7 @@ fun SoundMuteButton(
     val palette = CollectorTheme.colors
     Surface(
         modifier = modifier,
-        color = palette.cardSurface.copy(alpha = if (palette.isDark) 0.94f else 0.90f),
+        color = palette.cardSurface,
         shape = CircleShape,
         shadowElevation = 3.dp,
         border = BorderStroke(
@@ -447,7 +448,7 @@ fun SettingsGearButton(
 
     Box(modifier = modifier) {
         Surface(
-            color = palette.cardSurface.copy(alpha = if (palette.isDark) 0.95f else 0.92f),
+            color = palette.cardSurface,
             shape = CircleShape,
             shadowElevation = 4.dp,
             border = BorderStroke(
@@ -680,7 +681,7 @@ fun CatalogSyncStatusCard(
 
     val accentTint = when (syncStatus) {
         is CatalogSyncStatus.Error -> palette.crimson
-        is CatalogSyncStatus.Synced -> RarityUncommon
+        is CatalogSyncStatus.Synced -> palette.accentPrimary
         else -> palette.accentPrimary
     }
 
@@ -713,7 +714,7 @@ fun CatalogSyncStatusCard(
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
                         contentDescription = null,
-                        tint = RarityUncommon,
+                        tint = palette.accentPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -882,5 +883,89 @@ fun EmptyVaultState(
             style = MaterialTheme.typography.bodyMedium,
             color = palette.muted
         )
+    }
+}
+
+@Composable
+fun AppPreloadOverlay(
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
+    val palette = CollectorTheme.colors
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0.05f, 1f),
+        animationSpec = tween(durationMillis = 220),
+        label = "app_preload_bar"
+    )
+
+    SkyStudioBackdrop(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("app_preload_overlay")
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = 42.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(22.dp)
+        ) {
+            Surface(
+                color = palette.cardSurface,
+                shape = RoundedCornerShape(28.dp),
+                shadowElevation = 10.dp,
+                border = BorderStroke(1.6.dp, palette.accentPrimary.copy(alpha = 0.55f)),
+                modifier = Modifier.size(88.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.WorkspacePremium,
+                        contentDescription = "MEGA COLLECTOR",
+                        tint = palette.accentPrimary,
+                        modifier = Modifier.size(46.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = "MEGA COLLECTOR",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.6.sp
+                ),
+                color = palette.ink
+            )
+
+            Surface(
+                color = palette.cardSurface,
+                shape = RoundedCornerShape(999.dp),
+                shadowElevation = 4.dp,
+                border = BorderStroke(1.2.dp, palette.glassHighlight),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(14.dp)
+                    .testTag("preload_progress_bar")
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(2.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(palette.frostSurface)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(fraction = animatedProgress)
+                            .height(10.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(palette.buttonPrimary, palette.skyAccent)
+                                )
+                            )
+                    )
+                }
+            }
+        }
     }
 }

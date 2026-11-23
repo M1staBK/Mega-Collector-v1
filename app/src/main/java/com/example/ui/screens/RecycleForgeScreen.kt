@@ -144,8 +144,8 @@ fun RecycleForgeScreen(
                     onClick = onRecycleAllDuplicates,
                     enabled = safeAutoExtras.isNotEmpty(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = StudioGold,
-                        contentColor = palette.goldButtonContent
+                        containerColor = palette.buttonPrimary,
+                        contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
@@ -322,7 +322,7 @@ private fun RecycleCardRow(
 
             OutlinedButton(
                 onClick = onRecycleClick,
-                border = BorderStroke(1.2.dp, StudioGold),
+                border = BorderStroke(1.2.dp, palette.accentPrimary),
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.testTag("recycle_single_${card.instanceId}")
@@ -330,7 +330,7 @@ private fun RecycleCardRow(
                 Text(
                     text = "+${card.recycleValueGold}",
                     style = MaterialTheme.typography.labelLarge,
-                    color = StudioGoldText
+                    color = palette.accentPrimary
                 )
             }
         }

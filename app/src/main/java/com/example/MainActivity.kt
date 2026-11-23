@@ -7,6 +7,9 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -85,6 +88,7 @@ import com.example.model.DecodedTradeSlip
 import com.example.model.OwnedCard
 import com.example.model.P2PTradeListing
 import com.example.model.TradeListing
+import com.example.ui.components.AppPreloadOverlay
 import com.example.ui.components.CollectorSettingsController
 import com.example.ui.components.ProvideCollectorSettings
 import com.example.ui.components.SettingsGearButton
@@ -293,7 +297,7 @@ fun MegaCollectorApp(
                         bottomBar = {
                             if (!useRail && packSession == null && inspectingCardId == null) {
                                 Surface(
-                                    color = palette.navBar.copy(alpha = if (palette.isDark) 0.96f else 0.94f),
+                                    color = palette.navBar,
                                     shadowElevation = 12.dp,
                                     shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
                                     border = BorderStroke(
@@ -312,6 +316,8 @@ fun MegaCollectorApp(
                                                 CollectorTab.PLAY -> uiState.scratcherStatus.charges +
                                                     uiState.prismStatus.charges +
                                                     uiState.wheelStatus.charges +
+                                                    uiState.mysteryPickStatus.charges +
+                                                    uiState.memoryMatchStatus.charges +
                                                     if (uiState.quizCooldownRemainingMs <= 0L) 1 else 0
                                                 CollectorTab.QUESTS -> claimableQuestCount
                                                 CollectorTab.VAULT -> uiState.openP2PListings.size
@@ -328,8 +334,8 @@ fun MegaCollectorApp(
                                                         badge = {
                                                             if (badgeCount > 0) {
                                                                 Badge(
-                                                                    containerColor = palette.gold,
-                                                                    contentColor = palette.goldButtonContent
+                                                                    containerColor = palette.buttonPrimary,
+                                                                    contentColor = Color.White
                                                                 ) {
                                                                     Text("$badgeCount")
                                                                 }
@@ -372,7 +378,7 @@ fun MegaCollectorApp(
                         ) {
                             if (useRail && packSession == null && inspectingCardId == null) {
                                 NavigationRail(
-                                    containerColor = palette.navBar.copy(alpha = 0.94f),
+                                    containerColor = palette.navBar,
                                     modifier = Modifier.fillMaxHeight()
                                 ) {
                                     CollectorTab.entries.forEach { tab ->
@@ -412,6 +418,8 @@ fun MegaCollectorApp(
                                         onSpinWheelPrize = viewModel::spinWheelPrize,
                                         onWheelTickSfx = viewModel::playWheelTick,
                                         onCompleteHourlyQuiz = viewModel::completeHourlyQuiz,
+                                        onClaimMysteryPick = viewModel::claimMysteryPickPrize,
+                                        onCompleteMemoryMatch = viewModel::completeMemoryMatch,
                                         onPlasticCrinkle = viewModel::playPlasticCrinkle,
                                         onOpenSettings = {},
                                         onButtonClickSfx = viewModel::playClick,
@@ -572,6 +580,14 @@ fun MegaCollectorApp(
                     onButtonClickSfx = viewModel::playClick
                 )
             }
+
+            // Asset Preload Launch Overlay (theme-accented bar only, zero status/stage copy)
+            AnimatedVisibility(
+                visible = uiState.isPreloading,
+                exit = fadeOut(animationSpec = tween(durationMillis = 300))
+            ) {
+                AppPreloadOverlay(progress = uiState.preloadProgress)
+            }
         }
     }
 }
@@ -656,7 +672,7 @@ private fun VaultTabHost(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    color = palette.cardSurface.copy(alpha = 0.90f),
+                    color = palette.cardSurface,
                     shape = RoundedCornerShape(999.dp),
                     shadowElevation = 2.dp,
                     border = BorderStroke(1.1.dp, palette.glassHighlight)
@@ -693,7 +709,7 @@ private fun VaultTabHost(
 
         // Frosted Pill Segmented Tab Switcher (Cards | Recycle | Trade)
         Surface(
-            color = palette.cardSurface.copy(alpha = if (palette.isDark) 0.92f else 0.78f),
+            color = palette.cardSurface,
             shape = RoundedCornerShape(999.dp),
             shadowElevation = 3.dp,
             border = BorderStroke(1.2.dp, palette.glassHighlight),

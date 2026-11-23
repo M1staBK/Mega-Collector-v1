@@ -1,11 +1,14 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.graphics.BitmapFactory
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import coil.Coil
 import coil.request.CachePolicy
 import coil.request.ImageRequest
+import com.example.R
 import com.example.audio.PackSoundEngine
 import com.example.data.local.HourlyChargeStatus
 import com.example.data.local.MegaCollectorDatabase
@@ -32,6 +35,7 @@ import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.TradeListing
 import com.example.ui.theme.ThemeAccentOption
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -44,6 +48,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 sealed interface CatalogSyncStatus {
     data object Idle : CatalogSyncStatus
@@ -90,7 +96,11 @@ data class MegaCollectorUiState(
     val scratcherStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
     val prismStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
     val wheelStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
+    val mysteryPickStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
+    val memoryMatchStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
     val quizCooldownRemainingMs: Long = 0L,
+    val isPreloading: Boolean = true,
+    val preloadProgress: Float = 0f,
     val packSession: PackOpeningSession? = null,
     val isOpeningPack: Boolean = false,
     val decodedSlipPreview: DecodedTradeSlip? = null,
@@ -113,6 +123,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _openP2PListings = MutableStateFlow<List<P2PTradeListing>>(emptyList())
     private val _historyEvents = MutableStateFlow<List<CollectorHistoryEvent>>(emptyList())
     private val _viewingTraderProfile = MutableStateFlow<CollectorPublicProfile?>(null)
+    private val _isPreloading = MutableStateFlow(!isRobolectricEnv())
+    private val _preloadProgress = MutableStateFlow(if (isRobolectricEnv()) 1f else 0.08f)
 
     private var lastSatinThemeId: String? = null
     private var historyListenerJob: Job? = null
@@ -138,8 +150,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val openP2PListings: List<P2PTradeListing>,
         val historyEvents: List<CollectorHistoryEvent>,
         val viewingTraderProfile: CollectorPublicProfile?,
+        val isPreloading: Boolean,
+        val preloadProgress: Float,
         val nowMs: Long
     )
+
+    private val preloadFlow = combine(_isPreloading, _preloadProgress) { loading, prog ->
+        loading to prog
+    }
 
     private val ephemeralFlow = combine(
         _syncStatus,
@@ -150,9 +168,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _openP2PListings,
         _historyEvents,
         _viewingTraderProfile,
+        preloadFlow,
         clockTickFlow
     ) { values ->
         @Suppress("UNCHECKED_CAST")
+        val preloadPair = values[8] as Pair<Boolean, Float>
         EphemeralState(
             syncStatus = values[0] as CatalogSyncStatus,
             packSession = values[1] as PackOpeningSession?,
@@ -162,7 +182,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             openP2PListings = values[5] as List<P2PTradeListing>,
             historyEvents = values[6] as List<CollectorHistoryEvent>,
             viewingTraderProfile = values[7] as CollectorPublicProfile?,
-            nowMs = values[8] as Long
+            isPreloading = preloadPair.first,
+            preloadProgress = preloadPair.second,
+            nowMs = values[9] as Long
         )
     }
 
@@ -186,6 +208,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val scratcherStatus = wallet.currentScratcherStatus(eph.nowMs)
         val prismStatus = wallet.currentPrismStatus(eph.nowMs)
         val wheelStatus = wallet.currentWheelStatus(eph.nowMs)
+        val mysteryPickStatus = wallet.currentMysteryPickStatus(eph.nowMs)
+        val memoryMatchStatus = wallet.currentMemoryMatchStatus(eph.nowMs)
         val quizCooldown = wallet.currentQuizCooldownRemainingMs(eph.nowMs)
 
         MegaCollectorUiState(
@@ -208,7 +232,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             scratcherStatus = scratcherStatus,
             prismStatus = prismStatus,
             wheelStatus = wheelStatus,
+            mysteryPickStatus = mysteryPickStatus,
+            memoryMatchStatus = memoryMatchStatus,
             quizCooldownRemainingMs = quizCooldown,
+            isPreloading = eph.isPreloading,
+            preloadProgress = eph.preloadProgress,
             packSession = eph.packSession,
             isOpeningPack = eph.isOpeningPack,
             decodedSlipPreview = eph.decodedSlip,
@@ -217,34 +245,103 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000L),
-        initialValue = MegaCollectorUiState()
+        initialValue = MegaCollectorUiState(
+            isPreloading = !isRobolectricEnv(),
+            preloadProgress = if (isRobolectricEnv()) 1f else 0.08f
+        )
     )
 
     init {
         viewModelScope.launch {
-            repository.syncQuestPeriodsOnLaunch()
-            val count = db.collectorDao().getCatalogCount()
-            val wallet = repository.walletFlow.first()
-            soundEngine.setMuted(wallet.soundMuted)
-
-            // True 24-hour auto-sync window — never re-sync on every cold launch!
-            val elapsedSinceSync = System.currentTimeMillis() - wallet.catalogLastSyncedMs
-            val within24h = wallet.catalogLastSyncedMs > 0L &&
-                elapsedSinceSync in 0L until 86_400_000L &&
-                wallet.catalogSchemaVersion >= PlayerPreferencesStore.CURRENT_CATALOG_SCHEMA_VERSION &&
-                count > 0
-
-            if (within24h) {
-                _syncStatus.value = CatalogSyncStatus.Synced(count)
-            } else {
-                syncCatalog()
-            }
-
-            // Pre-warm Coil disk cache for owned cards so art opens instantaneously
-            val ownedSnapshot = db.collectorDao().getAllOwnedOnce()
-            warmImageUrls(ownedSnapshot.take(24).map { it.imageUrl })
+            runStartupPreload()
         }
     }
+
+    private suspend fun runStartupPreload() {
+        val ctx = getApplication<Application>()
+        _preloadProgress.value = 0.14f
+        repository.syncQuestPeriodsOnLaunch()
+        val count = db.collectorDao().getCatalogCount()
+        val wallet = repository.walletFlow.first()
+        soundEngine.setMuted(wallet.soundMuted)
+        _preloadProgress.value = 0.28f
+
+        // Decode bundled artwork drawables into memory/decoder caches cleanly off the main thread
+        withContext(Dispatchers.IO) {
+            val drawables = listOf(
+                R.drawable.img_pack_mythic,
+                R.drawable.img_arena_banner,
+                R.drawable.bg_mlbb_card_art
+            )
+            val opts = BitmapFactory.Options().apply { inPreferredConfig = android.graphics.Bitmap.Config.RGB_565 }
+            drawables.forEachIndexed { idx, resId ->
+                runCatching {
+                    BitmapFactory.decodeResource(ctx.resources, resId, opts)?.recycle()
+                }
+                _preloadProgress.value = 0.28f + 0.18f * ((idx + 1).toFloat() / drawables.size)
+            }
+        }
+
+        // 24-hour catalog sync window check
+        val elapsedSinceSync = System.currentTimeMillis() - wallet.catalogLastSyncedMs
+        val within24h = wallet.catalogLastSyncedMs > 0L &&
+            elapsedSinceSync in 0L until 86_400_000L &&
+            wallet.catalogSchemaVersion >= PlayerPreferencesStore.CURRENT_CATALOG_SCHEMA_VERSION &&
+            count > 0
+
+        if (within24h) {
+            _syncStatus.value = CatalogSyncStatus.Synced(count)
+        } else {
+            syncCatalog()
+        }
+
+        // Pre-warm Coil cache for owned & starter catalog art inside a strict bounded timeout
+        val ownedUrls = db.collectorDao().getAllOwnedOnce().map { it.imageUrl }
+        val catalogUrls = db.collectorDao().getAllCatalogOnce().take(18).map { it.imageUrl }
+        val preloadUrls = (ownedUrls + catalogUrls)
+            .asSequence()
+            .filter { it.isNotBlank() }
+            .distinct()
+            .take(18)
+            .toList()
+
+        if (!isRobolectricEnv() && preloadUrls.isNotEmpty()) {
+            val loader = Coil.imageLoader(ctx)
+            withTimeoutOrNull(1400L) {
+                preloadUrls.forEachIndexed { idx, url ->
+                    val req = ImageRequest.Builder(ctx)
+                        .data(url)
+                        .size(600, 600)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .build()
+                    runCatching { loader.execute(req) }
+                    _preloadProgress.value = (0.48f + 0.44f * ((idx + 1).toFloat() / preloadUrls.size)).coerceAtMost(0.94f)
+                }
+            }
+        }
+
+        // Finish smooth progress fill so the bar always feels deliberate and polished
+        if (!isRobolectricEnv()) {
+            val steps = listOf(0.86f, 0.94f, 1.0f)
+            for (target in steps) {
+                if (_preloadProgress.value < target) {
+                    _preloadProgress.value = target
+                    delay(75L)
+                }
+            }
+            delay(110L)
+        } else {
+            _preloadProgress.value = 1f
+        }
+        _isPreloading.value = false
+
+        // Continue silent background warming for additional owned cards
+        warmImageUrls(ownedUrls.drop(18))
+    }
+
+    private fun isRobolectricEnv(): Boolean =
+        "robolectric".equals(Build.FINGERPRINT, ignoreCase = true)
 
     override fun onCleared() {
         super.onCleared()
@@ -619,6 +716,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 .onFailure { err ->
                     _snackbarMessage.value = err.localizedMessage ?: "Quiz on hourly cooldown."
+                }
+        }
+    }
+
+    fun claimMysteryPickPrize(
+        label: String,
+        coinReward: Int,
+        diamondReward: Int,
+        freePackReward: Int
+    ) {
+        viewModelScope.launch {
+            repository.consumeMysteryPickChargeAndAward(coinReward, diamondReward, freePackReward)
+                .onSuccess {
+                    soundEngine.playRewardChime()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.MINIGAME,
+                        title = "Mystery Vault Pick",
+                        detail = "Opened chest: $label",
+                        coinDelta = coinReward,
+                        diamondDelta = diamondReward
+                    )
+                    syncCloudProfileNow()
+                    _snackbarMessage.value = "Mystery Chest: $label!"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Mystery Vault recharging!"
+                }
+        }
+    }
+
+    fun completeMemoryMatch(moves: Int, coinReward: Int, diamondReward: Int) {
+        viewModelScope.launch {
+            repository.consumeMemoryMatchChargeAndAward(coinReward, diamondReward)
+                .onSuccess {
+                    soundEngine.playRewardChime()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.MINIGAME,
+                        title = "Memory Blitz",
+                        detail = "Matched all pairs in $moves moves",
+                        coinDelta = coinReward,
+                        diamondDelta = diamondReward
+                    )
+                    syncCloudProfileNow()
+                    _snackbarMessage.value = "Memory Blitz ($moves moves): +$coinReward 🪙 +$diamondReward 💎!"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Memory Blitz recharging!"
                 }
         }
     }

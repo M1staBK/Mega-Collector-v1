@@ -435,9 +435,9 @@ fun PackOpeningScreen(
                                     .padding(top = 6.dp)
                             ) {
                                 Surface(
-                                    color = MoonlightNight.copy(alpha = 0.92f),
+                                    color = MoonlightNight,
                                     shape = RoundedCornerShape(999.dp),
-                                    border = BorderStroke(1.2.dp, palette.misprintLabel.copy(alpha = 0.72f)),
+                                    border = BorderStroke(1.2.dp, palette.accentPrimary),
                                     shadowElevation = 4.dp
                                 ) {
                                     Row(
@@ -447,14 +447,47 @@ fun PackOpeningScreen(
                                         Icon(
                                             imageVector = Icons.Default.Bolt,
                                             contentDescription = null,
-                                            tint = StudioGoldBright,
+                                            tint = palette.accentPrimary,
                                             modifier = Modifier.size(18.dp)
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
                                             text = "1 OF 1 MISPRINT DISCOVERED!",
                                             style = MaterialTheme.typography.labelLarge,
-                                            color = palette.misprintLabel
+                                            color = palette.accentPrimary
+                                        )
+                                    }
+                                }
+                            }
+
+                            this@Column.AnimatedVisibility(
+                                visible = focusedCard.isHolographicEdition && !focusedCard.isMisprint,
+                                enter = fadeIn() + scaleIn(),
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 6.dp)
+                            ) {
+                                Surface(
+                                    color = palette.cardSurface,
+                                    shape = RoundedCornerShape(999.dp),
+                                    border = BorderStroke(1.2.dp, palette.accentPrimary),
+                                    shadowElevation = 4.dp
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.AutoAwesome,
+                                            contentDescription = null,
+                                            tint = palette.accentPrimary,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "HOLO PRISM COLLECTOR+",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = palette.accentPrimary
                                         )
                                     }
                                 }
@@ -640,8 +673,8 @@ fun PackOpeningScreen(
                         Button(
                             onClick = onShowSummaryGrid,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = StudioGold,
-                                contentColor = palette.goldButtonContent
+                                containerColor = palette.buttonPrimary,
+                                contentColor = Color.White
                             ),
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier

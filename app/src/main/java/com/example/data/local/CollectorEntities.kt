@@ -56,24 +56,29 @@ data class OwnedCardEntity(
     val serialCode: String,
     val pullRatePercent: Double,
     val obtainedAtMs: Long,
-    val isListedForTrade: Boolean = false
+    val isListedForTrade: Boolean = false,
+    val isHolographic: Boolean = false
 ) {
-    fun toDomain() = OwnedCard(
-        instanceId = instanceId,
-        catalogId = catalogId,
-        skinName = skinName,
-        heroName = heroName,
-        role = role,
-        rawTier = rawTier,
-        rarity = SkinRarity.fromNameSafe(rarityName),
-        imageUrl = imageUrl,
-        isMisprint = isMisprint,
-        misprintAnomaly = MisprintAnomaly.fromNameSafe(misprintAnomalyName),
-        serialCode = serialCode,
-        pullRatePercent = pullRatePercent,
-        obtainedAtMs = obtainedAtMs,
-        isListedForTrade = isListedForTrade
-    )
+    fun toDomain(): OwnedCard {
+        val mappedRarity = SkinRarity.fromNameSafe(rarityName)
+        return OwnedCard(
+            instanceId = instanceId,
+            catalogId = catalogId,
+            skinName = skinName,
+            heroName = heroName,
+            role = role,
+            rawTier = rawTier,
+            rarity = mappedRarity,
+            imageUrl = imageUrl,
+            isMisprint = isMisprint,
+            misprintAnomaly = MisprintAnomaly.fromNameSafe(misprintAnomalyName),
+            serialCode = serialCode,
+            pullRatePercent = pullRatePercent,
+            obtainedAtMs = obtainedAtMs,
+            isListedForTrade = isListedForTrade,
+            isHolographic = isHolographic && mappedRarity.tierRank >= SkinRarity.COLLECTOR.tierRank
+        )
+    }
 }
 
 @Entity(tableName = "trade_listings")

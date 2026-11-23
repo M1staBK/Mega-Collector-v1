@@ -51,7 +51,6 @@ import com.example.model.AchievementBadgeDefinition
 import com.example.model.AchievementCatalog
 import com.example.model.CollectorPublicProfile
 import com.example.ui.theme.CollectorTheme
-import com.example.ui.theme.RarityUncommon
 
 @Composable
 fun ProfileViewerDialog(
@@ -183,7 +182,7 @@ fun ProfileViewerDialog(
                     ProfileMiniStat(
                         label = "Prestige",
                         value = "%,d".format(profile.prestigeScore),
-                        accent = palette.gold,
+                        accent = palette.accentPrimary,
                         modifier = Modifier.weight(1f)
                     )
                     ProfileMiniStat(
@@ -195,7 +194,7 @@ fun ProfileViewerDialog(
                     ProfileMiniStat(
                         label = "Trades",
                         value = "${profile.tradesDone}",
-                        accent = RarityUncommon,
+                        accent = palette.accentPrimary,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -233,11 +232,11 @@ fun ProfileViewerDialog(
                             resolvedBadges.take(3).forEach { badge ->
                                 val isSelected = inspectedBadge?.id == badge.id
                                 Surface(
-                                    color = badge.accentColor.copy(alpha = if (isSelected) 0.24f else 0.13f),
+                                    color = if (isSelected) palette.accentPrimary.copy(alpha = 0.16f) else palette.frostSurface,
                                     shape = CircleShape,
                                     border = BorderStroke(
                                         width = if (isSelected) 2.dp else 1.2.dp,
-                                        color = badge.accentColor.copy(alpha = if (isSelected) 1f else 0.6f)
+                                        color = if (isSelected) palette.accentPrimary else palette.accentPrimary.copy(alpha = 0.55f)
                                     ),
                                     modifier = Modifier
                                         .size(52.dp)
@@ -262,7 +261,7 @@ fun ProfileViewerDialog(
                                         Icon(
                                             imageVector = BadgeIconVector(badge.iconStyle),
                                             contentDescription = badge.title,
-                                            tint = badge.accentColor,
+                                            tint = palette.accentPrimary,
                                             modifier = Modifier.size(25.dp)
                                         )
                                     }
@@ -273,9 +272,9 @@ fun ProfileViewerDialog(
                         AnimatedVisibility(visible = inspectedBadge != null) {
                             inspectedBadge?.let { b ->
                                 Surface(
-                                    color = b.accentColor.copy(alpha = 0.12f),
+                                    color = palette.frostSurface,
                                     shape = RoundedCornerShape(12.dp),
-                                    border = BorderStroke(1.dp, b.accentColor.copy(alpha = 0.48f)),
+                                    border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.55f)),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .testTag("viewer_badge_tooltip")

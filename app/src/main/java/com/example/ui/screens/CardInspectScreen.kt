@@ -52,6 +52,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.model.OwnedCard
+import com.example.model.SkinRarity
 import com.example.ui.components.HolographicCardView
 import com.example.ui.sensors.rememberCardTiltState
 import com.example.ui.theme.CollectorTheme
@@ -235,7 +236,7 @@ fun CardInspectScreen(
                         },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
-                            checkedTrackColor = DeepCobalt
+                            checkedTrackColor = palette.buttonPrimary
                         )
                     )
                 }
@@ -294,11 +295,20 @@ fun CardInspectScreen(
                     TelemetryRow("Hero", card.heroName)
                     TelemetryRow("Skin Tier (API)", card.rawTier)
                     TelemetryRow("Collector Rarity", card.rarity.displayName, card.rarity.primaryColor)
+                    TelemetryRow(
+                        "Card Finish",
+                        when {
+                            card.isHolographicEdition -> "Holographic Prism"
+                            card.rarity.tierRank >= SkinRarity.COLLECTOR.tierRank -> "Collector Satin"
+                            else -> "Matte Satin"
+                        },
+                        if (card.isHolographicEdition) palette.accentPrimary else InkSlate
+                    )
                     TelemetryRow("Drop Odds", "${card.pullRatePercent}%")
-                    TelemetryRow("Serial Stamp", card.serialCode, if (card.isMisprint) StudioGoldText else InkSlate)
+                    TelemetryRow("Serial Stamp", card.serialCode, if (card.isMisprint) palette.accentPrimary else InkSlate)
                     TelemetryRow("Vault Copies", "x$duplicateCount")
                     TelemetryRow("Prestige Power", "+${card.prestigeScore}", palette.accentPrimary)
-                    TelemetryRow("Recycle Value", "+${card.recycleValueGold} Coins", StudioGoldText)
+                    TelemetryRow("Recycle Value", "+${card.recycleValueGold} Coins", palette.accentPrimary)
                 }
             }
 
@@ -335,7 +345,7 @@ fun CardInspectScreen(
                     onClick = { onMintTradeSlip(card) },
                     enabled = !card.isListedForTrade,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = DeepCobalt,
+                        containerColor = palette.buttonPrimary,
                         contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(14.dp),

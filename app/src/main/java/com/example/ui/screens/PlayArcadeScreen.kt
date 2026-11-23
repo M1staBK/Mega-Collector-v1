@@ -6,8 +6,10 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,18 +26,28 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Diamond
+import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Stars
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -82,11 +95,6 @@ import com.example.model.QuizQuestion
 import com.example.model.QuizQuestionBank
 import com.example.model.QuizQuestionType
 import com.example.model.SkinCatalogItem
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.filled.CardGiftcard
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Stars
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
@@ -97,6 +105,7 @@ import com.example.ui.components.FrostedGlassCard
 import com.example.ui.components.RarityChip
 import com.example.ui.components.SettingsGearButton
 import com.example.ui.components.rememberMlbbImageRequest
+import com.example.ui.components.rememberMlbbSquareImageRequest
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
 import com.example.ui.theme.IceBorder
@@ -112,6 +121,7 @@ import com.example.ui.theme.StudioGoldBright
 import com.example.ui.theme.StudioGoldText
 import com.example.ui.theme.rememberSafeHapticPerformer
 import com.example.ui.viewmodel.MegaCollectorUiState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
@@ -127,6 +137,8 @@ fun PlayArcadeScreen(
     onSpinWheelPrize: (label: String, coins: Int, diamonds: Int, freePacks: Int) -> Unit,
     onWheelTickSfx: (Float) -> Unit,
     onCompleteHourlyQuiz: (Int, Int) -> Unit,
+    onClaimMysteryPick: (label: String, coins: Int, diamonds: Int, freePacks: Int) -> Unit = { _, _, _, _ -> },
+    onCompleteMemoryMatch: (moves: Int, coins: Int, diamonds: Int) -> Unit = { _, _, _ -> },
     onPlasticCrinkle: () -> Unit,
     onOpenSettings: () -> Unit,
     onButtonClickSfx: () -> Unit,
@@ -140,7 +152,9 @@ fun PlayArcadeScreen(
             .let { if (includeStatusBarPadding) it.statusBarsPadding() else it }
     ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("play_arcade_list"),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -242,7 +256,7 @@ fun PlayArcadeScreen(
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Scratchers, Prize Wheel & Prism Strike refill +1/hr (stack 3). 5-Question Quiz resets every 1 hour!",
+                            text = "Wheel, Scratchers, Mystery Vault, Memory Blitz & Prism Strike refill +1/hr (stack 3). Quiz resets hourly!",
                             style = MaterialTheme.typography.bodyMedium,
                             color = palette.muted
                         )
@@ -264,7 +278,26 @@ fun PlayArcadeScreen(
                 )
             }
 
-            // Minigame 2: Hourly Coin Scratchers (Stack up to 3, +1 per hour)
+            // Minigame 2: Mystery Vault Pick (5 sealed chests)
+            item {
+                MysteryVaultPickSection(
+                    status = uiState.mysteryPickStatus,
+                    onPickPrize = onClaimMysteryPick,
+                    onButtonClickSfx = onButtonClickSfx
+                )
+            }
+
+            // Minigame 3: Memory Blitz (3x2 card pairs)
+            item {
+                MemoryBlitzSection(
+                    status = uiState.memoryMatchStatus,
+                    catalog = uiState.catalog,
+                    onCompleteMatch = onCompleteMemoryMatch,
+                    onButtonClickSfx = onButtonClickSfx
+                )
+            }
+
+            // Minigame 4: Hourly Coin Scratchers (Stack up to 3, +1 per hour)
             item {
                 HourlyScratcherSection(
                     status = uiState.scratcherStatus,
@@ -273,7 +306,7 @@ fun PlayArcadeScreen(
                 )
             }
 
-            // Minigame 3: 5-Question Hourly Legends & Map Quiz
+            // Minigame 5: 5-Question Hourly Legends & Map Quiz
             item {
                 HourlyFiveQuestionQuizCard(
                     catalog = uiState.catalog,
@@ -283,7 +316,7 @@ fun PlayArcadeScreen(
                 )
             }
 
-            // Minigame 4: Hourly Prism Timing Tap (Green center, Yellow inner, White outer; freezes on use)
+            // Minigame 6: Hourly Prism Timing Tap (Green center, Yellow inner, White outer; freezes on use)
             item {
                 HourlyPrismTimingTapGame(
                     status = uiState.prismStatus,
@@ -650,7 +683,7 @@ private fun HourlyScratcherSection(
 
     FrostedGlassCard(
         cornerRadius = 24.dp,
-        borderColor = StudioGold.copy(alpha = 0.48f)
+        borderColor = palette.accentPrimary.copy(alpha = 0.42f)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -665,7 +698,7 @@ private fun HourlyScratcherSection(
                     Icon(
                         imageVector = Icons.Default.Casino,
                         contentDescription = null,
-                        tint = StudioGold,
+                        tint = palette.accentPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -675,7 +708,7 @@ private fun HourlyScratcherSection(
                         color = InkSlate
                     )
                 }
-                HourlyChargeBadge(status = status, accent = palette.goldText)
+                HourlyChargeBadge(status = status, accent = palette.accentPrimary)
             }
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -819,7 +852,7 @@ private fun HourlyScratcherSection(
                     ) {
                         LinearProgressIndicator(
                             progress = { scratchProgress },
-                            color = StudioGold,
+                            color = palette.accentPrimary,
                             trackColor = SkyFrost,
                             modifier = Modifier
                                 .weight(1f)
@@ -829,17 +862,17 @@ private fun HourlyScratcherSection(
                         Spacer(modifier = Modifier.width(12.dp))
                         OutlinedButton(
                             onClick = ::finishScratch,
-                            border = BorderStroke(1.dp, StudioGold),
+                            border = BorderStroke(1.dp, palette.accentPrimary),
                             modifier = Modifier.testTag("quick_scratch_button")
                         ) {
-                            Text("Quick Scratch", color = StudioGoldText)
+                            Text("Quick Scratch", color = palette.accentPrimary)
                         }
                     }
                 } else if (hasCharges) {
                     Button(
                         onClick = { cardSeed++ },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = DeepCobalt,
+                            containerColor = palette.buttonPrimary,
                             contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(12.dp),
@@ -937,7 +970,7 @@ private fun HourlyFiveQuestionQuizCard(
                     Surface(
                         color = palette.abyss,
                         shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, RarityUncommon.copy(alpha = 0.55f)),
+                        border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.55f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -947,7 +980,7 @@ private fun HourlyFiveQuestionQuizCard(
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
                                 contentDescription = null,
-                                tint = RarityUncommon,
+                                tint = palette.accentPrimary,
                                 modifier = Modifier.size(30.dp)
                             )
                             Spacer(modifier = Modifier.height(6.dp))
@@ -1041,7 +1074,7 @@ private fun HourlyFiveQuestionQuizCard(
                                 Text(
                                     text = q.type.label,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (q.type == QuizQuestionType.MAP_KNOWLEDGE) StudioGoldText else palette.accentPrimary,
+                                    color = palette.accentPrimary,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
@@ -1052,7 +1085,7 @@ private fun HourlyFiveQuestionQuizCard(
                             Text(
                                 text = "Score: $correctCount/${currentIndex + if (selectedOption != null) 1 else 0}",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = palette.goldText
+                                color = palette.accentPrimary
                             )
                         }
 
@@ -1176,8 +1209,8 @@ private fun HourlyFiveQuestionQuizCard(
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isLast) StudioGold else DeepCobalt,
-                                    contentColor = if (isLast) palette.goldButtonContent else Color.White
+                                    containerColor = palette.buttonPrimary,
+                                    contentColor = Color.White
                                 ),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
@@ -1256,7 +1289,7 @@ private fun HourlyPrismTimingTapGame(
                     Icon(
                         imageVector = Icons.Default.Bolt,
                         contentDescription = null,
-                        tint = centerGreen,
+                        tint = palette.accentPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1396,6 +1429,420 @@ private fun HourlyPrismTimingTapGame(
                         style = MaterialTheme.typography.labelLarge
                     )
                 }
+            }
+        }
+    }
+}
+
+private data class MysteryChestPrize(
+    val shortLabel: String,
+    val fullLabel: String,
+    val coins: Int,
+    val diamonds: Int,
+    val freePacks: Int
+)
+
+private val MYSTERY_CHEST_POOL = listOf(
+    MysteryChestPrize("+80 🪙", "+80 Coins", coins = 80, diamonds = 0, freePacks = 0),
+    MysteryChestPrize("+45 🪙", "+45 Coins", coins = 45, diamonds = 0, freePacks = 0),
+    MysteryChestPrize("+30 🪙", "+30 Coins", coins = 30, diamonds = 0, freePacks = 0),
+    MysteryChestPrize("+3 💎", "+3 Diamonds", coins = 0, diamonds = 3, freePacks = 0),
+    MysteryChestPrize("+1 Pack", "+1 Free Pack", coins = 0, diamonds = 0, freePacks = 1)
+)
+
+@Composable
+private fun MysteryVaultPickSection(
+    status: HourlyChargeStatus,
+    onPickPrize: (String, Int, Int, Int) -> Unit,
+    onButtonClickSfx: () -> Unit
+) {
+    val palette = CollectorTheme.colors
+    val performHaptic = rememberSafeHapticPerformer()
+    var roundSeed by remember { mutableIntStateOf(0) }
+    val chests = remember(roundSeed) { MYSTERY_CHEST_POOL.shuffled(Random(roundSeed + 17)) }
+    var pickedIndex by remember(roundSeed) { mutableIntStateOf(-1) }
+    val hasCharges = status.charges > 0
+    val revealed = pickedIndex >= 0
+
+    FrostedGlassCard(cornerRadius = 24.dp) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Inventory2,
+                        contentDescription = null,
+                        tint = palette.accentPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Mystery Vault Pick",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
+                        color = palette.ink
+                    )
+                }
+                HourlyChargeBadge(status = status, accent = palette.accentPrimary)
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = if (revealed) {
+                    "Opened chest #${pickedIndex + 1} for ${chests[pickedIndex].fullLabel}!"
+                } else {
+                    "Pick 1 of 5 sealed vault chests to uncover Coins, Diamonds, or a Free Pack!"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.muted
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                chests.forEachIndexed { idx, prize ->
+                    val isPicked = pickedIndex == idx
+                    Surface(
+                        color = when {
+                            isPicked -> palette.buttonPrimary
+                            revealed -> palette.frostSurface
+                            hasCharges -> palette.cardSurface
+                            else -> palette.abyss
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        shadowElevation = if (hasCharges && !revealed) 2.dp else 0.dp,
+                        border = BorderStroke(
+                            width = if (isPicked) 2.dp else 1.2.dp,
+                            color = when {
+                                isPicked -> palette.accentPrimary
+                                hasCharges && !revealed -> palette.accentPrimary.copy(alpha = 0.45f)
+                                else -> palette.border
+                            }
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(82.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable(enabled = hasCharges && !revealed) {
+                                performHaptic(HapticFeedbackType.LongPress)
+                                pickedIndex = idx
+                                onPickPrize(prize.fullLabel, prize.coins, prize.diamonds, prize.freePacks)
+                            }
+                            .testTag("mystery_chest_$idx")
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = if (revealed) {
+                                    when {
+                                        prize.freePacks > 0 -> Icons.Default.CardGiftcard
+                                        prize.diamonds > 0 -> Icons.Default.Diamond
+                                        else -> Icons.Default.MonetizationOn
+                                    }
+                                } else {
+                                    Icons.Default.HelpOutline
+                                },
+                                contentDescription = if (revealed) prize.fullLabel else "Mystery Chest ${idx + 1}",
+                                tint = when {
+                                    isPicked -> Color.White
+                                    revealed -> palette.accentPrimary
+                                    hasCharges -> palette.accentPrimary
+                                    else -> palette.muted
+                                },
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (revealed) prize.shortLabel else "#${idx + 1}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                                color = when {
+                                    isPicked -> Color.White
+                                    revealed -> palette.ink
+                                    hasCharges -> palette.ink
+                                    else -> palette.muted
+                                },
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (revealed && hasCharges) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = {
+                        onButtonClickSfx()
+                        roundSeed++
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.buttonPrimary,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("mystery_play_again_button")
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Open Another Chest (${status.charges}/3 Left)")
+                }
+            } else if (!hasCharges && !revealed) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Recharging... +1 chest pick in ${formatCountdownMs(status.msUntilNextCharge)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = palette.accentPrimary
+                )
+            }
+        }
+    }
+}
+
+private data class MemoryTileItem(
+    val id: Int,
+    val pairKey: String,
+    val title: String,
+    val imageUrl: String,
+    val fallbackIconIdx: Int
+)
+
+@Composable
+private fun MemoryBlitzSection(
+    status: HourlyChargeStatus,
+    catalog: List<SkinCatalogItem>,
+    onCompleteMatch: (Int, Int, Int) -> Unit,
+    onButtonClickSfx: () -> Unit
+) {
+    val palette = CollectorTheme.colors
+    val performHaptic = rememberSafeHapticPerformer()
+    var gameSeed by remember { mutableIntStateOf(0) }
+    val hasCharges = status.charges > 0
+
+    val deck = remember(gameSeed, catalog.size) {
+        val chosenSkins = if (catalog.size >= 3) {
+            catalog.shuffled(Random(gameSeed + 101)).take(3)
+        } else {
+            emptyList()
+        }
+        val pairs = if (chosenSkins.size == 3) {
+            chosenSkins.mapIndexed { idx, skin ->
+                Triple("skin_${skin.id}", skin.heroName, skin.imageUrl) to idx
+            }
+        } else {
+            listOf(
+                Triple("legend", "Legend", "") to 0,
+                Triple("collector", "Collector", "") to 1,
+                Triple("prism", "Prism", "") to 2
+            )
+        }
+        pairs.flatMapIndexed { pIdx, (info, iconIdx) ->
+            listOf(
+                MemoryTileItem(pIdx * 2, info.first, info.second, info.third, iconIdx),
+                MemoryTileItem(pIdx * 2 + 1, info.first, info.second, info.third, iconIdx)
+            )
+        }.shuffled(Random(gameSeed + 404))
+    }
+
+    var matchedKeys by remember(gameSeed) { mutableStateOf<Set<String>>(emptySet()) }
+    var flippedIndices by remember(gameSeed) { mutableStateOf<List<Int>>(emptyList()) }
+    var moves by remember(gameSeed) { mutableIntStateOf(0) }
+    var boardCompleted by remember(gameSeed) { mutableStateOf(false) }
+
+    LaunchedEffect(flippedIndices) {
+        if (flippedIndices.size == 2) {
+            val a = deck[flippedIndices[0]]
+            val b = deck[flippedIndices[1]]
+            if (a.pairKey == b.pairKey) {
+                val updatedMatched = matchedKeys + a.pairKey
+                matchedKeys = updatedMatched
+                flippedIndices = emptyList()
+                if (updatedMatched.size >= 3 && !boardCompleted) {
+                    boardCompleted = true
+                    performHaptic(HapticFeedbackType.LongPress)
+                    val (coins, diamonds) = if (moves <= 4) 50 to 3 else 35 to 2
+                    onCompleteMatch(moves, coins, diamonds)
+                }
+            } else {
+                delay(650L)
+                flippedIndices = emptyList()
+            }
+        }
+    }
+
+    FrostedGlassCard(cornerRadius = 24.dp) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Memory,
+                        contentDescription = null,
+                        tint = palette.accentPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Memory Blitz",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
+                        color = palette.ink
+                    )
+                }
+                HourlyChargeBadge(status = status, accent = palette.accentPrimary)
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = if (boardCompleted) {
+                    "Board cleared in $moves moves! Reward claimed."
+                } else {
+                    "Match all 3 hero pairs in <=4 moves for +50 Coins & +3 Diamonds! (Moves: $moves)"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.muted
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            for (row in 0 until 2) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = if (row == 0) 8.dp else 0.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    for (col in 0 until 3) {
+                        val idx = row * 3 + col
+                        val tile = deck[idx]
+                        val isMatched = tile.pairKey in matchedKeys
+                        val isFaceUp = isMatched || idx in flippedIndices
+                        val fallbackIcons = listOf(
+                            Icons.Default.WorkspacePremium,
+                            Icons.Default.AutoAwesome,
+                            Icons.Default.Style
+                        )
+
+                        Surface(
+                            color = when {
+                                isMatched -> palette.frostSurface
+                                isFaceUp -> palette.cardSurface
+                                hasCharges -> palette.buttonPrimary
+                                else -> palette.abyss
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(
+                                width = if (isMatched || isFaceUp) 1.5.dp else 1.dp,
+                                color = when {
+                                    isMatched -> palette.accentPrimary
+                                    isFaceUp -> palette.skyAccent
+                                    else -> palette.glassHighlight
+                                }
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1.12f)
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable(
+                                    enabled = hasCharges && !boardCompleted && !isFaceUp && flippedIndices.size < 2
+                                ) {
+                                    onButtonClickSfx()
+                                    val next = flippedIndices + idx
+                                    flippedIndices = next
+                                    if (next.size == 2) {
+                                        moves++
+                                    }
+                                }
+                                .testTag("memory_card_$idx")
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isFaceUp) {
+                                    if (tile.imageUrl.isNotBlank()) {
+                                        SubcomposeAsyncImage(
+                                            model = rememberMlbbSquareImageRequest(tile.imageUrl),
+                                            contentDescription = tile.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(
+                                                imageVector = fallbackIcons[tile.fallbackIconIdx % fallbackIcons.size],
+                                                contentDescription = tile.title,
+                                                tint = palette.accentPrimary,
+                                                modifier = Modifier.size(26.dp)
+                                            )
+                                            Text(
+                                                text = tile.title,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = palette.ink,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Stars,
+                                        contentDescription = "Hidden memory card",
+                                        tint = if (hasCharges) Color.White.copy(alpha = 0.90f) else palette.muted,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (boardCompleted && hasCharges) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = {
+                        onButtonClickSfx()
+                        gameSeed++
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.buttonPrimary,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("memory_play_again_button")
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Play Next Board (${status.charges}/3 Left)")
+                }
+            } else if (!hasCharges && !boardCompleted) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Recharging... +1 board in ${formatCountdownMs(status.msUntilNextCharge)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = palette.accentPrimary
+                )
             }
         }
     }

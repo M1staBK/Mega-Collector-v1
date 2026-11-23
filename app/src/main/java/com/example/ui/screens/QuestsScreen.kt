@@ -169,13 +169,13 @@ fun QuestsScreen(
                                 Text(
                                     text = if (claimableTotal > 0) "$claimableTotal mission reward${if (claimableTotal > 1) "s" else ""} ready!" else "Collect skins & rip packs to unlock rewards",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (claimableTotal > 0) palette.goldText else SlateMuted
+                                    color = if (claimableTotal > 0) palette.accentPrimary else SlateMuted
                                 )
                             }
                         }
 
                         Surface(
-                            color = Color(0xFF38BDF8),
+                            color = palette.buttonPrimary,
                             shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(2.dp, Color.White),
                             shadowElevation = 4.dp,
@@ -247,7 +247,7 @@ fun QuestsScreen(
 
             // Frosted Pill Category Filter Switcher
             Surface(
-                color = palette.cardSurface.copy(alpha = if (palette.isDark) 0.92f else 0.78f),
+                color = palette.cardSurface,
                 shape = RoundedCornerShape(999.dp),
                 shadowElevation = 2.dp,
                 border = BorderStroke(1.2.dp, palette.glassHighlight),
@@ -357,21 +357,21 @@ private fun QuestCardRow(
     val shownProgress = quest.currentProgress.coerceAtMost(def.targetCount)
 
     val (rewardIcon, rewardCountLabel, rewardTint) = when {
-        def.freePackReward > 0 -> Triple(Icons.Default.CardGiftcard, "${def.freePackReward}", MisprintMagenta)
-        def.diamondReward > 0 -> Triple(Icons.Default.Diamond, "${def.diamondReward}", palette.skyAccent)
-        else -> Triple(Icons.Default.MonetizationOn, "${def.coinReward}", StudioGold)
+        def.freePackReward > 0 -> Triple(Icons.Default.CardGiftcard, "${def.freePackReward}", palette.accentPrimary)
+        def.diamondReward > 0 -> Triple(Icons.Default.Diamond, "${def.diamondReward}", palette.accentPrimary)
+        else -> Triple(Icons.Default.MonetizationOn, "${def.coinReward}", palette.accentPrimary)
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Surface(
-            color = Color.Transparent,
+            color = if (quest.canClaim) palette.buttonPrimary else palette.cardSurface,
             shape = RoundedCornerShape(22.dp),
             shadowElevation = if (quest.canClaim) 5.dp else 2.dp,
             border = BorderStroke(
                 width = if (quest.canClaim) 1.6.dp else 1.2.dp,
                 color = when {
-                    quest.canClaim -> palette.mintAccent
-                    quest.isClaimed -> RarityUncommon.copy(alpha = 0.55f)
+                    quest.canClaim -> palette.accentPrimary
+                    quest.isClaimed -> palette.accentPrimary.copy(alpha = 0.45f)
                     else -> palette.glassHighlight
                 }
             ),
@@ -383,13 +383,13 @@ private fun QuestCardRow(
                     .background(
                         when {
                             quest.canClaim -> Brush.horizontalGradient(
-                                listOf(Color(0xFF00E5C3), Color(0xFF06B6D4))
+                                listOf(palette.buttonPrimary, palette.skyAccent)
                             )
                             else -> Brush.horizontalGradient(
                                 listOf(
                                     palette.cardSurface,
                                     palette.cardSurface,
-                                    palette.mintAccent.copy(alpha = if (palette.isDark) 0.12f else 0.14f)
+                                    palette.frostSurface
                                 )
                             )
                         }
@@ -426,7 +426,7 @@ private fun QuestCardRow(
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 ),
-                                color = if (quest.canClaim) Color(0xFF0F172A) else InkSlate
+                                color = if (quest.canClaim) Color(0xFF0F172A) else palette.ink
                             )
                         }
                     }
@@ -436,12 +436,12 @@ private fun QuestCardRow(
                         Text(
                             text = def.title,
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = if (quest.canClaim) Color(0xFF00201B) else InkSlate
+                            color = if (quest.canClaim) Color.White else palette.ink
                         )
                         Text(
                             text = def.description,
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (quest.canClaim) Color(0xFF003B33) else SlateMuted
+                            color = if (quest.canClaim) Color.White.copy(alpha = 0.90f) else palette.muted
                         )
                         Spacer(modifier = Modifier.height(6.dp))
 
@@ -454,10 +454,10 @@ private fun QuestCardRow(
                                 progress = { quest.progressFraction },
                                 color = when {
                                     quest.canClaim -> Color.White
-                                    quest.isClaimed -> RarityUncommon
-                                    else -> palette.mintAccent
+                                    quest.isClaimed -> palette.accentPrimary
+                                    else -> palette.accentPrimary
                                 },
-                                trackColor = if (quest.canClaim) Color.White.copy(alpha = 0.35f) else SkyFrost,
+                                trackColor = if (quest.canClaim) Color.White.copy(alpha = 0.35f) else palette.frostSurface,
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(6.dp)
@@ -467,7 +467,7 @@ private fun QuestCardRow(
                             when {
                                 quest.isClaimed -> {
                                     Surface(
-                                        color = RarityUncommon.copy(alpha = 0.16f),
+                                        color = palette.frostSurface,
                                         shape = RoundedCornerShape(999.dp)
                                     ) {
                                         Row(
@@ -477,14 +477,14 @@ private fun QuestCardRow(
                                             Icon(
                                                 imageVector = Icons.Default.CheckCircle,
                                                 contentDescription = "Claimed",
-                                                tint = RarityUncommon,
+                                                tint = palette.accentPrimary,
                                                 modifier = Modifier.size(13.dp)
                                             )
                                             Spacer(modifier = Modifier.width(3.dp))
                                             Text(
                                                 text = "Claimed",
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = RarityUncommon
+                                                color = palette.accentPrimary
                                             )
                                         }
                                     }
@@ -495,7 +495,7 @@ private fun QuestCardRow(
                                         onClick = onClaim,
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = Color.White,
-                                            contentColor = Color(0xFF006B5D)
+                                            contentColor = palette.buttonPrimary
                                         ),
                                         shape = RoundedCornerShape(999.dp),
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -525,7 +525,7 @@ private fun QuestCardRow(
                             Text(
                                 text = "+%,d 🪙  •  +${def.diamondReward} 💎".format(def.coinReward),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = StudioGoldText
+                                color = palette.accentPrimary
                             )
                         }
                     }

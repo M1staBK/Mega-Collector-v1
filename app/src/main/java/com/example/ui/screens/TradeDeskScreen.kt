@@ -134,22 +134,22 @@ fun TradeDeskScreen(
         item {
             FrostedGlassCard(
                 cornerRadius = 24.dp,
-                borderColor = palette.mintAccent.copy(alpha = 0.45f)
+                borderColor = palette.accentPrimary.copy(alpha = 0.45f)
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    // Angled Mint-Emerald Banner Sash
+                    // Angled Theme-Accented Banner Sash
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(64.dp)
                             .background(
                                 Brush.horizontalGradient(
-                                    listOf(palette.mintAccent, Color(0xFF10B981))
+                                    listOf(palette.buttonPrimary, palette.skyAccent)
                                 )
                             )
                     ) {
                         Surface(
-                            color = PureWhiteCard.copy(alpha = 0.94f),
+                            color = palette.cardSurface,
                             shape = RoundedCornerShape(999.dp),
                             shadowElevation = 2.dp,
                             modifier = Modifier
@@ -164,7 +164,7 @@ fun TradeDeskScreen(
                                 Icon(
                                     imageVector = Icons.Default.SwapHoriz,
                                     contentDescription = null,
-                                    tint = palette.mintAccent,
+                                    tint = palette.accentPrimary,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -177,8 +177,9 @@ fun TradeDeskScreen(
                         }
 
                         Surface(
-                            color = PureWhiteCard.copy(alpha = 0.92f),
+                            color = palette.cardSurface,
                             shape = RoundedCornerShape(999.dp),
+                            shadowElevation = 2.dp,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
                                 .padding(end = 14.dp)
@@ -199,16 +200,16 @@ fun TradeDeskScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
-                            color = palette.mintAccent.copy(alpha = 0.14f),
+                            color = palette.frostSurface,
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, palette.mintAccent.copy(alpha = 0.45f)),
+                            border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.45f)),
                             modifier = Modifier.size(48.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.Groups,
                                     contentDescription = null,
-                                    tint = palette.mintAccent,
+                                    tint = palette.accentPrimary,
                                     modifier = Modifier.size(26.dp)
                                 )
                             }
@@ -465,7 +466,7 @@ fun TradeDeskScreen(
                     Text(
                         text = "REDEEM FRIEND'S TRADE SLIP",
                         style = MaterialTheme.typography.titleLarge,
-                        color = StudioGoldText
+                        color = palette.accentPrimary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -481,7 +482,7 @@ fun TradeDeskScreen(
                         placeholder = { Text("MEGA-TRADE-V1:...", color = SlateMuted) },
                         maxLines = 3,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = StudioGold,
+                            focusedBorderColor = palette.accentPrimary,
                             unfocusedBorderColor = IceBorder,
                             focusedTextColor = InkSlate,
                             unfocusedTextColor = InkSlate
@@ -497,8 +498,8 @@ fun TradeDeskScreen(
                         onClick = { onDecodeSlip(pasteCodeInput) },
                         enabled = pasteCodeInput.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = StudioGold,
-                            contentColor = palette.goldButtonContent
+                            containerColor = palette.buttonPrimary,
+                            contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
@@ -588,7 +589,7 @@ fun TradeDeskScreen(
                                 Text(
                                     text = "${slip.serialCode}${if (slip.isMisprint) " • 1/1 MISPRINT" else ""}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (slip.isMisprint) palette.misprintLabel else StudioGoldText
+                                    color = palette.accentPrimary
                                 )
                                 if (slip.seekingNote.isNotBlank()) {
                                     Text(
@@ -943,7 +944,7 @@ private fun P2PMarketListingCard(
                     Text(
                         text = "Seeking: ${listing.seekingNote}",
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
-                        color = StudioGoldText,
+                        color = palette.accentPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1037,7 +1038,7 @@ private fun TradeListingRow(
                 Icon(Icons.Default.ContentCopy, contentDescription = "Copy code", tint = palette.accentPrimary)
             }
             IconButton(onClick = onShareCode, modifier = Modifier.size(44.dp)) {
-                Icon(Icons.Default.Share, contentDescription = "Share code", tint = StudioGold)
+                Icon(Icons.Default.Share, contentDescription = "Share code", tint = palette.accentPrimary)
             }
             IconButton(onClick = onCancel, modifier = Modifier.size(44.dp)) {
                 Icon(Icons.Default.DeleteOutline, contentDescription = "Cancel listing", tint = StudioCrimson)

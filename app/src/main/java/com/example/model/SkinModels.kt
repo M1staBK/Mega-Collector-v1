@@ -24,8 +24,13 @@ data class OwnedCard(
     val serialCode: String,
     val pullRatePercent: Double,
     val obtainedAtMs: Long,
-    val isListedForTrade: Boolean
+    val isListedForTrade: Boolean,
+    val isHolographic: Boolean = false
 ) {
+    /** Only Collector and Legend skins can ever carry Holographic editions. */
+    val isHolographicEdition: Boolean
+        get() = isHolographic && rarity.tierRank >= SkinRarity.COLLECTOR.tierRank
+
     val recycleValueGold: Int
         get() = if (isMisprint && misprintAnomaly != null) {
             maxOf(rarity.recycleGold * misprintAnomaly.valueMultiplier, 25)
@@ -34,10 +39,13 @@ data class OwnedCard(
         }
 
     val prestigeScore: Int
-        get() = if (isMisprint && misprintAnomaly != null) {
-            rarity.prestigePower * misprintAnomaly.valueMultiplier
-        } else {
-            rarity.prestigePower
+        get() {
+            val base = if (isMisprint && misprintAnomaly != null) {
+                rarity.prestigePower * misprintAnomaly.valueMultiplier
+            } else {
+                rarity.prestigePower
+            }
+            return if (isHolographicEdition) (base * 3) / 2 else base
         }
 }
 
