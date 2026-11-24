@@ -64,7 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.model.MisprintAnomaly
 import com.example.model.OwnedCard
@@ -226,15 +226,16 @@ fun HolographicCardView(
                     }
             ) {
                 if (card.imageUrl.isNotBlank()) {
-                    val request = rememberMlbbImageRequest(card.imageUrl)
-                    SubcomposeAsyncImage(
+                    val request = rememberMlbbImageRequest(card.imageUrl, compact = compact)
+                    val fallbackPainter = painterResource(id = R.drawable.bg_mlbb_card_art)
+                    AsyncImage(
                         model = request,
                         contentDescription = "${card.heroName} ${card.skinName} full art Legend skin",
                         contentScale = ContentScale.Crop,
+                        placeholder = fallbackPainter,
+                        error = fallbackPainter,
                         colorFilter = imageColorFilter,
-                        modifier = Modifier.fillMaxSize(),
-                        loading = { SkinFallbackArt(modifier = Modifier.fillMaxSize()) },
-                        error = { SkinFallbackArt(modifier = Modifier.fillMaxSize()) }
+                        modifier = Modifier.fillMaxSize()
                     )
                 } else {
                     SkinFallbackArt(modifier = Modifier.fillMaxSize())
@@ -361,15 +362,16 @@ fun HolographicCardView(
                             }
                     ) {
                         if (card.imageUrl.isNotBlank()) {
-                            val request = rememberMlbbSquareImageRequest(card.imageUrl)
-                            SubcomposeAsyncImage(
+                            val request = rememberMlbbSquareImageRequest(card.imageUrl, compact = compact)
+                            val fallbackPainter = painterResource(id = R.drawable.bg_mlbb_card_art)
+                            AsyncImage(
                                 model = request,
                                 contentDescription = "${card.heroName} ${card.skinName} skin card",
                                 contentScale = ContentScale.Crop,
+                                placeholder = fallbackPainter,
+                                error = fallbackPainter,
                                 colorFilter = imageColorFilter,
-                                modifier = Modifier.fillMaxSize(),
-                                loading = { SkinFallbackArt(modifier = Modifier.fillMaxSize()) },
-                                error = { SkinFallbackArt(modifier = Modifier.fillMaxSize()) }
+                                modifier = Modifier.fillMaxSize()
                             )
                         } else {
                             SkinFallbackArt(modifier = Modifier.fillMaxSize())
@@ -1251,8 +1253,8 @@ fun CardBackView(
         contentAlignment = Alignment.Center
     ) {
         Image(
-            painter = painterResource(id = R.drawable.bg_mlbb_card_art),
-            contentDescription = "Card background artwork",
+            painter = painterResource(id = R.drawable.bg_card_back),
+            contentDescription = "MEGA COLLECTOR card back artwork",
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
@@ -1264,26 +1266,26 @@ fun CardBackView(
                     Brush.radialGradient(
                         colors = listOf(
                             Color.Transparent,
-                            MoonlightNight.copy(alpha = 0.35f),
-                            MoonlightNight.copy(alpha = 0.72f)
+                            Color.Transparent,
+                            MoonlightNight.copy(alpha = 0.28f)
                         )
                     )
                 )
         )
 
         val trimGold = StudioGoldBright
-        Canvas(modifier = Modifier.fillMaxSize().padding(14.dp)) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(10.dp)) {
             drawRoundRect(
-                color = frameColor.copy(alpha = 0.42f * pulse),
+                color = frameColor.copy(alpha = if (isMisprint || rarityHint.tierRank >= SkinRarity.EPIC.tierRank) 0.45f * pulse else 0.22f),
                 cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx()),
-                style = Stroke(width = 1.8.dp.toPx())
+                style = Stroke(width = 1.6.dp.toPx())
             )
             drawRoundRect(
-                color = trimGold.copy(alpha = 0.24f),
-                topLeft = Offset(7.dp.toPx(), 7.dp.toPx()),
-                size = Size(size.width - 14.dp.toPx(), size.height - 14.dp.toPx()),
-                cornerRadius = CornerRadius(10.dp.toPx(), 10.dp.toPx()),
-                style = Stroke(width = 1.dp.toPx())
+                color = trimGold.copy(alpha = 0.20f),
+                topLeft = Offset(5.dp.toPx(), 5.dp.toPx()),
+                size = Size(size.width - 10.dp.toPx(), size.height - 10.dp.toPx()),
+                cornerRadius = CornerRadius(11.dp.toPx(), 11.dp.toPx()),
+                style = Stroke(width = 0.9.dp.toPx())
             )
         }
 

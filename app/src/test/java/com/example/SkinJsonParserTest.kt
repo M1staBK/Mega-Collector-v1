@@ -14,12 +14,15 @@ import com.example.model.QuizQuestionType
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.SkinVoiceLines
+import com.example.ui.components.BoosterPouchPhysics
 import com.example.ui.components.CardDetailUpscaleTransformation
 import com.example.ui.components.CharacterFocusSquareTransformation
 import com.example.ui.screens.computeAngledTearGeometry
+import com.example.ui.screens.selectMemoryBlitzDeck
 import com.example.ui.sensors.mapTiltForDisplayRotation
 import com.example.ui.theme.ThemeAccentOption
 import com.example.ui.theme.buildCollectorPalette
+import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -221,7 +224,7 @@ class SkinJsonParserTest {
             wallet = PlayerWalletState(totalPacksOpened = 1, dailyStreakCount = 3),
             ownedCards = emptyList()
         )
-        assertEquals(12, badges.size)
+        assertEquals(16, badges.size)
         assertTrue(badges.first { it.definition.id == "badge_first_rip" }.isUnlocked)
         assertTrue(badges.first { it.definition.id == "badge_streak_3" }.isUnlocked)
     }
@@ -362,18 +365,59 @@ class SkinJsonParserTest {
 
     @Test
     fun `theme accent presets produce distinct light and dark palettes`() {
-        assertEquals(5, ThemeAccentOption.entries.size)
+        assertEquals(8, ThemeAccentOption.entries.size)
         assertEquals(ThemeAccentOption.SKY_COBALT, ThemeAccentOption.fromId("unknown_id"))
         assertEquals(ThemeAccentOption.ROYAL_AMETHYST, ThemeAccentOption.fromId("ROYAL_AMETHYST"))
+        assertEquals(ThemeAccentOption.OBSIDIAN_PACK, ThemeAccentOption.fromId("OBSIDIAN_PACK"))
 
         val lightButtons = ThemeAccentOption.entries.map {
             buildCollectorPalette(isDark = false, accent = it).buttonPrimary
         }.toSet()
-        assertEquals(5, lightButtons.size)
+        assertEquals(8, lightButtons.size)
 
         val darkAccents = ThemeAccentOption.entries.map {
             buildCollectorPalette(isDark = true, accent = it).accentPrimary
         }.toSet()
-        assertEquals(5, darkAccents.size)
+        assertEquals(8, darkAccents.size)
+    }
+
+    @Test
+    fun `booster pouch geometry has squished crimps, pinched waist, plump belly girth, and inertial spin snap`() {
+        val topCrimpInset = BoosterPouchPhysics.pouchSideInsetFraction(0.05f)
+        val waistPinchInset = BoosterPouchPhysics.pouchSideInsetFraction(0.145f)
+        val centerBellyInset = BoosterPouchPhysics.pouchSideInsetFraction(0.50f)
+        assertTrue(waistPinchInset > topCrimpInset)
+        assertTrue(centerBellyInset < topCrimpInset)
+
+        val flatLighting = BoosterPouchPhysics.computeLightingState(0f, 0f, 0f, 0f)
+        val turnedLighting = BoosterPouchPhysics.computeLightingState(48f, -10f, 12f, 5f)
+        assertTrue(turnedLighting.girthSideRatio > flatLighting.girthSideRatio + 0.4f)
+        assertTrue(turnedLighting.specularCenterU > flatLighting.specularCenterU)
+
+        // Brisk swipe past midpoint projects forward to 180 deg face instead of snapping back to 0
+        assertEquals(180f, BoosterPouchPhysics.nearestSettledFaceYaw(62f, 340f), 0.01f)
+        assertEquals(0f, BoosterPouchPhysics.nearestSettledFaceYaw(18f, 10f), 0.01f)
+    }
+
+    @Test
+    fun `memory blitz randomizes distinct hero decks and board layouts across seeds`() {
+        val catalog = (1..40).map { idx ->
+            SkinCatalogItem(
+                id = "skin_$idx",
+                skinName = "Skin $idx",
+                heroName = "Hero_$idx",
+                role = "Fighter",
+                rawTier = "Epic",
+                rarity = SkinRarity.EPIC,
+                imageUrl = "https://example.com/skin_$idx.webp"
+            )
+        }
+        val deckA = selectMemoryBlitzDeck(catalog, Random(111))
+        val deckB = selectMemoryBlitzDeck(catalog, Random(222))
+        assertEquals(6, deckA.size)
+        assertEquals(6, deckB.size)
+        assertEquals(3, deckA.map { it.title }.distinct().size)
+        assertEquals(3, deckB.map { it.title }.distinct().size)
+        assertNotEquals(deckA.map { it.pairKey }, deckB.map { it.pairKey })
     }
 }

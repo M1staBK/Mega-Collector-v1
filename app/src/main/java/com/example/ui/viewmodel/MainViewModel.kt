@@ -19,22 +19,26 @@ import com.example.data.remote.FirestoreCollectorService
 import com.example.data.repository.CollectorRepository
 import com.example.model.AchievementBadgeUi
 import com.example.model.AchievementCatalog
+import com.example.model.CardBinderDesign
 import com.example.model.CollectorHistoryEvent
 import com.example.model.CollectorHistoryType
 import com.example.model.CollectorPublicProfile
 import com.example.model.DailyRewardTier
 import com.example.model.DecodedTradeSlip
 import com.example.model.DiamondExchangeOption
+import com.example.model.MegaPackConfig
 import com.example.model.MlbbCollectionTier
 import com.example.model.OwnedCard
 import com.example.model.P2PTradeListing
 import com.example.model.PackBundleOption
 import com.example.model.PackSatinTheme
+import com.example.model.ProfileFrameItem
 import com.example.model.QuestUiItem
 import com.example.model.QuizQuestionBank
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.TradeListing
+import com.example.ui.components.PackMeshTextureCache
 import com.example.ui.components.buildMlbbCardImageRequest
 import com.example.ui.components.buildMlbbSquareImageRequest
 import com.example.ui.theme.ThemeAccentOption
@@ -78,15 +82,44 @@ data class PackOpeningSession(
     val wrapperTheme: PackSatinTheme = PackSatinTheme.ALL.first(),
     val pendingPurchase: PendingPackPurchase? = null,
     val pulledCards: List<OwnedCard> = emptyList(),
-    val isRipped: Boolean = false,
+    val bundleCommitted: Boolean = false,
+    val currentPackIndex: Int = 0,
+    val showingPackStack: Boolean = true,
     val isCommittingRip: Boolean = false,
     val revealedIndices: Set<Int> = emptySet(),
     val focusedRevealedIndex: Int? = null,
     val showSummaryGrid: Boolean = false
 ) {
+    val isRipped: Boolean get() = bundleCommitted && !showingPackStack
+    val remainingPacksInStack: Int get() = (bundle.packCount - currentPackIndex).coerceAtLeast(1)
+    val hasNextPackInStack: Boolean get() = currentPackIndex < bundle.packCount - 1
+
+    val currentPackCardIndices: IntRange
+        get() {
+            if (pulledCards.isEmpty()) return IntRange.EMPTY
+            val perPack = MegaPackConfig.CARDS_PER_PACK
+            val start = (currentPackIndex * perPack).coerceAtMost(pulledCards.lastIndex)
+            val endInclusive = ((currentPackIndex + 1) * perPack - 1).coerceAtMost(pulledCards.lastIndex)
+            return if (start <= endInclusive) start..endInclusive else IntRange.EMPTY
+        }
+
+    val currentPackCards: List<OwnedCard>
+        get() = currentPackCardIndices.mapNotNull { pulledCards.getOrNull(it) }
+
+    val currentPackAllRevealed: Boolean
+        get() {
+            val range = currentPackCardIndices
+            return !range.isEmpty() && range.all { it in revealedIndices }
+        }
+
     val allRevealed: Boolean get() = pulledCards.isNotEmpty() && revealedIndices.size >= pulledCards.size
-    val nextUnrevealedIndex: Int? get() = pulledCards.indices.firstOrNull { it !in revealedIndices }
-    val remainingUnrevealedCount: Int get() = (pulledCards.size - revealedIndices.size).coerceAtLeast(0)
+
+    val nextUnrevealedIndex: Int?
+        get() = currentPackCardIndices.firstOrNull { it !in revealedIndices }
+            ?: pulledCards.indices.firstOrNull { it !in revealedIndices }
+
+    val remainingUnrevealedCount: Int
+        get() = currentPackCardIndices.count { it !in revealedIndices }
 }
 
 data class MegaCollectorUiState(
@@ -289,6 +322,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Decode bundled artwork drawables into memory caches off the main thread
         withContext(Dispatchers.IO) {
             val drawables = listOf(
+                R.drawable.bg_card_back,
+                R.drawable.img_pack_mega_obsidian,
                 R.drawable.img_pack_mythic,
                 R.drawable.img_arena_banner,
                 R.drawable.bg_mlbb_card_art
@@ -299,6 +334,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     BitmapFactory.decodeResource(ctx.resources, resId, opts)?.recycle()
                 }
                 _preloadProgress.value = 0.24f + 0.14f * ((idx + 1).toFloat() / drawables.size)
+            }
+            if (!isRobolectricEnv()) {
+                runCatching {
+                    PackMeshTextureCache.getOrBuild(
+                        context = ctx,
+                        coverRes = MegaPackConfig.COVER_DRAWABLE_RES,
+                        theme = PackSatinTheme.ALL.first(),
+                        packCount = 1
+                    )
+                }
             }
         }
 
@@ -329,36 +374,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         _preloadProgress.value = 0.45f
 
-        // Concrete parallel Coil cache pre-warming with exact card & square transform keys
         val ownedUrls = db.collectorDao().getAllOwnedOnce().map { it.imageUrl }
         val catalogUrls = db.collectorDao().getAllCatalogOnce()
             .asSequence()
             .map { it.imageUrl }
             .filter { it.isNotBlank() }
-            .take(18)
+            .take(60)
             .toList()
         val preloadUrls = (ownedUrls + catalogUrls)
             .asSequence()
             .filter { it.isNotBlank() }
             .distinct()
-            .take(18)
+            .take(60)
             .toList()
 
         if (!isRobolectricEnv() && preloadUrls.isNotEmpty()) {
             val loader = Coil.imageLoader(ctx)
             val completed = AtomicInteger(0)
             val total = preloadUrls.size
-            val semaphore = Semaphore(6)
+            val semaphore = Semaphore(10)
             withTimeoutOrNull(4200L) {
                 coroutineScope {
                     preloadUrls.map { url ->
                         async(Dispatchers.IO) {
                             semaphore.withPermit {
                                 runCatching {
-                                    loader.execute(buildMlbbSquareImageRequest(ctx, url, crossfadeMs = 0))
-                                }
-                                runCatching {
-                                    loader.execute(buildMlbbCardImageRequest(ctx, url, crossfadeMs = 0))
+                                    loader.execute(buildMlbbSquareImageRequest(ctx, url, crossfadeMs = 0, compact = true))
                                 }
                                 val done = completed.incrementAndGet()
                                 _preloadProgress.value =
@@ -377,17 +418,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             for (target in steps) {
                 if (_preloadProgress.value < target) {
                     _preloadProgress.value = target
-                    delay(65L)
+                    delay(55L)
                 }
             }
-            delay(90L)
+            delay(80L)
         } else {
             _preloadProgress.value = 1f
         }
         _isPreloading.value = false
 
         // Continue silent background warming for additional owned/catalog cards
-        warmImageUrls(ownedUrls.drop(18))
+        warmImageUrls(ownedUrls.drop(36))
     }
 
     private fun isRobolectricEnv(): Boolean =
@@ -460,11 +501,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         urls.asSequence()
             .filter { it.isNotBlank() }
             .distinct()
-            .take(24)
+            .take(60)
             .forEach { url ->
-                loader.enqueue(buildMlbbSquareImageRequest(ctx, url, crossfadeMs = 0))
-                loader.enqueue(buildMlbbCardImageRequest(ctx, url, crossfadeMs = 0))
+                loader.enqueue(buildMlbbSquareImageRequest(ctx, url, crossfadeMs = 0, compact = true))
+                loader.enqueue(buildMlbbCardImageRequest(ctx, url, crossfadeMs = 0, compact = true))
             }
+    }
+
+    private fun eagerPrewarmPulledCards(cards: List<OwnedCard>, includeFullResTop: Boolean = true) {
+        if (cards.isEmpty() || isRobolectricEnv()) return
+        val prioritized = cards.sortedWith(
+            compareByDescending<OwnedCard> { it.isMisprint }
+                .thenByDescending { it.rarity.tierRank }
+                .thenByDescending { it.instanceId }
+        )
+        val appCtx = getApplication<Application>()
+        val loader = Coil.imageLoader(appCtx)
+        viewModelScope.launch(Dispatchers.IO) {
+            val semaphore = Semaphore(12)
+            coroutineScope {
+                // Phase 1: Execute compact requests (used by Reveal All grid & Top 5 showcase) into MemoryCache immediately
+                prioritized
+                    .distinctBy { it.imageUrl to (it.rarity == SkinRarity.LEGEND) }
+                    .map { pulled ->
+                        async {
+                            if (pulled.imageUrl.isBlank()) return@async
+                            semaphore.withPermit {
+                                val req = if (pulled.rarity == SkinRarity.LEGEND) {
+                                    buildMlbbCardImageRequest(appCtx, pulled.imageUrl, crossfadeMs = 0, compact = true)
+                                } else {
+                                    buildMlbbSquareImageRequest(appCtx, pulled.imageUrl, crossfadeMs = 0, compact = true)
+                                }
+                                runCatching { loader.execute(req) }
+                            }
+                        }
+                    }
+                    .awaitAll()
+
+                // Phase 2: Execute high-res requests for Top 5 spotlighted cards
+                if (includeFullResTop) {
+                    prioritized.take(5).map { pulled ->
+                        async {
+                            if (pulled.imageUrl.isBlank()) return@async
+                            semaphore.withPermit {
+                                val req = if (pulled.rarity == SkinRarity.LEGEND) {
+                                    buildMlbbCardImageRequest(appCtx, pulled.imageUrl, crossfadeMs = 0, compact = false)
+                                } else {
+                                    buildMlbbSquareImageRequest(appCtx, pulled.imageUrl, crossfadeMs = 0, compact = false)
+                                }
+                                runCatching { loader.execute(req) }
+                            }
+                        }
+                    }.awaitAll()
+                }
+            }
+        }
     }
 
     private fun syncCloudProfileNow() {
@@ -540,6 +631,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setThemeAccent(accent: ThemeAccentOption) {
+        val unlockedIds = uiState.value.wallet.unlockedThemeIds
+        if (!accent.isUnlocked(unlockedIds)) {
+            soundEngine.playClick()
+            _snackbarMessage.value = accent.unlockHint ?: "${accent.label} is unlocked via Achievements."
+            return
+        }
         soundEngine.playClick()
         viewModelScope.launch { repository.setThemeAccentId(accent.id) }
     }
@@ -591,7 +688,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             useFreeTicket = useFreeTicket
                         ),
                         pulledCards = emptyList(),
-                        isRipped = false,
+                        bundleCommitted = false,
+                        currentPackIndex = 0,
+                        showingPackStack = true,
                         isCommittingRip = false
                     )
                 }
@@ -603,7 +702,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun ripAndCommitPack() {
         val session = _packSession.value ?: return
-        if (session.isRipped || session.isCommittingRip || _isOpeningPack.value) return
+        if (!session.showingPackStack || session.isCommittingRip || _isOpeningPack.value) return
+
+        // Subsequent packs in an already-purchased multi-pack stack rip immediately without re-charging
+        if (session.bundleCommitted) {
+            soundEngine.playPackTear()
+            _packSession.update { current ->
+                current?.copy(
+                    showingPackStack = false,
+                    focusedRevealedIndex = null,
+                    showSummaryGrid = false
+                )
+            }
+            return
+        }
+
         val purchase = session.pendingPurchase ?: return
 
         viewModelScope.launch {
@@ -619,11 +732,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
                 .onSuccess { cards ->
                     soundEngine.playPackTear()
-                    warmImageUrls(cards.map { it.imageUrl })
+                    eagerPrewarmPulledCards(cards, includeFullResTop = true)
                     _packSession.update { current ->
                         current?.copy(
                             pulledCards = cards,
-                            isRipped = true,
+                            bundleCommitted = true,
+                            currentPackIndex = 0,
+                            showingPackStack = false,
                             isCommittingRip = false,
                             pendingPurchase = null,
                             revealedIndices = emptySet(),
@@ -840,6 +955,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun claimAchievementReward(badge: AchievementBadgeUi) {
+        soundEngine.playClick()
+        viewModelScope.launch {
+            repository.claimAchievementReward(badge)
+                .onSuccess { def ->
+                    soundEngine.playRewardChime()
+                    syncCloudProfileNow()
+                    _snackbarMessage.value = "Unlocked ${def.title} Reward: ${def.rewardSummaryText}!"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Cannot claim reward yet."
+                }
+        }
+    }
+
+    fun purchaseOrEquipFrame(frame: ProfileFrameItem) {
+        soundEngine.playClick()
+        val wallet = uiState.value.wallet
+        if (frame.id in wallet.unlockedFrameIds) {
+            viewModelScope.launch {
+                repository.equipProfileFrame(frame.id)
+                _snackbarMessage.value = "Equipped Profile Frame: ${frame.name}"
+            }
+            return
+        }
+        viewModelScope.launch {
+            repository.purchaseProfileFrame(frame)
+                .onSuccess {
+                    soundEngine.playRewardChime()
+                    _snackbarMessage.value = "Unlocked & Equipped Frame: ${frame.name}!"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Cannot unlock frame."
+                }
+        }
+    }
+
+    fun purchaseOrEquipBinder(binder: CardBinderDesign) {
+        soundEngine.playClick()
+        val wallet = uiState.value.wallet
+        if (binder.id in wallet.unlockedBinderIds) {
+            viewModelScope.launch {
+                repository.equipBinderDesign(binder.id)
+                _snackbarMessage.value = "Equipped Binder Design: ${binder.name}"
+            }
+            return
+        }
+        viewModelScope.launch {
+            repository.purchaseBinderDesign(binder)
+                .onSuccess {
+                    soundEngine.playRewardChime()
+                    _snackbarMessage.value = "Unlocked & Equipped Binder: ${binder.name}!"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Cannot unlock binder."
+                }
+        }
+    }
+
     fun revealCardAt(index: Int) {
         _packSession.update { session ->
             if (session == null || session.pulledCards.isEmpty()) return@update session
@@ -855,20 +1029,74 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         soundEngine.playClick()
         _packSession.update { session ->
             if (session == null) return@update null
-            if (session.allRevealed) {
-                session.copy(focusedRevealedIndex = null, showSummaryGrid = true)
-            } else {
-                session.copy(focusedRevealedIndex = null)
+            when {
+                !session.currentPackAllRevealed -> session.copy(focusedRevealedIndex = null)
+                session.hasNextPackInStack -> {
+                    val nextPack = session.currentPackIndex + 1
+                    session.copy(
+                        currentPackIndex = nextPack,
+                        showingPackStack = true,
+                        focusedRevealedIndex = null
+                    )
+                }
+                else -> session.copy(
+                    revealedIndices = session.pulledCards.indices.toSet(),
+                    focusedRevealedIndex = null,
+                    showSummaryGrid = true
+                )
             }
         }
     }
 
     fun showPulledSummaryGrid() {
         soundEngine.playClick()
-        _packSession.update { session ->
-            if (session == null || !session.isRipped) return@update session
-            session.copy(
-                revealedIndices = session.pulledCards.indices.toSet(),
+        val session = _packSession.value ?: return
+        if (!session.bundleCommitted) {
+            // Fast-open entire stack directly to summary if not committed yet
+            val purchase = session.pendingPurchase ?: return
+            if (session.isCommittingRip || _isOpeningPack.value) return
+            viewModelScope.launch {
+                _isOpeningPack.value = true
+                _packSession.update { it?.copy(isCommittingRip = true) }
+                val currentWallet = repository.walletFlow.first()
+                repository.openPackBundle(
+                    bundle = purchase.bundle,
+                    wallet = currentWallet,
+                    payWithDiamonds = purchase.payWithDiamonds,
+                    useFreeTicket = purchase.useFreeTicket
+                )
+                    .onSuccess { cards ->
+                        soundEngine.playPackTear()
+                        eagerPrewarmPulledCards(cards, includeFullResTop = false)
+                        _packSession.update { current ->
+                            current?.copy(
+                                pulledCards = cards,
+                                bundleCommitted = true,
+                                currentPackIndex = (purchase.bundle.packCount - 1).coerceAtLeast(0),
+                                showingPackStack = false,
+                                isCommittingRip = false,
+                                pendingPurchase = null,
+                                revealedIndices = cards.indices.toSet(),
+                                focusedRevealedIndex = null,
+                                showSummaryGrid = true
+                            )
+                        }
+                        syncCloudProfileNow()
+                    }
+                    .onFailure { err ->
+                        _snackbarMessage.value = err.localizedMessage ?: "Unable to open pack stack"
+                        _packSession.value = null
+                    }
+                _isOpeningPack.value = false
+            }
+            return
+        }
+        eagerPrewarmPulledCards(session.pulledCards, includeFullResTop = false)
+        _packSession.update { cur ->
+            if (cur == null) return@update null
+            cur.copy(
+                showingPackStack = false,
+                revealedIndices = cur.pulledCards.indices.toSet(),
                 focusedRevealedIndex = null,
                 showSummaryGrid = true
             )
@@ -879,7 +1107,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         soundEngine.playClick()
         _packSession.update { session ->
             if (session == null || index !in session.revealedIndices) return@update session
-            session.copy(focusedRevealedIndex = index, showSummaryGrid = false)
+            session.copy(
+                showingPackStack = false,
+                focusedRevealedIndex = index,
+                showSummaryGrid = false
+            )
         }
     }
 

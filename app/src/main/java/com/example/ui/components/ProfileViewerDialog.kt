@@ -50,12 +50,14 @@ import coil.compose.AsyncImage
 import com.example.model.AchievementBadgeDefinition
 import com.example.model.AchievementCatalog
 import com.example.model.CollectorPublicProfile
+import com.example.model.CosmeticCatalog
 import com.example.model.MlbbCollectionTier
 import com.example.ui.theme.CollectorTheme
 
 @Composable
 fun ProfileViewerDialog(
     profile: CollectorPublicProfile,
+    equippedFrameId: String? = null,
     onDismiss: () -> Unit
 ) {
     val palette = CollectorTheme.colors
@@ -77,37 +79,21 @@ fun ProfileViewerDialog(
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Header with Avatar & Close
+                // Header with Framed Avatar & Close
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        color = profile.avatarColor.copy(alpha = 0.18f),
-                        shape = CircleShape,
-                        border = BorderStroke(1.8.dp, profile.avatarColor),
-                        modifier = Modifier.size(56.dp)
-                    ) {
-                        if (profile.photoUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = rememberUserAvatarRequest(profile.photoUrl),
-                                contentDescription = profile.alias,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(CircleShape)
-                            )
-                        } else {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = profile.alias,
-                                    tint = profile.avatarColor,
-                                    modifier = Modifier.size(30.dp)
-                                )
-                            }
-                        }
+                    val activeFrame = remember(equippedFrameId) {
+                        CosmeticCatalog.frameById(equippedFrameId)
                     }
+                    FramedAvatar(
+                        photoUrl = profile.photoUrl,
+                        alias = profile.alias,
+                        frame = activeFrame,
+                        size = 62.dp,
+                        fallbackTint = profile.avatarColor
+                    )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
@@ -121,8 +107,7 @@ fun ProfileViewerDialog(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val resolvedTier = MlbbCollectionTier.RAREST_LEFT_TO_RIGHT
-                                .firstOrNull { it.title.equals(profile.rankTitle, ignoreCase = true) }
+                            val resolvedTier = MlbbCollectionTier.fromRankTitle(profile.rankTitle)
                                 ?: MlbbCollectionTier.fromPrestige(profile.prestigeScore)
                             Surface(
                                 color = palette.frostSurface,

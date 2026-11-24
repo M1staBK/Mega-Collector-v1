@@ -85,8 +85,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -98,6 +100,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.shape.GenericShape
+import coil.Coil
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
@@ -108,27 +111,30 @@ import com.example.model.MegaPackConfig
 import com.example.model.OwnedCard
 import com.example.model.PackSatinTheme
 import com.example.model.SkinRarity
+import com.example.ui.components.BoosterPack3DMesh
+import com.example.ui.components.BoosterPouchPhysics
+import com.example.ui.components.BoosterPouchShape
 import com.example.ui.components.CardBackView
 import com.example.ui.components.HolographicCardView
 import com.example.ui.components.RarityChip
 import com.example.ui.components.SettingsGearButton
+import com.example.ui.components.buildMlbbCardImageRequest
+import com.example.ui.components.buildMlbbSquareImageRequest
 import com.example.ui.sensors.CardTiltState
 import com.example.ui.sensors.rememberCardTiltState
 import com.example.ui.theme.CollectorTheme
-import com.example.ui.theme.DeepCobalt
-import com.example.ui.theme.IceBorder
-import com.example.ui.theme.InkSlate
 import com.example.ui.theme.MoonlightNight
-import com.example.ui.theme.PureWhiteCard
-import com.example.ui.theme.SkyAzure
-import com.example.ui.theme.SkyFrost
-import com.example.ui.theme.SlateMuted
-import com.example.ui.theme.StudioGold
 import com.example.ui.theme.StudioGoldBright
 import com.example.ui.theme.rememberSafeHapticPerformer
 import com.example.ui.viewmodel.PackOpeningSession
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -230,12 +236,12 @@ fun PackOpeningScreen(
     val topFaceDownCard = nextUnrevealedIndex?.let { session.pulledCards.getOrNull(it) }
 
     fun triggerRipSequence() {
-        if (session.isRipped || session.isCommittingRip) return
+        if (!session.showingPackStack || session.isCommittingRip) return
         performHaptic(HapticFeedbackType.LongPress)
         onPackTear()
         playBurstOnce = true
         scope.launch {
-            delay(200L)
+            delay(45L)
             onPackRipped()
         }
     }
@@ -278,8 +284,8 @@ fun PackOpeningScreen(
         focusedCard != null && focusedCard.isMisprint -> palette.misprintLabel
         focusedCard != null -> focusedCard.rarity.primaryColor
         topFaceDownCard != null && isChargingFlip -> topFaceDownCard.rarity.primaryColor
-        !session.isRipped -> session.wrapperTheme.logoAccent
-        else -> SkyAzure
+        session.showingPackStack -> session.wrapperTheme.logoAccent
+        else -> palette.accentPrimary
     }
 
     Box(
@@ -324,15 +330,23 @@ fun PackOpeningScreen(
                         color = palette.accentPrimary
                     )
                     val subtitle = when {
-                        !session.isRipped -> "Close now to cancel safely (${session.bundle.totalCards} cards)"
+                        !session.bundleCommitted && session.showingPackStack ->
+                            "Close now to cancel safely (${session.bundle.totalCards} cards)"
+                        session.showingPackStack ->
+                            "Pack ${session.currentPackIndex + 1} of ${session.bundle.packCount} • ${session.remainingPacksInStack} stacked"
                         session.showSummaryGrid -> "Tap any card to 3D gyro inspect"
-                        focusedCard != null -> "Revealed ${session.revealedIndices.size} of ${session.pulledCards.size}"
-                        else -> "${session.remainingUnrevealedCount} cards stacked • Tap, swipe, or pinch"
+                        focusedCard != null ->
+                            if (session.bundle.packCount > 1) {
+                                "Pack ${session.currentPackIndex + 1}/${session.bundle.packCount} • Revealed ${session.revealedIndices.size}/${session.pulledCards.size}"
+                            } else {
+                                "Revealed ${session.revealedIndices.size} of ${session.pulledCards.size}"
+                            }
+                        else -> "${session.remainingUnrevealedCount} cards in Pack ${session.currentPackIndex + 1} • Tap or swipe"
                     }
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = SlateMuted
+                        color = palette.muted
                     )
                 }
 
@@ -342,9 +356,9 @@ fun PackOpeningScreen(
                 ) {
                     SettingsGearButton(onClick = onOpenSettings)
                     Surface(
-                        color = PureWhiteCard,
+                        color = palette.cardSurface,
                         shape = CircleShape,
-                        border = BorderStroke(1.dp, IceBorder),
+                        border = BorderStroke(1.dp, palette.border),
                         shadowElevation = 2.dp
                     ) {
                         IconButton(
@@ -356,7 +370,7 @@ fun PackOpeningScreen(
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Close pack opening",
-                                tint = InkSlate
+                                tint = palette.ink
                             )
                         }
                     }
@@ -371,11 +385,14 @@ fun PackOpeningScreen(
                 contentAlignment = Alignment.Center
             ) {
                 when {
-                    !session.isRipped -> {
+                    session.showingPackStack -> {
                         PackTearStage(
+                            keySeed = session.currentPackIndex,
                             coverRes = MegaPackConfig.COVER_DRAWABLE_RES,
                             satinTheme = session.wrapperTheme,
                             packCount = session.bundle.packCount,
+                            remainingPacksInStack = session.remainingPacksInStack,
+                            currentPackNumber = session.currentPackIndex + 1,
                             tiltState = tiltState,
                             isCommitting = session.isCommittingRip,
                             onCrinkle = onPlasticCrinkle,
@@ -498,8 +515,13 @@ fun PackOpeningScreen(
                     topFaceDownCard != null -> {
                         val targetIdx = nextUnrevealedIndex
                         if (targetIdx != null) {
+                            val currentUnrevealedInPack = session.currentPackCardIndices
+                                .filter { it !in session.revealedIndices }
+                                .mapNotNull { session.pulledCards.getOrNull(it) }
                             FaceDownCardDeckStage(
-                                remainingCards = session.pulledCards.filterIndexed { idx, _ -> idx !in session.revealedIndices },
+                                remainingCards = currentUnrevealedInPack.ifEmpty {
+                                    session.pulledCards.filterIndexed { idx, _ -> idx !in session.revealedIndices }
+                                },
                                 topCard = topFaceDownCard,
                                 isChargingFlip = isChargingFlip,
                                 suspenseProgress = suspenseProgress,
@@ -522,6 +544,9 @@ fun PackOpeningScreen(
 
             // Bottom Mini-Tray of Revealed Cards
             if (session.isRipped && !session.showSummaryGrid && session.revealedIndices.isNotEmpty()) {
+                val trayIndices = session.currentPackCardIndices
+                    .takeIf { !it.isEmpty() }
+                    ?: session.pulledCards.indices
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -534,7 +559,7 @@ fun PackOpeningScreen(
                         Text(
                             text = "PULLED SO FAR (${session.revealedIndices.size}/${session.pulledCards.size})",
                             style = MaterialTheme.typography.labelSmall,
-                            color = SlateMuted
+                            color = palette.muted
                         )
                         TextButton(
                             onClick = onShowSummaryGrid,
@@ -555,23 +580,24 @@ fun PackOpeningScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        itemsIndexed(session.pulledCards) { idx, card ->
-                            val isRevealed = idx in session.revealedIndices
-                            val isFocused = idx == session.focusedRevealedIndex
+                        itemsIndexed(trayIndices.toList()) { localSlot, globalIdx ->
+                            val card = session.pulledCards[globalIdx]
+                            val isRevealed = globalIdx in session.revealedIndices
+                            val isFocused = globalIdx == session.focusedRevealedIndex
                             Surface(
-                                color = if (isRevealed) PureWhiteCard else SkyFrost,
+                                color = if (isRevealed) palette.cardSurface else palette.frostSurface,
                                 shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(
                                     width = if (isFocused) 1.8.dp else 1.dp,
                                     color = when {
                                         isFocused -> palette.accentPrimary
                                         isRevealed -> card.rarity.primaryColor
-                                        else -> IceBorder
+                                        else -> palette.border
                                     }
                                 ),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(10.dp))
-                                    .clickable(enabled = isRevealed) { onFocusRevealedCard(idx) }
+                                    .clickable(enabled = isRevealed) { onFocusRevealedCard(globalIdx) }
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -583,14 +609,14 @@ fun PackOpeningScreen(
                                         Text(
                                             text = card.skinName,
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = InkSlate,
+                                            color = palette.ink,
                                             maxLines = 1
                                         )
                                     } else {
                                         Text(
-                                            text = "Card #${idx + 1}",
+                                            text = "Card #${localSlot + 1}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = SlateMuted
+                                            color = palette.muted
                                         )
                                     }
                                 }
@@ -602,40 +628,69 @@ fun PackOpeningScreen(
             }
 
             // Bottom Action Bar
-            if (!session.isRipped) {
-                Button(
-                    onClick = ::triggerRipSequence,
-                    enabled = !session.isCommittingRip,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = DeepCobalt,
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .testTag("rip_pack_button")
+            if (session.showingPackStack) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (session.isCommittingRip) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.2.dp,
-                            color = Color.White
+                    Button(
+                        onClick = ::triggerRipSequence,
+                        enabled = !session.isCommittingRip,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = palette.buttonPrimary,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .testTag("rip_pack_button")
+                    ) {
+                        if (session.isCommittingRip) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.2.dp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                        }
+                        Text(
+                            text = when {
+                                session.isCommittingRip -> "Opening..."
+                                session.bundle.packCount > 1 ->
+                                    "Rip Pack ${session.currentPackIndex + 1} of ${session.bundle.packCount}"
+                                else -> "Rip Pack Open"
+                            },
+                            style = MaterialTheme.typography.titleMedium
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
                     }
-                    Text(
-                        text = if (session.isCommittingRip) "Opening..."
-                        else if (session.bundle.packCount > 1) "Rip ${session.bundle.packCount}x Bundle Open"
-                        else "Rip Pack Open",
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    if (session.bundle.packCount > 1) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            TextButton(
+                                onClick = onShowSummaryGrid,
+                                enabled = !session.isCommittingRip,
+                                modifier = Modifier.testTag("quick_open_all_packs_button")
+                            ) {
+                                Text(
+                                    text = if (session.bundleCommitted) {
+                                        "Quick-Open Remaining (${session.remainingPacksInStack}x)"
+                                    } else {
+                                        "Open All ${session.bundle.packCount} Packs Now"
+                                    },
+                                    color = palette.accentPrimary
+                                )
+                            }
+                        }
+                    }
                 }
             } else if (session.showSummaryGrid) {
                 Button(
                     onClick = onClose,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = DeepCobalt,
+                        containerColor = palette.buttonPrimary,
                         contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(16.dp),
@@ -651,11 +706,11 @@ fun PackOpeningScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (!session.allRevealed) {
+                    if (!session.currentPackAllRevealed) {
                         Button(
                             onClick = onAdvanceFromReveal,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = DeepCobalt,
+                                containerColor = palette.buttonPrimary,
                                 contentColor = Color.White
                             ),
                             shape = RoundedCornerShape(16.dp),
@@ -666,6 +721,25 @@ fun PackOpeningScreen(
                         ) {
                             Text(
                                 text = "Next Stacked Card (${session.remainingUnrevealedCount} Left)",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    } else if (session.hasNextPackInStack) {
+                        val packsLeft = session.bundle.packCount - session.currentPackIndex - 1
+                        Button(
+                            onClick = onAdvanceFromReveal,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = palette.buttonPrimary,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .testTag("next_pack_in_stack_button")
+                        ) {
+                            Text(
+                                text = "Next Pack in Stack ($packsLeft Left)",
                                 style = MaterialTheme.typography.labelLarge
                             )
                         }
@@ -715,7 +789,7 @@ fun PackOpeningScreen(
                         Text(
                             text = "Tilt phone to shine foil!",
                             style = MaterialTheme.typography.labelSmall,
-                            color = SlateMuted
+                            color = palette.muted
                         )
                     }
                 }
@@ -728,7 +802,7 @@ fun PackOpeningScreen(
                         onClick = { triggerDeckFlip(nextUnrevealedIndex) },
                         enabled = !isChargingFlip,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = DeepCobalt,
+                            containerColor = palette.buttonPrimary,
                             contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(16.dp),
@@ -755,12 +829,12 @@ fun PackOpeningScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TextButton(onClick = onShowSummaryGrid) {
-                            Text("Reveal All Cards", color = SlateMuted)
+                            Text("Reveal All Cards", color = palette.accentPrimary)
                         }
                         Text(
                             text = "${session.remainingUnrevealedCount} face-down",
                             style = MaterialTheme.typography.labelSmall,
-                            color = SlateMuted
+                            color = palette.muted
                         )
                     }
                 }
@@ -901,6 +975,7 @@ private fun PulledSummaryGrid(
     modifier: Modifier = Modifier
 ) {
     val palette = CollectorTheme.colors
+    val context = LocalContext.current
     val isMultiPackCurated = cards.size > 5
     var showAllCards by remember(cards) { mutableStateOf(false) }
 
@@ -912,11 +987,37 @@ private fun PulledSummaryGrid(
         )
     }
 
+    // Immediate priority MemoryCache hydration so "Reveal All Cards" shows crisp art with zero delay
+    LaunchedEffect(sortedCards) {
+        val loader = Coil.imageLoader(context.applicationContext)
+        val semaphore = Semaphore(12)
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            coroutineScope {
+                sortedCards
+                    .distinctBy { it.imageUrl to (it.rarity == SkinRarity.LEGEND) }
+                    .map { pulled ->
+                        async {
+                            if (pulled.imageUrl.isBlank()) return@async
+                            semaphore.withPermit {
+                                val req = if (pulled.rarity == SkinRarity.LEGEND) {
+                                    buildMlbbCardImageRequest(context, pulled.imageUrl, crossfadeMs = 0, compact = true)
+                                } else {
+                                    buildMlbbSquareImageRequest(context, pulled.imageUrl, crossfadeMs = 0, compact = true)
+                                }
+                                runCatching { loader.execute(req) }
+                            }
+                        }
+                    }
+                    .awaitAll()
+            }
+        }
+    }
+
     Column(modifier = modifier) {
         Surface(
-            color = PureWhiteCard,
+            color = palette.cardSurface,
             shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, IceBorder),
+            border = BorderStroke(1.dp, palette.border),
             shadowElevation = 2.dp,
             modifier = Modifier
                 .fillMaxWidth()
@@ -934,7 +1035,7 @@ private fun PulledSummaryGrid(
                         "Pack Pulls (${cards.size} Cards)"
                     },
                     style = MaterialTheme.typography.titleMedium,
-                    color = InkSlate
+                    color = palette.ink
                 )
                 if (isMultiPackCurated && showAllCards) {
                     TextButton(
@@ -1061,26 +1162,32 @@ private fun PulledSummaryGrid(
 
 @Composable
 private fun PackTearStage(
+    keySeed: Int,
     coverRes: Int,
     satinTheme: PackSatinTheme,
     packCount: Int,
+    remainingPacksInStack: Int,
+    currentPackNumber: Int,
     tiltState: CardTiltState,
     isCommitting: Boolean,
     onCrinkle: () -> Unit,
     onRipComplete: () -> Unit
 ) {
+    val palette = CollectorTheme.colors
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current.density
-    val tearAnim = remember { Animatable(0f) }
-    val yawAnim = remember { Animatable(0f) }
-    val pitchAnim = remember { Animatable(0f) }
-    var tornCommitted by remember { mutableStateOf(false) }
+    val tearAnim = remember(keySeed) { Animatable(0f) }
+    val yawAnim = remember(keySeed) { Animatable(0f) }
+    val pitchAnim = remember(keySeed) { Animatable(0f) }
+    val squashAnim = remember(keySeed) { Animatable(0f) }
+    var tornCommitted by remember(keySeed) { mutableStateOf(false) }
+    var isDraggingRotate by remember(keySeed) { mutableStateOf(false) }
 
     // 2D Finger-Swipe Angle Tracking State
-    var startNormY by remember { mutableFloatStateOf(0.24f) }
-    var cumulativeDragX by remember { mutableFloatStateOf(0f) }
-    var cumulativeDragY by remember { mutableFloatStateOf(0f) }
-    var tearStripSize by remember { mutableStateOf(IntSize.Zero) }
+    var startNormY by remember(keySeed) { mutableFloatStateOf(0.24f) }
+    var cumulativeDragX by remember(keySeed) { mutableFloatStateOf(0f) }
+    var cumulativeDragY by remember(keySeed) { mutableFloatStateOf(0f) }
+    var tearStripSize by remember(keySeed) { mutableStateOf(IntSize.Zero) }
 
     val tearGeometry = remember(startNormY, cumulativeDragX, cumulativeDragY) {
         computeAngledTearGeometry(
@@ -1092,73 +1199,62 @@ private fun PackTearStage(
 
     val pulseTransition = rememberInfiniteTransition(label = "pack_float")
     val floatOffset by pulseTransition.animateFloat(
-        initialValue = -6f,
-        targetValue = 6f,
+        initialValue = -3.5f,
+        targetValue = 3.5f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
+            animation = tween(1900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "float_y"
     )
-    val entryScale = remember { Animatable(0.92f) }
-    LaunchedEffect(Unit) {
+    val entryScale = remember(keySeed) { Animatable(0.92f) }
+    LaunchedEffect(keySeed) {
         entryScale.animateTo(
             targetValue = 1f,
-            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+            animationSpec = spring(
+                dampingRatio = 0.56f,
+                stiffness = Spring.StiffnessMediumLow
+            )
         )
     }
 
-    val totalYaw = yawAnim.value + tiltState.rollDegrees * 0.45f
+    val totalYaw = yawAnim.value + tiltState.rollDegrees * 0.42f
+    val totalPitch = (pitchAnim.value - tiltState.pitchDegrees * 0.34f).coerceIn(-20f, 20f)
     val normalizedYaw = ((totalYaw % 360f) + 360f) % 360f
     val showingBack = normalizedYaw in 90f..270f
     val tearProgress = tearAnim.value.coerceIn(0f, 1f)
 
-    // Shapes splitting the upper torn foil cap from the lower pouch along the angled serrated seam
-    val serratedTeeth = 14
-    val topFoilCapShape = remember(tearGeometry.leftYRatio, tearGeometry.rightYRatio, tearProgress) {
-        GenericShape { size, _ ->
-            val yL = size.height * tearGeometry.leftYRatio
-            val yR = size.height * tearGeometry.rightYRatio
-            moveTo(0f, 0f)
-            lineTo(size.width, 0f)
-            lineTo(size.width, yR)
-            for (i in serratedTeeth downTo 0) {
-                val t = i.toFloat() / serratedTeeth.toFloat()
-                val x = size.width * t
-                val baseY = yL + (yR - yL) * t
-                val toothOffset = if (i in 1 until serratedTeeth && tearProgress > 0.02f) {
-                    (if (i % 2 == 0) -1f else 1f) * 5.5f * (0.4f + tearProgress * 0.6f)
-                } else 0f
-                lineTo(x, baseY + toothOffset)
-            }
-            close()
-        }
-    }
+    // Pick-up physics: ONLY the top pack lifts off the stack when rotated/inspected!
+    val yawOffFlat = ((yawAnim.value % 360f) + 360f) % 360f
+    val isTopPackPickedUp = isDraggingRotate ||
+        yawOffFlat in 4f..356f ||
+        abs(pitchAnim.value) > 2.5f
+    val pickUpProgress by animateFloatAsState(
+        targetValue = if (isTopPackPickedUp) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = 0.62f,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "top_pack_pickup"
+    )
 
-    val lowerPouchShape = remember(tearGeometry.leftYRatio, tearGeometry.rightYRatio, tearProgress) {
-        GenericShape { size, _ ->
-            val yL = size.height * tearGeometry.leftYRatio
-            val yR = size.height * tearGeometry.rightYRatio
-            moveTo(0f, yL)
-            for (i in 0..serratedTeeth) {
-                val t = i.toFloat() / serratedTeeth.toFloat()
-                val x = size.width * t
-                val baseY = yL + (yR - yL) * t
-                val toothOffset = if (i in 1 until serratedTeeth && tearProgress > 0.02f) {
-                    (if (i % 2 == 0) -1f else 1f) * 5.5f * (0.4f + tearProgress * 0.6f)
-                } else 0f
-                lineTo(x, baseY + toothOffset)
-            }
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
-        }
+    val lighting = remember(totalYaw, totalPitch, tiltState.rollDegrees, tiltState.pitchDegrees) {
+        BoosterPouchPhysics.computeLightingState(
+            totalYawDeg = totalYaw,
+            totalPitchDeg = totalPitch,
+            tiltRollDeg = tiltState.rollDegrees,
+            tiltPitchDeg = tiltState.pitchDegrees
+        )
     }
 
     fun commitTear() {
         if (tornCommitted || isCommitting) return
         tornCommitted = true
         scope.launch {
+            launch {
+                squashAnim.animateTo(1f, tween(90))
+                squashAnim.animateTo(0f, spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMedium))
+            }
             tearAnim.animateTo(
                 targetValue = 1f,
                 animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
@@ -1171,198 +1267,279 @@ private fun PackTearStage(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // Tall, sleek TCG booster pack proportions (196 x 368 dp => 1.88:1 ratio)
+        val packWidthDp = 196.dp
+        val packHeightDp = 368.dp
+        val prismCameraDistancePx = remember(density) { maxOf(820f * density, 1600f) }
+
+        if (packCount > 1) {
+            Surface(
+                color = palette.frostSurface,
+                shape = RoundedCornerShape(999.dp),
+                border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.42f)),
+                shadowElevation = 2.dp,
+                modifier = Modifier.testTag("pack_stack_counter_pill")
+            ) {
+                Text(
+                    text = "PACK $currentPackNumber OF $packCount • $remainingPacksInStack IN STACK",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.6.sp
+                    ),
+                    color = palette.accentPrimary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+        }
+
+        val visibleStackLayers = remainingPacksInStack.coerceIn(1, 10)
+        val topPickUpLiftPx = with(LocalDensity.current) { (pickUpProgress * 18.dp.toPx()) }
+        val topPickUpScale = 1f + pickUpProgress * 0.068f
+        val dynamicScaleX = entryScale.value * topPickUpScale * (1f + squashAnim.value * 0.03f - tearProgress * 0.014f)
+        val dynamicScaleY = entryScale.value * topPickUpScale * (1f - squashAnim.value * 0.025f + tearProgress * 0.016f)
+
         Box(
             modifier = Modifier
-                .width(250.dp)
-                .height(352.dp)
-                .offset { IntOffset(0, floatOffset.roundToInt()) }
-                .graphicsLayer {
-                    scaleX = entryScale.value
-                    scaleY = entryScale.value
-                    rotationY = totalYaw
-                    rotationX = (pitchAnim.value - tiltState.pitchDegrees * 0.35f).coerceIn(-18f, 18f)
-                    rotationZ = tearProgress * (tearGeometry.angleDeg * 0.10f + tearGeometry.peelDirX * 2.2f)
-                    cameraDistance = 18f * density
-                }
+                .width(packWidthDp + 44.dp)
+                .height(packHeightDp + 38.dp),
+            contentAlignment = Alignment.Center
         ) {
-            // Pack Frame (Rotates 3D on lower-body drag; shows Front Art or Back Foil Seal)
+            // Stationary underlying stacked packs (layers 1..9 underneath — NEVER rotate when top pack rotates)
+            for (layer in (visibleStackLayers - 1) downTo 1) {
+                val offX = (sin(layer * 1.45f) * 6.5f - layer * 1.3f).dp
+                val offY = (layer * 3.8f + 4f).dp
+                val rotZ = ((layer * 1.15f) * if (layer % 2 == 0) -1f else 1f).coerceIn(-5.5f, 5.5f)
+                val shadeAlpha = (0.18f + layer * 0.045f).coerceIn(0.18f, 0.56f)
+
+                Box(
+                    modifier = Modifier
+                        .width(packWidthDp)
+                        .height(packHeightDp)
+                        .offset(x = offX, y = offY)
+                        .zIndex((visibleStackLayers - layer).toFloat())
+                        .graphicsLayer {
+                            rotationZ = rotZ
+                            val layerScale = 1f - layer * 0.012f
+                            scaleX = layerScale
+                            scaleY = layerScale
+                        }
+                        .shadow(
+                            elevation = (5 + (10 - layer)).coerceAtLeast(3).dp,
+                            shape = BoosterPouchShape,
+                            spotColor = Color.Black.copy(alpha = 0.52f)
+                        )
+                        .clip(BoosterPouchShape)
+                        .testTag("stacked_pack_layer_$layer")
+                ) {
+                    Image(
+                        painter = painterResource(id = coverRes),
+                        contentDescription = null,
+                        contentScale = ContentScale.FillBounds,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    // Ambient occlusion darken + crisp gold rim edge on stacked pack
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = shadeAlpha))
+                            .border(1.2.dp, satinTheme.crestTint.copy(alpha = 0.42f), BoosterPouchShape)
+                    )
+                }
+            }
+
+            // Cast contact shadow on the 2nd pack directly beneath the lifted top pack
+            if (visibleStackLayers > 1) {
+                Box(
+                    modifier = Modifier
+                        .width(packWidthDp * 0.92f)
+                        .height(packHeightDp * 0.92f)
+                        .offset(y = (6f + pickUpProgress * 8f).dp)
+                        .zIndex(visibleStackLayers.toFloat() + 0.5f)
+                        .alpha((0.28f - pickUpProgress * 0.14f).coerceIn(0.08f, 0.30f))
+                        .clip(BoosterPouchShape)
+                        .background(Color.Black)
+                )
+            }
+
+            // TOP ACTIVE PACK ONLY: lifts off the stack when picked up, rotates as a full 3D mesh, and tears open
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .shadow(16.dp, RoundedCornerShape(22.dp))
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(satinTheme.baseColor)
-                    .border(
-                        width = 2.dp,
-                        color = satinTheme.logoAccent.copy(alpha = 0.85f),
-                        shape = RoundedCornerShape(22.dp)
-                    )
-                    .pointerInput(isCommitting) {
+                    .width(packWidthDp)
+                    .height(packHeightDp)
+                    .zIndex(20f)
+                    .offset {
+                        IntOffset(
+                            0,
+                            ((floatOffset * (0.6f + pickUpProgress * 0.6f)) - topPickUpLiftPx).roundToInt()
+                        )
+                    }
+                    .graphicsLayer {
+                        scaleX = dynamicScaleX
+                        scaleY = dynamicScaleY
+                        rotationZ = tearProgress * (tearGeometry.angleDeg * 0.12f + tearGeometry.peelDirX * 2.4f)
+                    }
+                    .pointerInput(keySeed, isCommitting) {
                         if (!isCommitting) {
+                            val tracker = VelocityTracker()
                             detectDragGestures(
-                                onDragStart = { onCrinkle() },
+                                onDragStart = {
+                                    tracker.resetTracking()
+                                    isDraggingRotate = true
+                                    onCrinkle()
+                                    scope.launch { squashAnim.animateTo(0.35f, tween(80)) }
+                                },
                                 onDragEnd = {
+                                    isDraggingRotate = false
+                                    val vel = tracker.calculateVelocity()
+                                    val yawVelDeg = vel.x * 0.45f
+                                    val targetYaw = BoosterPouchPhysics.nearestSettledFaceYaw(
+                                        currentYawDeg = yawAnim.value,
+                                        yawVelocityDegPerSec = yawVelDeg
+                                    )
                                     scope.launch {
-                                        val mod = ((yawAnim.value % 360f) + 360f) % 360f
-                                        val snapTarget = if (mod in 90f..270f) 180f else 0f
                                         launch {
                                             yawAnim.animateTo(
-                                                targetValue = snapTarget,
+                                                targetValue = targetYaw,
+                                                initialVelocity = yawVelDeg,
                                                 animationSpec = spring(
-                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                    dampingRatio = 0.56f,
                                                     stiffness = Spring.StiffnessMediumLow
                                                 )
                                             )
                                         }
                                         launch {
-                                            pitchAnim.animateTo(0f, spring(stiffness = Spring.StiffnessLow))
+                                            pitchAnim.animateTo(
+                                                targetValue = 0f,
+                                                initialVelocity = -vel.y * 0.14f,
+                                                animationSpec = spring(
+                                                    dampingRatio = 0.52f,
+                                                    stiffness = Spring.StiffnessLow
+                                                )
+                                            )
+                                        }
+                                        launch {
+                                            squashAnim.animateTo(
+                                                0f,
+                                                spring(dampingRatio = 0.48f, stiffness = Spring.StiffnessMedium)
+                                            )
                                         }
                                     }
                                 },
                                 onDragCancel = {
+                                    isDraggingRotate = false
                                     scope.launch {
-                                        yawAnim.animateTo(if (((yawAnim.value % 360f) + 360f) % 360f in 90f..270f) 180f else 0f)
-                                        pitchAnim.animateTo(0f)
+                                        val targetYaw = BoosterPouchPhysics.nearestSettledFaceYaw(yawAnim.value, 0f)
+                                        yawAnim.animateTo(targetYaw, spring(dampingRatio = 0.6f))
+                                        pitchAnim.animateTo(0f, spring(dampingRatio = 0.6f))
+                                        squashAnim.animateTo(0f)
                                     }
                                 }
                             ) { change, dragAmount ->
                                 change.consume()
+                                tracker.addPosition(change.uptimeMillis, change.position)
                                 scope.launch {
-                                    yawAnim.snapTo(yawAnim.value + dragAmount.x * 0.45f)
-                                    pitchAnim.snapTo((pitchAnim.value - dragAmount.y * 0.14f).coerceIn(-16f, 16f))
+                                    yawAnim.snapTo(yawAnim.value + dragAmount.x * 0.48f)
+                                    pitchAnim.snapTo((pitchAnim.value - dragAmount.y * 0.16f).coerceIn(-18f, 18f))
                                 }
                             }
                         }
                     }
-                    .pointerInput(isCommitting) {
+                    .pointerInput(keySeed, isCommitting) {
                         if (!isCommitting) {
                             detectTapGestures(
                                 onDoubleTap = {
                                     onCrinkle()
                                     scope.launch {
-                                        val target = if (showingBack) 0f else 180f
+                                        val nextBase = BoosterPouchPhysics.nearestSettledFaceYaw(yawAnim.value, 0f)
+                                        val target = nextBase + 180f
                                         yawAnim.animateTo(
                                             target,
-                                            spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                                            spring(dampingRatio = 0.56f, stiffness = Spring.StiffnessMediumLow)
                                         )
                                     }
                                 }
                             )
                         }
                     }
+                    .testTag("top_active_3d_pack")
             ) {
-                if (showingBack) {
+                // Revealed Interior Chrome Foil Cavity & Peeking Cards when tearing open
+                if (tearProgress > 0.02f) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { rotationY = 180f }
-                    ) {
-                        PackBackSealFace(satinTheme = satinTheme, packCount = packCount)
-                    }
-                } else {
-                    // 1. Revealed Interior Cards Edge & Chrome Pouch Cavity (visible behind the angled tear slit)
-                    if (tearProgress > 0.02f) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            Color(0xFFCBD5E1),
-                                            Color(0xFF475569),
-                                            satinTheme.baseColor
-                                        )
+                            .padding(horizontal = 12.dp)
+                            .padding(top = 48.dp, bottom = 180.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color(0xFFE2E8F0),
+                                        Color(0xFF475569),
+                                        Color.Transparent
                                     )
                                 )
-                        ) {
-                            // Top peeking rim of the card stack inside the pack
-                            Surface(
-                                color = Color(0xFFF8FAFC),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.5.dp, StudioGoldBright),
-                                shadowElevation = 4.dp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 24.dp)
-                                    .padding(top = 62.dp)
-                                    .height(74.dp)
-                                    .graphicsLayer {
-                                        translationY = -tearProgress * 10f
-                                        rotationZ = tearGeometry.angleDeg * 0.18f
-                                    }
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            Brush.linearGradient(
-                                                listOf(
-                                                    Color(0xFFE2E8F0),
-                                                    StudioGoldBright.copy(alpha = 0.55f),
-                                                    Color(0xFF93C5FD)
-                                                )
-                                            )
-                                        )
-                                )
-                            }
-                        }
-                    }
-
-                    // 2. Lower Pouch Artwork (clipped cleanly below the angled serrated tear path)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(if (tearProgress > 0.01f) lowerPouchShape else RoundedCornerShape(22.dp))
+                            )
                     ) {
-                        PackFrontArtFace(
-                            coverRes = coverRes,
-                            satinTheme = satinTheme,
-                            tearProgress = tearProgress
-                        )
-                    }
-
-                    // 3. Torn Top Foil Cap (clipped cleanly ABOVE the angled tear path; peels off along finger swipe vector!)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(if (tearProgress > 0.01f) topFoilCapShape else RoundedCornerShape(22.dp))
-                            .graphicsLayer {
-                                translationX = tearGeometry.peelDirX * tearProgress * 124f
-                                translationY = tearGeometry.peelDirY * tearProgress * 92f
-                                rotationZ = tearProgress * (tearGeometry.angleDeg * 0.42f + tearGeometry.peelDirX * -18f)
-                                rotationX = tearProgress * 34f
-                                alpha = (1f - tearProgress * 0.72f).coerceIn(0.18f, 1f)
-                            }
-                    ) {
-                        PackFrontArtFace(
-                            coverRes = coverRes,
-                            satinTheme = satinTheme,
-                            tearProgress = tearProgress
-                        )
-                        Box(
+                        Surface(
+                            color = Color(0xFFF8FAFC),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.5.dp, StudioGoldBright),
+                            shadowElevation = 4.dp,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(106.dp)
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            satinTheme.sheenHighlight.copy(alpha = 0.28f),
-                                            satinTheme.baseColor.copy(alpha = 0.75f),
-                                            Color.Transparent
+                                .padding(horizontal = 12.dp, vertical = 14.dp)
+                                .height(68.dp)
+                                .graphicsLayer {
+                                    translationY = -tearProgress * 12f
+                                    rotationZ = tearGeometry.angleDeg * 0.18f
+                                }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(
+                                                Color(0xFFE2E8F0),
+                                                StudioGoldBright.copy(alpha = 0.58f),
+                                                Color(0xFF93C5FD)
+                                            )
                                         )
                                     )
-                                )
-                        )
+                            )
+                        }
                     }
+                }
 
-                    // 4. Interactive Top 38% Angled Tear Touch Zone + Prompt Pill
+                // True 3D Tessellated Mesh for the Active Top Booster Pack
+                BoosterPack3DMesh(
+                    coverRes = coverRes,
+                    satinTheme = satinTheme,
+                    packCount = packCount,
+                    yawDeg = totalYaw,
+                    pitchDeg = totalPitch,
+                    cameraDistancePx = prismCameraDistancePx,
+                    lighting = lighting,
+                    tearProgress = tearProgress,
+                    tearLeftYRatio = tearGeometry.leftYRatio,
+                    tearRightYRatio = tearGeometry.rightYRatio,
+                    tearPeelDirX = tearGeometry.peelDirX,
+                    tearPeelDirY = tearGeometry.peelDirY,
+                    tearAngleDeg = tearGeometry.angleDeg,
+                    pickUpProgress = pickUpProgress,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Interactive Top 36% Angled Tear Touch Zone + Prompt Pill (when front-facing)
+                if (!showingBack) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(134.dp)
+                            .height(132.dp)
                             .align(Alignment.TopCenter)
                             .onSizeChanged { tearStripSize = it }
-                            .pointerInput(isCommitting, tornCommitted) {
+                            .pointerInput(keySeed, isCommitting, tornCommitted) {
                                 if (!isCommitting && !tornCommitted) {
                                     detectDragGestures(
                                         onDragStart = { startOffset ->
@@ -1370,17 +1547,23 @@ private fun PackTearStage(
                                             cumulativeDragX = 0f
                                             cumulativeDragY = 0f
                                             val h = tearStripSize.height.coerceAtLeast(1).toFloat()
-                                            startNormY = ((startOffset.y / h) * 0.38f).coerceIn(0.12f, 0.36f)
+                                            startNormY = ((startOffset.y / h) * 0.36f).coerceIn(0.12f, 0.34f)
+                                            scope.launch { squashAnim.animateTo(0.28f, tween(70)) }
                                         },
                                         onDragEnd = {
                                             if (tearAnim.value >= 0.56f) {
                                                 commitTear()
                                             } else {
                                                 scope.launch {
-                                                    tearAnim.animateTo(
-                                                        0f,
-                                                        spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                                                    )
+                                                    launch {
+                                                        tearAnim.animateTo(
+                                                            0f,
+                                                            spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                                                        )
+                                                    }
+                                                    launch {
+                                                        squashAnim.animateTo(0f, spring(dampingRatio = 0.5f))
+                                                    }
                                                     cumulativeDragX = 0f
                                                     cumulativeDragY = 0f
                                                 }
@@ -1389,6 +1572,7 @@ private fun PackTearStage(
                                         onDragCancel = {
                                             scope.launch {
                                                 tearAnim.animateTo(0f)
+                                                squashAnim.animateTo(0f)
                                                 cumulativeDragX = 0f
                                                 cumulativeDragY = 0f
                                             }
@@ -1399,7 +1583,7 @@ private fun PackTearStage(
                                         cumulativeDragY += dragAmount.y
                                         onCrinkle()
                                         val stepDist = hypot(dragAmount.x, dragAmount.y)
-                                        val next = (tearAnim.value + stepDist / 340f).coerceIn(0f, 1f)
+                                        val next = (tearAnim.value + stepDist / 320f).coerceIn(0f, 1f)
                                         scope.launch { tearAnim.snapTo(next) }
                                         if (next >= 0.65f) {
                                             commitTear()
@@ -1415,7 +1599,7 @@ private fun PackTearStage(
                                 border = BorderStroke(1.dp, satinTheme.crestTint.copy(alpha = 0.78f)),
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
-                                    .padding(top = 18.dp)
+                                    .padding(top = 44.dp)
                                     .graphicsLayer {
                                         translationX = tearGeometry.peelDirX * tearProgress * 78f
                                         translationY = tearGeometry.peelDirY * tearProgress * 56f
@@ -1424,18 +1608,18 @@ private fun PackTearStage(
                                     }
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.SwipeRight,
                                         contentDescription = null,
                                         tint = satinTheme.crestTint,
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(15.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     Text(
-                                        text = if (packCount > 1) "SWIPE ANY ANGLE TO RIP ${packCount}x" else "SWIPE ANY ANGLE TO TEAR",
+                                        text = "SWIPE TO TEAR",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = satinTheme.crestTint
                                     )
@@ -1444,7 +1628,7 @@ private fun PackTearStage(
                         }
                     }
 
-                    // 5. Angled Perforated Cut Line, Exposed Metallic Foil Opening & Directional Foil Shred Particles
+                    // Angled Perforated Cut Line, Metallic Foil Cut & Directional Spark Particles
                     val tearGoldColor = StudioGoldBright
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val yL = size.height * tearGeometry.leftYRatio
@@ -1455,31 +1639,28 @@ private fun PackTearStage(
                             y = yL + (yR - yL) * t
                         )
 
-                        // Perforated dashed guide along remaining uncut portion
-                        val dashCount = 18
+                        val dashCount = 16
                         for (i in 0 until dashCount) {
                             val t0 = i.toFloat() / dashCount.toFloat()
-                            val t1 = (i + 0.62f) / dashCount.toFloat()
+                            val t1 = (i + 0.60f) / dashCount.toFloat()
                             val isCut = if (tearGeometry.leftToRight) t1 <= tearProgress else (1f - t0) <= tearProgress
                             if (!isCut) {
                                 drawLine(
                                     color = satinTheme.sheenHighlight.copy(alpha = 0.70f),
                                     start = pointAt(t0),
                                     end = pointAt(t1),
-                                    strokeWidth = 2.6f,
+                                    strokeWidth = 2.4f,
                                     cap = StrokeCap.Round
                                 )
                             }
                         }
 
-                        // Metallic silver-gold inner foil seam & directional foil sparks along the active slice
                         if (tearProgress > 0.01f) {
                             val cutStartT = if (tearGeometry.leftToRight) 0f else (1f - tearProgress)
                             val cutEndT = if (tearGeometry.leftToRight) tearProgress else 1f
                             val pStart = pointAt(cutStartT)
                             val pEnd = pointAt(cutEndT)
 
-                            // Exposed metallic silver/gold seam
                             drawLine(
                                 brush = Brush.linearGradient(
                                     colors = listOf(
@@ -1496,7 +1677,6 @@ private fun PackTearStage(
                                 cap = StrokeCap.Round
                             )
 
-                            // Crisp bright blade glint at active tear tip
                             val tip = if (tearGeometry.leftToRight) pEnd else pStart
                             drawCircle(
                                 color = Color.White.copy(alpha = 0.92f),
@@ -1509,7 +1689,6 @@ private fun PackTearStage(
                                 center = tip
                             )
 
-                            // Directional metallic foil shred particles flying off the active cut point
                             val angleRad = Math.toRadians(tearGeometry.angleDeg.toDouble())
                             for (p in 0 until 7) {
                                 val spread = (p - 3) * 0.32
@@ -1529,20 +1708,21 @@ private fun PackTearStage(
             }
         }
 
-        // Turn Pack / Hint Row
+        // Turn Top Pack / Hint Row
         Surface(
-            color = PureWhiteCard.copy(alpha = 0.90f),
+            color = palette.cardSurface.copy(alpha = 0.92f),
             shape = RoundedCornerShape(999.dp),
-            border = BorderStroke(1.dp, IceBorder),
+            border = BorderStroke(1.dp, palette.border),
             modifier = Modifier
                 .clip(RoundedCornerShape(999.dp))
                 .clickable(enabled = !isCommitting) {
                     onCrinkle()
                     scope.launch {
-                        val target = if (showingBack) 0f else 180f
+                        val base = BoosterPouchPhysics.nearestSettledFaceYaw(yawAnim.value, 0f)
+                        val target = base + 180f
                         yawAnim.animateTo(
                             target,
-                            spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                            spring(dampingRatio = 0.56f, stiffness = Spring.StiffnessMediumLow)
                         )
                     }
                 }
@@ -1554,220 +1734,16 @@ private fun PackTearStage(
             ) {
                 Icon(
                     imageVector = Icons.Default.Autorenew,
-                    contentDescription = "Turn pack",
-                    tint = DeepCobalt,
+                    contentDescription = "Turn top pack",
+                    tint = palette.accentPrimary,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = if (showingBack) "Flip to Front  •  Drag to Rotate" else "Turn to Back Seal  •  Drag to Rotate",
+                    text = if (showingBack) "Flip Top Pack to Front  •  Drag to Spin" else "Turn Top Pack  •  Drag to Spin",
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = InkSlate
+                    color = palette.ink
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PackFrontArtFace(
-    coverRes: Int,
-    satinTheme: PackSatinTheme,
-    tearProgress: Float
-) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Image(
-            painter = painterResource(id = coverRes),
-            contentDescription = "Booster pack front artwork",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .alpha(0.32f)
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
-                        0.0f to satinTheme.baseColor.copy(alpha = 0.92f),
-                        0.32f to satinTheme.sheenHighlight.copy(alpha = 0.34f + tearProgress * 0.12f),
-                        0.50f to Color.White.copy(alpha = 0.22f),
-                        0.68f to satinTheme.logoAccent.copy(alpha = 0.36f),
-                        1.0f to satinTheme.baseColor.copy(alpha = 0.95f)
-                    )
-                )
-        )
-
-        Surface(
-            color = satinTheme.baseColor.copy(alpha = 0.78f),
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.4.dp, satinTheme.sheenHighlight.copy(alpha = 0.65f)),
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 20.dp)
-                .padding(top = 34.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = satinTheme.crestTint,
-                    modifier = Modifier.size(28.dp)
-                )
-                Text(
-                    text = "MEGA\nCOLLECTOR",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        lineHeight = 19.sp,
-                        letterSpacing = 1.sp
-                    ),
-                    color = satinTheme.sheenHighlight,
-                    textAlign = TextAlign.Center
-                )
-                Surface(
-                    color = satinTheme.logoAccent.copy(alpha = 0.28f),
-                    shape = RoundedCornerShape(999.dp),
-                    border = BorderStroke(1.dp, satinTheme.crestTint.copy(alpha = 0.6f))
-                ) {
-                    Text(
-                        text = satinTheme.label.uppercase(),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = satinTheme.crestTint,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PackBackSealFace(
-    satinTheme: PackSatinTheme,
-    packCount: Int
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        satinTheme.baseColor.copy(alpha = 0.96f),
-                        satinTheme.logoAccent.copy(alpha = 0.30f),
-                        satinTheme.baseColor.copy(alpha = 0.98f)
-                    )
-                )
-            )
-    ) {
-        // Center Crimped Foil Spine
-        Box(
-            modifier = Modifier
-                .width(12.dp)
-                .height(352.dp)
-                .align(Alignment.Center)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            Color.Transparent,
-                            satinTheme.sheenHighlight.copy(alpha = 0.40f),
-                            Color.White.copy(alpha = 0.28f),
-                            satinTheme.sheenHighlight.copy(alpha = 0.40f),
-                            Color.Transparent
-                        )
-                    )
-                )
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 18.dp, vertical = 22.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "SEALED BOOSTER SPECS • ${packCount * MegaPackConfig.CARDS_PER_PACK} CARDS",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 0.8.sp,
-                    fontSize = 9.sp
-                ),
-                color = satinTheme.crestTint
-            )
-
-            Surface(
-                color = MoonlightNight.copy(alpha = 0.84f),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, satinTheme.sheenHighlight.copy(alpha = 0.55f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "CERTIFIED PULL ODDS",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp
-                        ),
-                        color = StudioGoldBright
-                    )
-                    val oddsRows = listOf(
-                        "1-of-1 Misprint" to "0.005%",
-                        "Legend Tier" to "0.01%",
-                        "Collector Tier" to "1.0%",
-                        "Luckybox Tier" to "3.0%",
-                        "Epic Tier" to "8.0%",
-                        "Special Tier" to "19.0%",
-                        "Uncommon Tier" to "36.0%",
-                        "Common Tier" to "32.99%"
-                    )
-                    oddsRows.forEach { (label, pct) ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                color = Color.White.copy(alpha = 0.88f)
-                            )
-                            Text(
-                                text = pct,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = satinTheme.crestTint
-                            )
-                        }
-                    }
-                }
-            }
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "MLBBDEX ARCHIVE EDITION • ${satinTheme.label.uppercase()}",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-                    color = Color.White.copy(alpha = 0.72f)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    listOf(2, 4, 1, 3, 2, 5, 1, 2, 4, 1, 3, 2, 1, 4, 2).forEach { w ->
-                        Box(
-                            modifier = Modifier
-                                .width(w.dp)
-                                .height(16.dp)
-                                .background(Color.White.copy(alpha = 0.65f))
-                        )
-                    }
-                }
             }
         }
     }

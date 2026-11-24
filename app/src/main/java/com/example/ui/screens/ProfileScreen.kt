@@ -26,11 +26,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
@@ -60,11 +61,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -74,7 +73,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.remote.AuthenticatedUser
 import com.example.model.AchievementBadgeUi
@@ -82,6 +80,7 @@ import com.example.model.AchievementCatalog
 import com.example.model.CollectorHistoryEvent
 import com.example.model.CollectorHistoryType
 import com.example.model.CollectorPublicProfile
+import com.example.model.CosmeticCatalog
 import com.example.model.MlbbCollectionTier
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
@@ -89,23 +88,14 @@ import com.example.ui.components.BadgeIconVector
 import com.example.ui.components.CatalogSyncStatusCard
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.DiamondsPill
+import com.example.ui.components.FramedAvatar
 import com.example.ui.components.FrostedGlassCard
 import com.example.ui.components.MlbbCollectionBadge
 import com.example.ui.components.MlbbDexCreditCard
 import com.example.ui.components.ProfileViewerDialog
 import com.example.ui.components.SettingsGearButton
-import com.example.ui.components.rememberUserAvatarRequest
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.DeepCobalt
-import com.example.ui.theme.IceBorder
-import com.example.ui.theme.InkSlate
-import com.example.ui.theme.PearlCanvas
-import com.example.ui.theme.PureWhiteCard
-import com.example.ui.theme.RarityUncommon
-import com.example.ui.theme.SkyFrost
-import com.example.ui.theme.SlateMuted
-import com.example.ui.theme.StudioGold
-import com.example.ui.theme.StudioGoldText
 import com.example.ui.viewmodel.MegaCollectorUiState
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -121,6 +111,7 @@ fun ProfileScreen(
     onSignOut: () -> Unit,
     onSyncCatalog: () -> Unit,
     onTogglePinnedBadge: (AchievementBadgeUi) -> Unit,
+    onClaimAchievementReward: (AchievementBadgeUi) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onButtonClickSfx: () -> Unit,
     modifier: Modifier = Modifier
@@ -227,45 +218,27 @@ fun ProfileScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(58.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(palette.buttonPrimary, palette.skyAccent)
-                                        )
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                val photo = currentUser?.photoUrl.orEmpty()
-                                if (photo.isNotBlank()) {
-                                    AsyncImage(
-                                        model = rememberUserAvatarRequest(photo),
-                                        contentDescription = "Google account photo",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(CircleShape)
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Person,
-                                        contentDescription = "Collector avatar",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(30.dp)
-                                    )
-                                }
+                            val equippedFrame = remember(uiState.wallet.equippedFrameId) {
+                                CosmeticCatalog.frameById(uiState.wallet.equippedFrameId)
                             }
+                            val displayAlias = uiState.wallet.collectorAlias.ifBlank {
+                                currentUser?.displayName ?: "Dawn Collector"
+                            }
+                            FramedAvatar(
+                                photoUrl = currentUser?.photoUrl.orEmpty(),
+                                alias = displayAlias,
+                                frame = equippedFrame,
+                                size = 66.dp,
+                                fallbackTint = palette.buttonPrimary,
+                                modifier = Modifier.testTag("profile_equipped_avatar")
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = uiState.wallet.collectorAlias.ifBlank {
-                                            currentUser?.displayName ?: "Dawn Collector"
-                                        },
+                                        text = displayAlias,
                                         style = MaterialTheme.typography.headlineMedium,
-                                        color = InkSlate,
+                                        color = palette.ink,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f, fill = false)
@@ -280,7 +253,7 @@ fun ProfileScreen(
                                         Icon(
                                             imageVector = Icons.Default.Edit,
                                             contentDescription = "Edit collector name",
-                                            tint = SlateMuted,
+                                            tint = palette.muted,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -289,7 +262,7 @@ fun ProfileScreen(
                                     Text(
                                         text = currentUser?.email.orEmpty(),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = SlateMuted,
+                                        color = palette.muted,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -324,7 +297,7 @@ fun ProfileScreen(
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.Logout,
                                         contentDescription = "Sign out of Google account",
-                                        tint = SlateMuted,
+                                        tint = palette.muted,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -335,7 +308,7 @@ fun ProfileScreen(
                     if (currentUser == null) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Surface(
-                            color = SkyFrost,
+                            color = palette.frostSurface,
                             shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.45f)),
                             modifier = Modifier
@@ -362,12 +335,12 @@ fun ProfileScreen(
                                         Text(
                                             text = "Preview / Guest Collector Mode",
                                             style = MaterialTheme.typography.labelLarge,
-                                            color = InkSlate
+                                            color = palette.ink
                                         )
                                         Text(
                                             text = "Optional: Sign in with Google for cloud backup & live P2P",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = SlateMuted
+                                            color = palette.muted
                                         )
                                     }
                                 }
@@ -379,7 +352,7 @@ fun ProfileScreen(
                                     },
                                     enabled = !isSigningIn,
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = DeepCobalt,
+                                        containerColor = palette.buttonPrimary,
                                         contentColor = Color.White
                                     ),
                                     shape = RoundedCornerShape(999.dp),
@@ -481,7 +454,7 @@ fun ProfileScreen(
                             Text(
                                 text = "Tap / hover badge",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = SlateMuted
+                                color = palette.muted
                             )
                         }
                         AnimatedVisibility(visible = inspectedHeaderBadge != null) {
@@ -497,7 +470,7 @@ fun ProfileScreen(
                                     Text(
                                         text = "${b.definition.title}: ${b.definition.description}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = InkSlate,
+                                        color = palette.ink,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                     )
                                 }
@@ -601,7 +574,7 @@ fun ProfileScreen(
                             border = BorderStroke(1.dp, palette.border)
                         ) {
                             Text(
-                                text = "Lv.${collectionTier.levelNumber}/8",
+                                text = "Lv.${collectionTier.levelNumber}/${MlbbCollectionTier.entries.size}",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = palette.accentPrimary,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
@@ -670,7 +643,7 @@ fun ProfileScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Tap to view all 8 obtainable badges",
+                            text = "Tap to view all ${MlbbCollectionTier.entries.size} obtainable badges",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = palette.accentPrimary
                         )
@@ -708,7 +681,7 @@ fun ProfileScreen(
                                         color = palette.ink
                                     )
                                     Text(
-                                        text = "Rarest (World) to Entry (Novice)",
+                                        text = "World > Mega (1-3) > Exalted (1-3) > Novice",
                                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
                                         color = palette.muted
                                     )
@@ -766,7 +739,7 @@ fun ProfileScreen(
                                                         )
                                                     }
                                                     Text(
-                                                        text = tier.title.removeSuffix(" Collector"),
+                                                        text = tier.shortLabel,
                                                         style = MaterialTheme.typography.labelSmall.copy(
                                                             fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.Bold,
                                                             fontSize = 10.sp
@@ -819,16 +792,16 @@ fun ProfileScreen(
                             Text(
                                 text = "ACHIEVEMENT BADGES",
                                 style = MaterialTheme.typography.titleLarge,
-                                color = InkSlate
+                                color = palette.ink
                             )
                             Text(
-                                text = "Tap or hover any medallion to view progress & pin.",
+                                text = "Tap or hover any medallion to view progress, rewards & pin.",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
-                                color = SlateMuted
+                                color = palette.muted
                             )
                         }
                         Surface(
-                            color = SkyFrost,
+                            color = palette.frostSurface,
                             shape = RoundedCornerShape(999.dp),
                             border = BorderStroke(1.dp, palette.border)
                         ) {
@@ -872,7 +845,7 @@ fun ProfileScreen(
                         inspectedBadge?.let { badge ->
                             val def = badge.definition
                             Surface(
-                                color = SkyFrost,
+                                color = palette.frostSurface,
                                 shape = RoundedCornerShape(14.dp),
                                 border = BorderStroke(1.2.dp, palette.accentPrimary.copy(alpha = 0.55f)),
                                 modifier = Modifier
@@ -903,43 +876,115 @@ fun ProfileScreen(
                                                 Text(
                                                     text = def.title,
                                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = InkSlate
+                                                    color = palette.ink
                                                 )
                                                 Text(
                                                     text = def.description,
                                                     style = MaterialTheme.typography.bodySmall,
-                                                    color = SlateMuted
+                                                    color = palette.muted
                                                 )
                                             }
                                         }
                                         Text(
                                             text = "${badge.currentProgress.coerceAtMost(def.targetCount)}/${def.targetCount}",
                                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                            color = if (badge.isUnlocked) palette.accentPrimary else SlateMuted
+                                            color = if (badge.isUnlocked) palette.accentPrimary else palette.muted
                                         )
                                     }
 
                                     LinearProgressIndicator(
                                         progress = { badge.progressFraction },
                                         color = palette.accentPrimary,
-                                        trackColor = PureWhiteCard,
+                                        trackColor = palette.cardSurface,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(6.dp)
                                             .clip(RoundedCornerShape(999.dp))
                                     )
 
+                                    if (def.hasReward && def.rewardSummaryText.isNotBlank()) {
+                                        Surface(
+                                            color = palette.cardSurface,
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (badge.canClaim) palette.gold else palette.border
+                                            )
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (badge.isClaimed) Icons.Default.CheckCircle else Icons.Default.CardGiftcard,
+                                                        contentDescription = null,
+                                                        tint = if (badge.canClaim) palette.gold else palette.accentPrimary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = "Reward: ${def.rewardSummaryText}",
+                                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                        color = palette.ink,
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                                if (badge.isClaimed) {
+                                                    Text(
+                                                        text = "CLAIMED",
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                                                        color = palette.accentPrimary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (badge.canClaim) {
+                                        Button(
+                                            onClick = { onClaimAchievementReward(badge) },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = palette.gold,
+                                                contentColor = palette.goldButtonContent
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(48.dp)
+                                                .testTag("claim_achievement_reward_button")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.CardGiftcard,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(17.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Claim Reward",
+                                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold)
+                                            )
+                                        }
+                                    }
+
                                     if (badge.isUnlocked) {
                                         Button(
                                             onClick = { onTogglePinnedBadge(badge) },
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (badge.isPinned) SlateMuted else palette.buttonPrimary,
+                                                containerColor = if (badge.isPinned) palette.muted else palette.buttonPrimary,
                                                 contentColor = Color.White
                                             ),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .height(40.dp)
+                                                .height(48.dp)
                                                 .testTag("toggle_pin_badge_button")
                                         ) {
                                             Icon(
@@ -980,7 +1025,7 @@ fun ProfileScreen(
                         Text(
                             text = "COLLECTOR HISTORY",
                             style = MaterialTheme.typography.titleLarge,
-                            color = InkSlate
+                            color = palette.ink
                         )
                     }
 
@@ -988,7 +1033,7 @@ fun ProfileScreen(
                         Text(
                             text = "Open packs, trade skins, or spin the wheel to log your cloud history.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = SlateMuted
+                            color = palette.muted
                         )
                     } else {
                         uiState.historyEvents.take(12).forEach { event ->
@@ -1009,7 +1054,7 @@ fun ProfileScreen(
                     Text(
                         text = "COLLECTION BY RARITY",
                         style = MaterialTheme.typography.titleLarge,
-                        color = InkSlate
+                        color = palette.ink
                     )
                     val total = uiState.ownedCards.size.coerceAtLeast(1)
                     SkinRarity.entries.reversed().forEach { rarity ->
@@ -1027,14 +1072,14 @@ fun ProfileScreen(
                                 Text(
                                     text = "$count",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = InkSlate
+                                    color = palette.ink
                                 )
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             LinearProgressIndicator(
                                 progress = { count.toFloat() / total.toFloat() },
                                 color = rarity.primaryColor,
-                                trackColor = SkyFrost,
+                                trackColor = palette.frostSurface,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(6.dp)
@@ -1077,9 +1122,9 @@ fun ProfileScreen(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 MlbbDexCreditCard(skinCount = uiState.catalog.size)
                 Surface(
-                    color = PureWhiteCard,
+                    color = palette.cardSurface,
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, IceBorder)
+                    border = BorderStroke(1.dp, palette.border)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(
@@ -1091,7 +1136,7 @@ fun ProfileScreen(
                         Text(
                             text = stringResource(R.string.api_credit_body),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = SlateMuted
+                            color = palette.muted
                         )
                     }
                 }
@@ -1103,8 +1148,8 @@ fun ProfileScreen(
         var draftAlias by remember { mutableStateOf(uiState.wallet.collectorAlias) }
         AlertDialog(
             onDismissRequest = { showEditAlias = false },
-            containerColor = PureWhiteCard,
-            title = { Text("Collector Tag", color = InkSlate) },
+            containerColor = palette.cardSurface,
+            title = { Text("Collector Tag", color = palette.ink) },
             text = {
                 OutlinedTextField(
                     value = draftAlias,
@@ -1134,7 +1179,7 @@ fun ProfileScreen(
                         showEditAlias = false
                     }
                 ) {
-                    Text("Cancel", color = SlateMuted)
+                    Text("Cancel", color = palette.muted)
                 }
             }
         )
@@ -1143,6 +1188,7 @@ fun ProfileScreen(
     if (showSelfProfilePreview) {
         ProfileViewerDialog(
             profile = selfPublicProfile,
+            equippedFrameId = uiState.wallet.equippedFrameId,
             onDismiss = {
                 onButtonClickSfx()
                 showSelfProfilePreview = false
@@ -1164,6 +1210,7 @@ private fun AchievementIconMedallion(
     val def = badge.definition
     val borderColor = when {
         isInspected -> palette.buttonPrimary
+        badge.canClaim -> palette.gold
         badge.isPinned -> palette.accentPrimary
         badge.isUnlocked -> palette.accentPrimary.copy(alpha = 0.55f)
         else -> palette.border
@@ -1188,7 +1235,7 @@ private fun AchievementIconMedallion(
             .testTag("achievement_badge_${def.id}"),
         color = if (badge.isUnlocked) palette.frostSurface else palette.canvas,
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(if (isInspected || badge.isPinned) 2.dp else 1.dp, borderColor)
+        border = BorderStroke(if (isInspected || badge.isPinned || badge.canClaim) 2.dp else 1.dp, borderColor)
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -1199,6 +1246,25 @@ private fun AchievementIconMedallion(
                     .size(28.dp)
                     .alpha(if (badge.isUnlocked) 1f else 0.55f)
             )
+            if (badge.canClaim) {
+                Surface(
+                    color = palette.gold,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(5.dp)
+                        .size(16.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.CardGiftcard,
+                            contentDescription = "Reward ready to claim",
+                            tint = palette.goldButtonContent,
+                            modifier = Modifier.size(10.dp)
+                        )
+                    }
+                }
+            }
             if (badge.isPinned) {
                 Surface(
                     color = palette.buttonPrimary,
@@ -1247,14 +1313,14 @@ private fun HistoryEventRow(event: CollectorHistoryEvent) {
         CollectorHistoryType.TRADE -> palette.accentPrimary
         CollectorHistoryType.RECYCLE -> palette.accentPrimary
         CollectorHistoryType.MINIGAME -> palette.accentPrimary
-        CollectorHistoryType.PROFILE -> SlateMuted
+        CollectorHistoryType.PROFILE -> palette.muted
     }
     val formatter = remember { SimpleDateFormat("MMM d, HH:mm", Locale.US) }
 
     Surface(
-        color = SkyFrost,
+        color = palette.frostSurface,
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, IceBorder),
+        border = BorderStroke(1.dp, palette.border),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1280,7 +1346,7 @@ private fun HistoryEventRow(event: CollectorHistoryEvent) {
                 Text(
                     text = event.title,
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                    color = InkSlate,
+                    color = palette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1288,7 +1354,7 @@ private fun HistoryEventRow(event: CollectorHistoryEvent) {
                     Text(
                         text = event.detail,
                         style = MaterialTheme.typography.bodySmall,
-                        color = SlateMuted,
+                        color = palette.muted,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1313,7 +1379,7 @@ private fun HistoryEventRow(event: CollectorHistoryEvent) {
                 Text(
                     text = formatter.format(Date(event.createdAtMs)),
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                    color = SlateMuted
+                    color = palette.muted
                 )
             }
         }
@@ -1327,6 +1393,7 @@ private fun StatTile(
     accent: Color,
     modifier: Modifier = Modifier
 ) {
+    val palette = CollectorTheme.colors
     FrostedGlassCard(
         modifier = modifier,
         cornerRadius = 18.dp
@@ -1344,7 +1411,7 @@ private fun StatTile(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = SlateMuted
+                color = palette.muted
             )
         }
     }

@@ -10,6 +10,9 @@ import com.example.data.local.TradeListingEntity
 import com.example.data.remote.MlbbDexClient
 import com.example.data.remote.ParsedHeroRef
 import com.example.data.remote.SkinJsonParser
+import com.example.model.AchievementBadgeDefinition
+import com.example.model.AchievementBadgeUi
+import com.example.model.CardBinderDesign
 import com.example.model.DailyRewardTier
 import com.example.model.DecodedTradeSlip
 import com.example.model.DiamondExchangeOption
@@ -18,6 +21,7 @@ import com.example.model.MisprintAnomaly
 import com.example.model.OwnedCard
 import com.example.model.P2PTradeListing
 import com.example.model.PackBundleOption
+import com.example.model.ProfileFrameItem
 import com.example.model.QuestCatalog
 import com.example.model.QuestCategory
 import com.example.model.QuestDefinition
@@ -877,6 +881,63 @@ class CollectorRepository(
     suspend fun setThemeAccentId(accentId: String) {
         prefs.setThemeAccentId(accentId)
     }
+
+    suspend fun purchaseProfileFrame(frame: ProfileFrameItem): Result<ProfileFrameItem> = withContext(Dispatchers.IO) {
+        if (frame.isAchievementExclusive) {
+            return@withContext Result.failure(
+                IllegalStateException(frame.achievementUnlockHint ?: "Unlocked through Achievements.")
+            )
+        }
+        if (frame.diamondCost <= 0) {
+            return@withContext Result.failure(IllegalStateException("${frame.name} cannot be purchased."))
+        }
+        val ok = prefs.purchaseAndEquipFrame(frame.id, frame.diamondCost)
+        if (ok) Result.success(frame)
+        else Result.failure(IllegalStateException("Need ${frame.diamondCost} Diamonds to unlock ${frame.name}."))
+    }
+
+    suspend fun equipProfileFrame(frameId: String) {
+        prefs.equipFrame(frameId)
+    }
+
+    suspend fun purchaseBinderDesign(binder: CardBinderDesign): Result<CardBinderDesign> = withContext(Dispatchers.IO) {
+        if (binder.isAchievementExclusive) {
+            return@withContext Result.failure(
+                IllegalStateException(binder.achievementUnlockHint ?: "Unlocked through Achievements.")
+            )
+        }
+        if (binder.diamondCost <= 0) {
+            return@withContext Result.failure(IllegalStateException("${binder.name} cannot be purchased."))
+        }
+        val ok = prefs.purchaseAndEquipBinder(binder.id, binder.diamondCost)
+        if (ok) Result.success(binder)
+        else Result.failure(IllegalStateException("Need ${binder.diamondCost} Diamonds to unlock ${binder.name}."))
+    }
+
+    suspend fun equipBinderDesign(binderId: String) {
+        prefs.equipBinder(binderId)
+    }
+
+    suspend fun claimAchievementReward(badge: AchievementBadgeUi): Result<AchievementBadgeDefinition> =
+        withContext(Dispatchers.IO) {
+            if (!badge.isUnlocked) {
+                return@withContext Result.failure(IllegalStateException("Achievement not unlocked yet."))
+            }
+            if (badge.isClaimed) {
+                return@withContext Result.failure(IllegalStateException("Achievement reward already claimed."))
+            }
+            val def = badge.definition
+            val ok = prefs.claimAchievementReward(
+                achievementId = def.id,
+                coinReward = def.rewardCoins,
+                diamondReward = def.rewardDiamonds,
+                unlockFrameId = def.rewardFrameId,
+                unlockBinderId = def.rewardBinderId,
+                unlockThemeId = def.rewardThemeId
+            )
+            if (ok) Result.success(def)
+            else Result.failure(IllegalStateException("Reward already claimed."))
+        }
 
     private fun randomHex4(): String =
         Integer.toHexString(Random.nextInt(0x1000, 0xFFFF)).uppercase(Locale.US)

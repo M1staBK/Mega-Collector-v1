@@ -9,6 +9,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,9 +74,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -88,11 +91,12 @@ import coil.size.Precision
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.draw.clip
 import android.content.Context
+import com.example.R
 import com.example.model.BadgeIconStyle
-import com.example.model.MlbbCollectionTier
 import com.example.model.SkinRarity
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.MoonlightNight
@@ -108,6 +112,7 @@ data class CollectorSettingsController(
     val darkModeEnabled: Boolean = false,
     val vibrationEnabled: Boolean = true,
     val themeAccent: ThemeAccentOption = ThemeAccentOption.SKY_COBALT,
+    val unlockedThemeIds: Set<String> = ThemeAccentOption.DEFAULT_UNLOCKED_IDS,
     val onToggleSound: (Boolean) -> Unit = {},
     val onToggleDarkMode: (Boolean) -> Unit = {},
     val onToggleVibration: (Boolean) -> Unit = {},
@@ -128,18 +133,25 @@ fun ProvideCollectorSettings(
 fun buildMlbbCardImageRequest(
     context: Context,
     url: String,
-    crossfadeMs: Int = 120
+    crossfadeMs: Int = 100,
+    compact: Boolean = false
 ): ImageRequest {
+    val reqW = if (compact) 420 else 768
+    val reqH = if (compact) 600 else 1100
     val builder = ImageRequest.Builder(context.applicationContext)
         .data(url)
         .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) MegaCollector/3.0")
         .addHeader("Accept", "image/webp,image/png,image/jpeg,*/*")
-        .size(920, 1320)
-        .precision(Precision.EXACT)
-        .allowHardware(false)
-        .transformations(CardDetailUpscaleTransformation(url, targetMinPx = 920))
+        .size(reqW, reqH)
+        .precision(Precision.INEXACT)
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
+    if (!compact) {
+        builder.allowHardware(false)
+            .transformations(CardDetailUpscaleTransformation(url, targetMinPx = 680, runSharpen = false))
+    } else {
+        builder.allowHardware(true)
+    }
     if (crossfadeMs > 0) builder.crossfade(crossfadeMs) else builder.crossfade(false)
     return builder.build()
 }
@@ -147,16 +159,24 @@ fun buildMlbbCardImageRequest(
 fun buildMlbbSquareImageRequest(
     context: Context,
     url: String,
-    crossfadeMs: Int = 120
+    crossfadeMs: Int = 100,
+    compact: Boolean = true
 ): ImageRequest {
+    val targetPx = if (compact) 380 else 680
     val builder = ImageRequest.Builder(context.applicationContext)
         .data(url)
         .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) MegaCollector/3.0")
         .addHeader("Accept", "image/webp,image/png,image/jpeg,*/*")
-        .size(920, 920)
-        .precision(Precision.EXACT)
+        .size(targetPx, targetPx)
+        .precision(Precision.INEXACT)
         .allowHardware(false)
-        .transformations(CharacterFocusSquareTransformation(url))
+        .transformations(
+            CharacterFocusSquareTransformation(
+                imageKey = url,
+                targetPx = targetPx,
+                fastMode = compact
+            )
+        )
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
     if (crossfadeMs > 0) builder.crossfade(crossfadeMs) else builder.crossfade(false)
@@ -164,18 +184,27 @@ fun buildMlbbSquareImageRequest(
 }
 
 @Composable
-fun rememberMlbbImageRequest(url: String): ImageRequest {
+fun rememberMlbbImageRequest(
+    url: String,
+    compact: Boolean = false,
+    crossfadeMs: Int = if (compact) 0 else 90
+): ImageRequest {
     val context = LocalContext.current
-    return remember(url, context) {
-        buildMlbbCardImageRequest(context, url)
+    return remember(url, context, compact, crossfadeMs) {
+        buildMlbbCardImageRequest(context, url, crossfadeMs = crossfadeMs, compact = compact)
     }
 }
 
 @Composable
-fun rememberMlbbSquareImageRequest(url: String, crossfadeMs: Int = 120): ImageRequest {
+fun rememberMlbbSquareImageRequest(
+    url: String,
+    crossfadeMs: Int = -1,
+    compact: Boolean = true
+): ImageRequest {
     val context = LocalContext.current
-    return remember(url, context, crossfadeMs) {
-        buildMlbbSquareImageRequest(context, url, crossfadeMs)
+    val resolvedCrossfade = if (crossfadeMs >= 0) crossfadeMs else if (compact) 0 else 90
+    return remember(url, context, resolvedCrossfade, compact) {
+        buildMlbbSquareImageRequest(context, url, crossfadeMs = resolvedCrossfade, compact = compact)
     }
 }
 
@@ -204,15 +233,7 @@ fun SkyStudioBackdrop(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = if (palette.isDark) {
-                        listOf(palette.abyss, palette.canvas, palette.abyss)
-                    } else {
-                        listOf(
-                            Color(0xFFE7EEFF),
-                            Color(0xFFF3F7FF),
-                            Color(0xFFE9F0FE)
-                        )
-                    }
+                    colors = listOf(palette.abyss, palette.canvas, palette.abyss)
                 )
             )
     ) {
@@ -247,6 +268,40 @@ fun SkyStudioBackdrop(
                 radius = w * 0.65f,
                 center = Offset(w * 0.14f, h * 0.68f)
             )
+
+            // Pack Noir / Obsidian Gold diagonal purple-gold lightning shine rays
+            if (palette.hasPackNoirShine) {
+                drawLine(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            palette.skyAccent.copy(alpha = 0.22f),
+                            palette.gold.copy(alpha = 0.20f),
+                            Color.Transparent
+                        ),
+                        start = Offset(0f, h * 0.18f),
+                        end = Offset(w, h * 0.62f)
+                    ),
+                    start = Offset(-w * 0.1f, h * 0.14f),
+                    end = Offset(w * 1.1f, h * 0.66f),
+                    strokeWidth = w * 0.14f
+                )
+                drawLine(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            palette.goldBright.copy(alpha = 0.15f),
+                            palette.skyAccent.copy(alpha = 0.16f),
+                            Color.Transparent
+                        ),
+                        start = Offset(w, h * 0.25f),
+                        end = Offset(0f, h * 0.85f)
+                    ),
+                    start = Offset(w * 1.1f, h * 0.22f),
+                    end = Offset(-w * 0.1f, h * 0.88f),
+                    strokeWidth = w * 0.08f
+                )
+            }
         }
         content()
     }
@@ -262,7 +317,11 @@ fun FrostedGlassCard(
 ) {
     val palette = CollectorTheme.colors
     val isDimmed = containerAlpha != null && containerAlpha < 0.99f
-    val stroke = borderColor ?: if (palette.isDark) palette.border else palette.glassHighlight
+    val stroke = borderColor ?: when {
+        palette.hasPackNoirShine -> palette.gold.copy(alpha = 0.42f)
+        palette.isDark -> palette.border
+        else -> palette.glassHighlight
+    }
     Surface(
         color = if (isDimmed) palette.abyss else palette.cardSurface,
         shape = RoundedCornerShape(cornerRadius),
@@ -484,14 +543,14 @@ fun SettingsGearButton(
                 ) {
                     Surface(
                         color = palette.cardSurface,
-                        shape = RoundedCornerShape(999.dp),
+                        shape = RoundedCornerShape(28.dp),
                         shadowElevation = 8.dp,
                         border = BorderStroke(1.2.dp, palette.border),
                         modifier = Modifier.testTag("settings_vertical_popup")
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             // 1. Speaker / Crossed Speaker
@@ -576,41 +635,69 @@ fun SettingsGearButton(
                             HorizontalDivider(
                                 thickness = 1.dp,
                                 color = palette.border,
-                                modifier = Modifier.width(34.dp)
+                                modifier = Modifier.width(64.dp)
                             )
 
-                            // 4. Theme Accent Swatch Pills
-                            ThemeAccentOption.entries.forEach { accent ->
-                                val isSelected = settings.themeAccent == accent
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            settings.onSelectThemeAccent(accent)
-                                        }
-                                        .testTag("settings_accent_${accent.name.lowercase()}")
+                            // 4. 2-Column Theme Accent Swatch Grid (includes Pack Noir & achievement-locked themes)
+                            ThemeAccentOption.entries.chunked(2).forEach { rowAccents ->
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(accent.swatchColor)
-                                            .border(
-                                                width = if (isSelected) 2.5.dp else 1.2.dp,
-                                                color = if (isSelected) palette.ink else Color.White.copy(alpha = 0.7f),
-                                                shape = CircleShape
+                                    rowAccents.forEach { accent ->
+                                        val isSelected = settings.themeAccent == accent
+                                        val isUnlocked = accent.isUnlocked(settings.unlockedThemeIds)
+                                        val swatchBrush = if (accent.secondarySwatchColor != null) {
+                                            Brush.linearGradient(
+                                                colors = listOf(accent.swatchColor, accent.secondarySwatchColor)
                                             )
-                                    ) {
-                                        if (isSelected) {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = "Theme accent: ${accent.label} selected",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(18.dp)
+                                        } else {
+                                            Brush.linearGradient(
+                                                colors = listOf(accent.swatchColor, accent.swatchColor)
                                             )
+                                        }
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(CircleShape)
+                                                .clickable {
+                                                    settings.onSelectThemeAccent(accent)
+                                                }
+                                                .testTag("settings_accent_${accent.name.lowercase()}")
+                                        ) {
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(CircleShape)
+                                                    .background(swatchBrush)
+                                                    .border(
+                                                        width = if (isSelected) 2.5.dp else 1.2.dp,
+                                                        color = when {
+                                                            isSelected -> palette.ink
+                                                            !isUnlocked -> palette.muted.copy(alpha = 0.5f)
+                                                            else -> Color.White.copy(alpha = 0.75f)
+                                                        },
+                                                        shape = CircleShape
+                                                    )
+                                            ) {
+                                                if (!isUnlocked) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Lock,
+                                                        contentDescription = "${accent.label} locked",
+                                                        tint = Color.White.copy(alpha = 0.92f),
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                } else if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = "Theme accent: ${accent.label} selected",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -906,19 +993,27 @@ fun AppPreloadOverlay(
             verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
             Surface(
-                color = palette.cardSurface,
-                shape = RoundedCornerShape(28.dp),
+                color = Color(0xFF241C14),
+                shape = RoundedCornerShape(26.dp),
                 shadowElevation = 10.dp,
-                border = BorderStroke(1.6.dp, palette.accentPrimary.copy(alpha = 0.55f)),
-                modifier = Modifier.size(92.dp)
+                border = BorderStroke(1.8.dp, palette.accentPrimary.copy(alpha = 0.7f)),
+                modifier = Modifier
+                    .size(92.dp)
+                    .testTag("preload_app_icon")
             ) {
                 Box(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(10.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    MlbbCollectionBadge(
-                        tier = MlbbCollectionTier.WORLD,
-                        modifier = Modifier.fillMaxSize()
+                    Image(
+                        painter = painterResource(id = R.drawable.app_icon_mega_fg),
+                        contentDescription = "MEGA Collector logo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(16.dp))
                     )
                 }
             }

@@ -13,8 +13,8 @@ object MegaPackConfig {
     const val BASE_DIAMOND_COST_PER_PACK = 5
     const val MISPRINT_CHANCE_PERCENT = 0.005
     const val MISPRINT_ODDS_LABEL = "0.005% (1/20,000)"
-    @DrawableRes val COVER_DRAWABLE_RES = R.drawable.img_pack_mythic
-    val ACCENT_COLOR: Color = SkyAzure
+    @DrawableRes val COVER_DRAWABLE_RES = R.drawable.img_pack_mega_obsidian
+    val ACCENT_COLOR: Color = Color(0xFFA855F7)
 
     val RARITY_WEIGHTS: Map<SkinRarity, Double> = mapOf(
         SkinRarity.COMMON to 32.99,
@@ -37,6 +37,14 @@ data class PackSatinTheme(
 ) {
     companion object {
         val ALL = listOf(
+            PackSatinTheme(
+                id = "obsidian_royale",
+                label = "Obsidian Foil",
+                baseColor = Color(0xFF0B0812),
+                sheenHighlight = Color(0xFFD8B4FE),
+                logoAccent = Color(0xFF9333EA),
+                crestTint = Color(0xFFFACC15)
+            ),
             PackSatinTheme(
                 id = "azure_silk",
                 label = "Azure Silk",

@@ -1,9 +1,16 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -19,12 +26,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.model.MlbbCollectionTier
 
 /**
  * Custom Canvas emblem modeling the official MLBB Collection Level badges:
- * - Tiers 1-4 (right side): sleek faceted metallic V-shield crests (Novice -> Expert)
- * - Tiers 5-8 (left side): ornate crowned multi-wing diamond crests (Renowned -> World)
+ * - Tiers 1-4: sleek faceted metallic V-shield crests (Novice -> Expert)
+ * - Tiers 5-12: ornate crowned multi-wing diamond crests (Renowned -> Exalted 3..1 -> Mega 3..1 -> World)
  */
 @Composable
 fun MlbbCollectionBadge(
@@ -33,10 +43,16 @@ fun MlbbCollectionBadge(
     dimmed: Boolean = false
 ) {
     val alphaMul = if (dimmed) 0.42f else 1f
+    val isMegaTier = tier == MlbbCollectionTier.MEGA_3 ||
+        tier == MlbbCollectionTier.MEGA_2 ||
+        tier == MlbbCollectionTier.MEGA_1
+    val isWorldTier = tier == MlbbCollectionTier.WORLD
+
     Box(
         modifier = modifier.semantics {
             contentDescription = tier.title
-        }
+        },
+        contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
@@ -53,20 +69,24 @@ fun MlbbCollectionBadge(
                 if (!dimmed) {
                     drawCircle(
                         brush = Brush.radialGradient(
-                            colors = listOf(trim.copy(alpha = 0.28f), Color.Transparent),
+                            colors = listOf(
+                                (if (isMegaTier) Color(0xFFFDE047) else trim).copy(alpha = if (isMegaTier || isWorldTier) 0.42f else 0.28f),
+                                Color.Transparent
+                            ),
                             center = Offset(cx, h * 0.46f),
-                            radius = w * 0.52f
+                            radius = w * 0.56f
                         ),
-                        radius = w * 0.52f,
+                        radius = w * 0.56f,
                         center = Offset(cx, h * 0.46f)
                     )
                 }
 
-                // Upper flared angel/dragon wings (3 tiered pinions per side)
+                // Upper flared angel/dragon wings (3 tiered pinions per side; wider blaze for Mega/World)
+                val wingReach = if (isMegaTier || isWorldTier) 0.03f else 0.06f
                 val upperWings = Path().apply {
                     moveTo(cx, h * 0.14f)
                     lineTo(w * 0.18f, h * 0.10f)
-                    lineTo(w * 0.06f, h * 0.28f)
+                    lineTo(w * wingReach, h * 0.27f)
                     lineTo(w * 0.22f, h * 0.34f)
                     lineTo(w * 0.12f, h * 0.48f)
                     lineTo(w * 0.28f, h * 0.56f)
@@ -74,7 +94,7 @@ fun MlbbCollectionBadge(
                     lineTo(w * 0.72f, h * 0.56f)
                     lineTo(w * 0.88f, h * 0.48f)
                     lineTo(w * 0.78f, h * 0.34f)
-                    lineTo(w * 0.94f, h * 0.28f)
+                    lineTo(w * (1f - wingReach), h * 0.27f)
                     lineTo(w * 0.82f, h * 0.10f)
                     close()
                 }
@@ -88,9 +108,25 @@ fun MlbbCollectionBadge(
                     style = Stroke(width = w * 0.032f, join = StrokeJoin.Round)
                 )
 
+                // Extra twin blazing shoulder horns for Mega Collector & World Collector
+                if (isMegaTier || isWorldTier) {
+                    for (side in listOf(-1f, 1f)) {
+                        val horn = Path().apply {
+                            moveTo(cx + side * w * 0.16f, h * 0.18f)
+                            lineTo(cx + side * w * 0.30f, h * 0.04f)
+                            lineTo(cx + side * w * 0.26f, h * 0.24f)
+                            close()
+                        }
+                        drawPath(
+                            path = horn,
+                            brush = Brush.verticalGradient(listOf(core, trim))
+                        )
+                    }
+                }
+
                 // Top crown spire
                 val crown = Path().apply {
-                    moveTo(cx, h * 0.03f)
+                    moveTo(cx, h * 0.02f)
                     lineTo(w * 0.60f, h * 0.22f)
                     lineTo(cx, h * 0.30f)
                     lineTo(w * 0.40f, h * 0.22f)
@@ -143,7 +179,7 @@ fun MlbbCollectionBadge(
                     cap = StrokeCap.Round
                 )
             } else {
-                // Tiers 1-4: Faceted V-Shield Chevron Crest (right side of screenshot)
+                // Tiers 1-4: Faceted V-Shield Chevron Crest
                 val outerShield = Path().apply {
                     moveTo(w * 0.14f, h * 0.14f)
                     lineTo(w * 0.42f, h * 0.14f)
@@ -213,6 +249,28 @@ fun MlbbCollectionBadge(
                     strokeWidth = w * 0.025f,
                     cap = StrokeCap.Round
                 )
+            }
+        }
+
+        // Sub-rank medallion pip (Exalted 3..1 & Mega 3..1)
+        if (tier.subRankNumber in 1..3) {
+            Surface(
+                color = tier.secondaryColor.copy(alpha = if (dimmed) 0.65f else 0.94f),
+                shape = CircleShape,
+                border = BorderStroke(1.dp, tier.trimColor.copy(alpha = alphaMul)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 1.dp)
+                    .size(16.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "${tier.subRankNumber}",
+                        color = tier.coreColor.copy(alpha = alphaMul),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
             }
         }
     }

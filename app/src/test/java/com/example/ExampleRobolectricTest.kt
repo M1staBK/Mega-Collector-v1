@@ -44,9 +44,11 @@ class ExampleRobolectricTest {
     @Test
     fun `mlbb collection badges order, 11 chest styles, and 12-slit prize wheel with rarer pack`() {
         val ladder = MlbbCollectionTier.RAREST_LEFT_TO_RIGHT
-        assertEquals(8, ladder.size)
+        assertEquals(12, ladder.size)
         assertEquals(MlbbCollectionTier.WORLD, ladder.first())
+        assertEquals(MlbbCollectionTier.MEGA_1, ladder[1])
         assertEquals(MlbbCollectionTier.NOVICE, ladder.last())
+        assertTrue(MlbbCollectionTier.MEGA_3.minPower > MlbbCollectionTier.EXALTED_1.minPower)
         for (i in 0 until ladder.lastIndex) {
             assertTrue(ladder[i].levelNumber > ladder[i + 1].levelNumber)
             assertTrue(ladder[i].minPower > ladder[i + 1].minPower)
@@ -65,11 +67,11 @@ class ExampleRobolectricTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val prefs = PlayerPreferencesStore(context)
         runBlocking {
-            prefs.setThemeAccentId("ROYAL_AMETHYST")
+            prefs.setThemeAccentId("OBSIDIAN_PACK")
             prefs.setDarkModeEnabled(true)
         }
         val boot = prefs.readBootThemeSync()
-        assertEquals("ROYAL_AMETHYST", boot.themeAccentId)
+        assertEquals("OBSIDIAN_PACK", boot.themeAccentId)
         assertTrue(boot.darkModeEnabled)
     }
 
@@ -142,7 +144,7 @@ class ExampleRobolectricTest {
         composeRule.onNodeWithTag("settings_cog_button").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("settings_vertical_popup").assertExists()
-        composeRule.onNodeWithTag("settings_accent_emerald_mint").performClick()
+        composeRule.onNodeWithTag("settings_accent_obsidian_pack").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("settings_dark_mode_switch").performClick()
         composeRule.waitForIdle()
@@ -181,12 +183,12 @@ class ExampleRobolectricTest {
         composeRule.onNodeWithTag("collection_current_badge", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithTag("collection_level_dialog").assertDoesNotExist()
 
-        // Click Collection Level card -> dialog opens with all 8 badges
+        // Click Collection Level card -> dialog opens with all 12 badges
         composeRule.onNodeWithTag("collection_level_card").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("collection_level_dialog").assertExists()
         composeRule.onNodeWithTag("collection_level_ladder").assertExists()
-        composeRule.onNodeWithTag("collection_tier_8").assertExists()
+        composeRule.onNodeWithTag("collection_tier_12").assertExists()
         composeRule.onNodeWithTag("collection_tier_1").assertExists()
     }
 }

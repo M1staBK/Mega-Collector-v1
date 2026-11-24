@@ -298,6 +298,7 @@ fun MegaCollectorApp(
             darkModeEnabled = uiState.wallet.darkModeEnabled,
             vibrationEnabled = uiState.wallet.vibrationEnabled,
             themeAccent = activeAccent,
+            unlockedThemeIds = uiState.wallet.unlockedThemeIds,
             onToggleSound = viewModel::setSoundEnabled,
             onToggleDarkMode = viewModel::setDarkModeEnabled,
             onToggleVibration = viewModel::setVibrationEnabled,
@@ -474,6 +475,8 @@ fun MegaCollectorApp(
                                         },
                                         onOpenPackBundle = viewModel::openPackBundle,
                                         onExchangeDiamondsForCoins = viewModel::exchangeDiamondsForCoins,
+                                        onPurchaseOrEquipFrame = viewModel::purchaseOrEquipFrame,
+                                        onPurchaseOrEquipBinder = viewModel::purchaseOrEquipBinder,
                                         onGoToArcade = { navigateToTab(CollectorTab.PLAY) },
                                         onGoToMissions = { navigateToTab(CollectorTab.QUESTS) },
                                         onGoToBinder = {
@@ -531,6 +534,7 @@ fun MegaCollectorApp(
                                             viewModel.syncCatalog()
                                         },
                                         onTogglePinnedBadge = viewModel::togglePinnedBadge,
+                                        onClaimAchievementReward = viewModel::claimAchievementReward,
                                         onOpenSettings = {},
                                         onButtonClickSfx = viewModel::playClick
                                     )
@@ -544,7 +548,7 @@ fun MegaCollectorApp(
             // Fullscreen Pack Opening Overlay
             if (packSession != null && inspectingCardId == null) {
                 BackHandler {
-                    if (!packSession.isRipped || packSession.allRevealed) {
+                    if (!packSession.bundleCommitted || packSession.allRevealed || packSession.showSummaryGrid) {
                         viewModel.closePackSession()
                     }
                 }

@@ -9,27 +9,37 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Super-resolution detail & edge clarity Coil Transformation for trading card artwork.
- * When skin artwork from CDNs arrives at lower resolution (< 920px), performs a multi-step
- * high-filter upscale followed by an adaptive luminance-preserving Unsharp Mask pass so armor
- * filigree, eyes, and lighting render crisp and high-DPI without haloing or oversaturation.
+ * Fast resolution-aware Coil Transformation for full-bleed trading card artwork.
+ * Avoids expensive CPU pixel-loops on normal/HD assets and only applies progressive scaling
+ * when an image arrives genuinely undersized.
  */
 class CardDetailUpscaleTransformation(
     imageKey: String,
-    private val targetMinPx: Int = 920
+    private val targetMinPx: Int = 680,
+    private val runSharpen: Boolean = false
 ) : Transformation {
 
-    override val cacheKey: String = "detail_sr_v1_${targetMinPx}_$imageKey"
+    override val cacheKey: String = "detail_sr_v2_${targetMinPx}_${runSharpen}_$imageKey"
 
     override suspend fun transform(input: Bitmap, size: Size): Bitmap {
-        return upscaleAndSharpen(input, targetMinPx)
+        return upscaleAndSharpen(input, targetMinPx, runSharpen)
     }
 
     companion object {
-        fun upscaleAndSharpen(source: Bitmap, targetMinPx: Int = 920): Bitmap {
+        fun upscaleAndSharpen(
+            source: Bitmap,
+            targetMinPx: Int = 680,
+            runSharpen: Boolean = false
+        ): Bitmap {
             val srcW = source.width
             val srcH = source.height
             if (srcW <= 2 || srcH <= 2) return source
+
+            val currentMin = min(srcW, srcH)
+            // Fast exit: already large enough and no CPU sharpen needed
+            if (currentMin >= targetMinPx && !runSharpen) {
+                return source
+            }
 
             val safeBitmap = if (source.config == Bitmap.Config.HARDWARE) {
                 source.copy(Bitmap.Config.ARGB_8888, false) ?: source
@@ -37,11 +47,9 @@ class CardDetailUpscaleTransformation(
                 source
             }
 
-            // Multi-step progressive upscale when below target HD resolution (capped at 1280px max edge for memory safety)
-            val currentMin = min(srcW, srcH)
             val scaled: Bitmap = if (currentMin < targetMinPx) {
-                val scale = (targetMinPx.toFloat() / currentMin.toFloat()).coerceIn(1f, 2.5f)
-                val maxTargetEdge = 1280f
+                val scale = (targetMinPx.toFloat() / currentMin.toFloat()).coerceIn(1f, 2.0f)
+                val maxTargetEdge = 960f
                 val maxSrcEdge = max(srcW, srcH).toFloat()
                 val clampedScale = if (maxSrcEdge * scale > maxTargetEdge) {
                     (maxTargetEdge / maxSrcEdge).coerceAtLeast(1f)
@@ -50,23 +58,27 @@ class CardDetailUpscaleTransformation(
                 }
                 val dstW = (srcW * clampedScale).roundToInt().coerceAtLeast(srcW)
                 val dstH = (srcH * clampedScale).roundToInt().coerceAtLeast(srcH)
-
-                if (clampedScale > 1.65f) {
-                    val midW = ((srcW + dstW) / 2).coerceAtLeast(srcW)
-                    val midH = ((srcH + dstH) / 2).coerceAtLeast(srcH)
-                    val step1 = Bitmap.createScaledBitmap(safeBitmap, midW, midH, true)
-                    val step2 = Bitmap.createScaledBitmap(step1, dstW, dstH, true)
-                    if (step1 !== safeBitmap && step1 !== step2 && !step1.isRecycled) step1.recycle()
-                    step2
-                } else {
-                    Bitmap.createScaledBitmap(safeBitmap, dstW, dstH, true)
-                }
+                Bitmap.createScaledBitmap(safeBitmap, dstW, dstH, true)
             } else {
                 safeBitmap
             }
 
+            if (!runSharpen || currentMin >= 480) {
+                if (safeBitmap !== source && safeBitmap !== scaled && !safeBitmap.isRecycled) {
+                    safeBitmap.recycle()
+                }
+                return scaled
+            }
+
             val outW = scaled.width
             val outH = scaled.height
+            if (outW * outH > 640_000) {
+                if (safeBitmap !== source && safeBitmap !== scaled && !safeBitmap.isRecycled) {
+                    safeBitmap.recycle()
+                }
+                return scaled
+            }
+
             val pixels = IntArray(outW * outH)
             scaled.getPixels(pixels, 0, outW, 0, 0, outW, outH)
 
@@ -74,7 +86,7 @@ class CardDetailUpscaleTransformation(
                 pixels = pixels,
                 width = outW,
                 height = outH,
-                amount = if (currentMin < 640) 0.68f else 0.48f,
+                amount = 0.52f,
                 threshold = 4.0f
             )
 

@@ -52,17 +52,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.model.CosmeticCatalog
 import com.example.model.OwnedCard
 import com.example.model.SkinRarity
 import com.example.ui.components.EmptyVaultState
-import com.example.ui.components.FrostedGlassCard
 import com.example.ui.components.HolographicCardView
+import com.example.ui.components.VaultBinderBannerFrame
 import com.example.ui.theme.CollectorTheme
-import com.example.ui.theme.InkSlate
-import com.example.ui.theme.MoonlightNight
-import com.example.ui.theme.SlateMuted
-import com.example.ui.theme.StudioGold
-import com.example.ui.theme.StudioGoldBright
 import com.example.ui.viewmodel.MegaCollectorUiState
 
 private enum class VaultFilter(val label: String) {
@@ -141,30 +137,27 @@ fun VaultScreen(
             .fillMaxSize()
             .let { if (includeStatusBarPadding) it.statusBarsPadding() else it }
     ) {
-        // Frosted Collector Vault Hero Banner Card (matching screenshot)
-        FrostedGlassCard(
-            cornerRadius = 24.dp,
+        // Equipped Card Binder Hero Banner Frame
+        val equippedBinder = remember(uiState.wallet.equippedBinderId) {
+            CosmeticCatalog.binderById(uiState.wallet.equippedBinderId)
+        }
+        val binderIsCustom = equippedBinder.id != CosmeticCatalog.DEFAULT_BINDER_ID
+        val binderTextInk = if (binderIsCustom) Color(0xFFF8FAFC) else palette.ink
+        val binderTextMuted = if (binderIsCustom) Color(0xFFCBD5E1) else palette.muted
+        val binderAccent = if (binderIsCustom) equippedBinder.trimGold else palette.accentPrimary
+
+        VaultBinderBannerFrame(
+            binder = equippedBinder,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 10.dp)
+                .testTag("vault_binder_banner")
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(
-                                palette.frostSurface.copy(alpha = if (palette.isDark) 0.55f else 0.72f),
-                                palette.cardSurface.copy(alpha = 0.85f),
-                                palette.gloomHalo.copy(alpha = if (palette.isDark) 0.30f else 0.38f)
-                            )
-                        )
-                    )
-            ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
                 Icon(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
-                    tint = palette.accentPrimary.copy(alpha = 0.75f),
+                    tint = binderAccent.copy(alpha = 0.85f),
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(14.dp)
@@ -172,16 +165,33 @@ fun VaultScreen(
                 )
 
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Collector Vault",
-                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
-                        color = palette.ink
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Collector Vault",
+                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
+                            color = binderTextInk
+                        )
+                        Surface(
+                            color = if (binderIsCustom) Color(0x33000000) else palette.frostSurface,
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, binderAccent.copy(alpha = 0.65f))
+                        ) {
+                            Text(
+                                text = equippedBinder.name,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = binderAccent,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "${uiState.ownedCards.size} total cards • $uniqueCount unique skins",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = palette.muted
+                        color = binderTextMuted
                     )
 
                     if (uiState.catalog.isNotEmpty()) {
@@ -192,9 +202,9 @@ fun VaultScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Surface(
-                                color = palette.frostSurface,
+                                color = if (binderIsCustom) equippedBinder.coverSecondary else palette.frostSurface,
                                 shape = CircleShape,
-                                border = BorderStroke(1.5.dp, palette.accentPrimary),
+                                border = BorderStroke(1.5.dp, binderAccent),
                                 shadowElevation = 2.dp,
                                 modifier = Modifier.size(34.dp)
                             ) {
@@ -202,7 +212,7 @@ fun VaultScreen(
                                     Icon(
                                         imageVector = Icons.Default.WorkspacePremium,
                                         contentDescription = null,
-                                        tint = palette.accentPrimary,
+                                        tint = binderAccent,
                                         modifier = Modifier.size(19.dp)
                                     )
                                 }
@@ -214,7 +224,7 @@ fun VaultScreen(
                                         .fillMaxWidth()
                                         .height(8.dp)
                                         .clip(RoundedCornerShape(999.dp))
-                                        .background(palette.frostSurface)
+                                        .background(if (binderIsCustom) Color(0x44FFFFFF) else palette.frostSurface)
                                 ) {
                                     Box(
                                         modifier = Modifier
@@ -223,7 +233,11 @@ fun VaultScreen(
                                             .clip(RoundedCornerShape(999.dp))
                                             .background(
                                                 Brush.horizontalGradient(
-                                                    listOf(palette.buttonPrimary, palette.skyAccent)
+                                                    if (binderIsCustom) {
+                                                        listOf(binderAccent, equippedBinder.ringColor)
+                                                    } else {
+                                                        listOf(palette.buttonPrimary, palette.skyAccent)
+                                                    }
                                                 )
                                             )
                                     )
@@ -232,7 +246,7 @@ fun VaultScreen(
                                 Text(
                                     text = "Dex Completion: $uniqueCount / ${uiState.catalog.size}",
                                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = palette.ink
+                                    color = binderTextInk
                                 )
                             }
                         }
@@ -255,7 +269,7 @@ fun VaultScreen(
                 placeholder = {
                     Text(
                         text = "Search cards, skins, or heroes...",
-                        color = SlateMuted,
+                        color = palette.muted,
                         maxLines = 1
                     )
                 },
@@ -269,8 +283,8 @@ fun VaultScreen(
                     unfocusedBorderColor = palette.glassHighlight,
                     focusedContainerColor = palette.cardSurface.copy(alpha = 0.92f),
                     unfocusedContainerColor = palette.cardSurface.copy(alpha = 0.86f),
-                    focusedTextColor = InkSlate,
-                    unfocusedTextColor = InkSlate
+                    focusedTextColor = palette.ink,
+                    unfocusedTextColor = palette.ink
                 ),
                 modifier = Modifier
                     .weight(1f)

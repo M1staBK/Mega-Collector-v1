@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,15 +25,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingBag
-import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,8 +52,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,7 +64,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -68,29 +79,43 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.R
 import com.example.data.remote.AuthenticatedUser
+import com.example.model.CardBinderDesign
+import com.example.model.CosmeticCatalog
 import com.example.model.DailyRewardTier
 import com.example.model.DiamondExchangeOption
 import com.example.model.MegaPackConfig
+import com.example.model.MlbbCollectionTier
 import com.example.model.PackBundleOption
 import com.example.model.PackSatinTheme
+import com.example.model.ProfileFrameItem
 import com.example.model.SkinRarity
+import com.example.ui.components.BinderCoverPreview
+import com.example.ui.components.BoosterPack3DMesh
+import com.example.ui.components.BoosterPouchPhysics
 import com.example.ui.components.CoinsPill
 import com.example.ui.components.DiamondsPill
+import com.example.ui.components.FramedAvatar
 import com.example.ui.components.FrostedGlassCard
-import com.example.model.MlbbCollectionTier
 import com.example.ui.components.MlbbCollectionBadge
 import com.example.ui.components.MlbbDexCreditCard
 import com.example.ui.components.SettingsGearButton
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.theme.InkSlate
-import com.example.ui.theme.MisprintMagenta
 import com.example.ui.theme.PureWhiteCard
 import com.example.ui.theme.SkyFrost
 import com.example.ui.theme.SlateMuted
-import com.example.ui.theme.StudioGold
-import com.example.ui.theme.StudioGoldText
 import com.example.ui.viewmodel.MegaCollectorUiState
 import java.util.Locale
+
+private enum class ShopSection(val label: String) {
+    PACKS("Booster Packs"),
+    COSMETICS("Cosmetics Shop")
+}
+
+private enum class CosmeticSubTab(val label: String) {
+    FRAMES("Profile Frames"),
+    BINDERS("Binder Designs")
+}
 
 @Composable
 fun ShopPacksScreen(
@@ -100,6 +125,8 @@ fun ShopPacksScreen(
     onClaimDailyReward: () -> Unit,
     onOpenPackBundle: (PackBundleOption, Boolean, Boolean, PackSatinTheme?) -> Unit,
     onExchangeDiamondsForCoins: (DiamondExchangeOption) -> Unit,
+    onPurchaseOrEquipFrame: (ProfileFrameItem) -> Unit = {},
+    onPurchaseOrEquipBinder: (CardBinderDesign) -> Unit = {},
     onGoToArcade: () -> Unit = {},
     onGoToMissions: () -> Unit = {},
     onGoToBinder: () -> Unit = {},
@@ -109,6 +136,8 @@ fun ShopPacksScreen(
 ) {
     val palette = CollectorTheme.colors
     var showOddsDialog by remember { mutableStateOf(false) }
+    var activeSection by rememberSaveable { mutableStateOf(ShopSection.PACKS) }
+    var activeCosmeticTab by rememberSaveable { mutableStateOf(CosmeticSubTab.FRAMES) }
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
@@ -218,6 +247,97 @@ fun ShopPacksScreen(
                     }
                 }
             }
+
+            // Booster Packs | Cosmetics Shop Segmented Switcher
+            item {
+                Surface(
+                    color = palette.cardSurface,
+                    shape = RoundedCornerShape(999.dp),
+                    shadowElevation = 3.dp,
+                    border = BorderStroke(1.2.dp, palette.glassHighlight),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ShopSection.entries.forEach { section ->
+                            val selected = activeSection == section
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .minimumInteractiveComponentSize()
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(
+                                        brush = if (selected) {
+                                            Brush.horizontalGradient(
+                                                listOf(palette.buttonPrimary, palette.skyAccent.copy(alpha = 0.92f))
+                                            )
+                                        } else {
+                                            Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+                                        }
+                                    )
+                                    .clickable {
+                                        onButtonClickSfx()
+                                        activeSection = section
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 8.dp)
+                                    .testTag(
+                                        if (section == ShopSection.PACKS) "shop_tab_packs" else "shop_tab_cosmetics"
+                                    )
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (section == ShopSection.PACKS) {
+                                            Icons.Default.Style
+                                        } else {
+                                            Icons.Default.AutoAwesome
+                                        },
+                                        contentDescription = null,
+                                        tint = if (selected) Color.White else palette.muted,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = section.label,
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Bold
+                                        ),
+                                        color = if (selected) Color.White else palette.muted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (activeSection == ShopSection.COSMETICS) {
+                item {
+                    CosmeticsShopSection(
+                        uiState = uiState,
+                        currentUser = currentUser,
+                        activeCosmeticTab = activeCosmeticTab,
+                        onSelectTab = {
+                            onButtonClickSfx()
+                            activeCosmeticTab = it
+                        },
+                        onPurchaseOrEquipFrame = onPurchaseOrEquipFrame,
+                        onPurchaseOrEquipBinder = onPurchaseOrEquipBinder,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+            } else {
 
             // Daily Streak Rewards
             item {
@@ -496,6 +616,7 @@ fun ShopPacksScreen(
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
+            } // end ShopSection.PACKS
         }
     }
 
@@ -510,6 +631,342 @@ fun ShopPacksScreen(
 }
 
 @Composable
+private fun CosmeticsShopSection(
+    uiState: MegaCollectorUiState,
+    currentUser: AuthenticatedUser?,
+    activeCosmeticTab: CosmeticSubTab,
+    onSelectTab: (CosmeticSubTab) -> Unit,
+    onPurchaseOrEquipFrame: (ProfileFrameItem) -> Unit,
+    onPurchaseOrEquipBinder: (CardBinderDesign) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = CollectorTheme.colors
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Surface(
+            color = palette.frostSurface,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.32f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Diamond,
+                    contentDescription = null,
+                    tint = palette.skyAccent,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = "Cosmetics are redeemed exclusively with Diamonds or earned via Achievements.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = palette.ink
+                )
+            }
+        }
+
+        // Sub-tab Pills: Profile Frames | Binder Designs
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            CosmeticSubTab.entries.forEach { tab ->
+                val selected = activeCosmeticTab == tab
+                Surface(
+                    color = if (selected) palette.buttonPrimary else palette.cardSurface,
+                    shape = RoundedCornerShape(999.dp),
+                    shadowElevation = if (selected) 3.dp else 1.dp,
+                    border = BorderStroke(
+                        1.1.dp,
+                        if (selected) palette.buttonPrimary else palette.glassHighlight
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(999.dp))
+                        .clickable { onSelectTab(tab) }
+                        .testTag(
+                            if (tab == CosmeticSubTab.FRAMES) "cosmetics_tab_frames" else "cosmetics_tab_binders"
+                        )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (tab == CosmeticSubTab.FRAMES) Icons.Default.Person else Icons.Default.Book,
+                            contentDescription = null,
+                            tint = if (selected) Color.White else palette.muted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = tab.label,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold
+                            ),
+                            color = if (selected) Color.White else palette.muted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        if (activeCosmeticTab == CosmeticSubTab.FRAMES) {
+            CosmeticCatalog.FRAMES.forEach { frame ->
+                val isUnlocked = frame.id in uiState.wallet.unlockedFrameIds
+                val isEquipped = uiState.wallet.equippedFrameId == frame.id
+                val canAfford = when {
+                    isUnlocked -> true
+                    frame.isAchievementExclusive -> false
+                    else -> frame.diamondCost > 0 && uiState.wallet.diamonds >= frame.diamondCost
+                }
+                FrostedGlassCard(
+                    cornerRadius = 22.dp,
+                    borderColor = if (isEquipped) palette.accentPrimary else palette.glassHighlight,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FramedAvatar(
+                            photoUrl = currentUser?.photoUrl.orEmpty(),
+                            alias = uiState.wallet.collectorAlias,
+                            frame = frame,
+                            size = 70.dp,
+                            fallbackTint = palette.buttonPrimary
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = frame.name,
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                color = palette.ink
+                            )
+                            Text(
+                                text = frame.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.muted,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (frame.isAchievementExclusive && !isUnlocked) {
+                                Text(
+                                    text = frame.achievementUnlockHint.orEmpty(),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = palette.goldText
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            CosmeticActionButton(
+                                isEquipped = isEquipped,
+                                isUnlocked = isUnlocked,
+                                isAchievementExclusive = frame.isAchievementExclusive,
+                                diamondCost = frame.diamondCost,
+                                canAfford = canAfford,
+                                testTag = "cosmetic_frame_${frame.id}",
+                                onClick = { onPurchaseOrEquipFrame(frame) }
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            CosmeticCatalog.BINDERS.forEach { binder ->
+                val isUnlocked = binder.id in uiState.wallet.unlockedBinderIds
+                val isEquipped = uiState.wallet.equippedBinderId == binder.id
+                val canAfford = when {
+                    isUnlocked -> true
+                    binder.isAchievementExclusive -> false
+                    else -> binder.diamondCost > 0 && uiState.wallet.diamonds >= binder.diamondCost
+                }
+                FrostedGlassCard(
+                    cornerRadius = 22.dp,
+                    borderColor = if (isEquipped) palette.accentPrimary else palette.glassHighlight,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BinderCoverPreview(
+                            binder = binder,
+                            modifier = Modifier.size(width = 76.dp, height = 98.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = binder.name,
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                color = palette.ink
+                            )
+                            Text(
+                                text = binder.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.muted,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (binder.isAchievementExclusive && !isUnlocked) {
+                                Text(
+                                    text = binder.achievementUnlockHint.orEmpty(),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = palette.goldText
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            CosmeticActionButton(
+                                isEquipped = isEquipped,
+                                isUnlocked = isUnlocked,
+                                isAchievementExclusive = binder.isAchievementExclusive,
+                                diamondCost = binder.diamondCost,
+                                canAfford = canAfford,
+                                testTag = "cosmetic_binder_${binder.id}",
+                                onClick = { onPurchaseOrEquipBinder(binder) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CosmeticActionButton(
+    isEquipped: Boolean,
+    isUnlocked: Boolean,
+    isAchievementExclusive: Boolean,
+    diamondCost: Int,
+    canAfford: Boolean,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    val palette = CollectorTheme.colors
+    when {
+        isEquipped -> {
+            Surface(
+                color = palette.frostSurface,
+                shape = RoundedCornerShape(999.dp),
+                border = BorderStroke(1.2.dp, palette.accentPrimary),
+                modifier = Modifier
+                    .height(40.dp)
+                    .testTag(testTag)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = "Equipped",
+                        tint = palette.accentPrimary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Equipped",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                        color = palette.accentPrimary
+                    )
+                }
+            }
+        }
+        isUnlocked -> {
+            Button(
+                onClick = onClick,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = palette.buttonPrimary,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(999.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag(testTag)
+            ) {
+                Text("Equip", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        isAchievementExclusive -> {
+            Surface(
+                color = palette.abyss.copy(alpha = 0.65f),
+                shape = RoundedCornerShape(999.dp),
+                border = BorderStroke(1.dp, palette.border),
+                modifier = Modifier
+                    .height(40.dp)
+                    .testTag(testTag)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Locked behind achievement",
+                        tint = palette.muted,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "Achievement Unlock",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.muted
+                    )
+                }
+            }
+        }
+        else -> {
+            Button(
+                onClick = onClick,
+                enabled = canAfford,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = palette.buttonPrimary,
+                    contentColor = Color.White,
+                    disabledContainerColor = palette.border,
+                    disabledContentColor = palette.muted
+                ),
+                shape = RoundedCornerShape(999.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag(testTag)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Diamond,
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = "$diamondCost Diamonds",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MegaPackShowcaseCard(
     bonusFreePacks: Int,
     catalogSize: Int,
@@ -519,6 +976,9 @@ private fun MegaPackShowcaseCard(
     modifier: Modifier = Modifier
 ) {
     val palette = CollectorTheme.colors
+    val density = LocalDensity.current.density
+    var previewYaw by remember { mutableFloatStateOf(16f) }
+
     FrostedGlassCard(
         cornerRadius = 24.dp,
         modifier = modifier.fillMaxWidth()
@@ -541,35 +1001,44 @@ private fun MegaPackShowcaseCard(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Canonical Single Booster Pack Cover
+                // Interactive 3D Tessellated Mesh Booster Pack Showcase (tall sleek TCG ratio)
+                val showcaseLighting = remember(previewYaw) {
+                    BoosterPouchPhysics.computeLightingState(
+                        totalYawDeg = previewYaw,
+                        totalPitchDeg = -5f,
+                        tiltRollDeg = previewYaw * 0.45f,
+                        tiltPitchDeg = 3f
+                    )
+                }
+                val showcaseTheme = PackSatinTheme.ALL.first()
+                val packW = 92.dp
+                val packH = 172.dp
+                val camDistPx = with(LocalDensity.current) { 12f * density * 80f }
+
                 Box(
                     modifier = Modifier
-                        .width(104.dp)
-                        .height(148.dp)
-                        .shadow(10.dp, RoundedCornerShape(16.dp))
-                        .clip(RoundedCornerShape(16.dp))
+                        .width(packW)
+                        .height(packH)
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures { change, dragAmount ->
+                                change.consume()
+                                previewYaw += dragAmount * 0.65f
+                            }
+                        }
+                        .testTag("showcase_pack_3d"),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Image(
-                        painter = painterResource(id = MegaPackConfig.COVER_DRAWABLE_RES),
-                        contentDescription = MegaPackConfig.PACK_TITLE,
-                        contentScale = ContentScale.Crop,
+                    BoosterPack3DMesh(
+                        coverRes = MegaPackConfig.COVER_DRAWABLE_RES,
+                        satinTheme = showcaseTheme,
+                        packCount = 1,
+                        yawDeg = previewYaw,
+                        pitchDeg = -5f,
+                        cameraDistancePx = camDistPx,
+                        lighting = showcaseLighting,
+                        pickUpProgress = 0.25f,
                         modifier = Modifier.fillMaxSize()
                     )
-                    Surface(
-                        color = Color(0xCC0D1426),
-                        shape = RoundedCornerShape(999.dp),
-                        border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.35f)),
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 8.dp)
-                    ) {
-                        Text(
-                            text = "5 CARDS",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
-                        )
-                    }
                 }
 
                 Spacer(modifier = Modifier.width(14.dp))
@@ -583,7 +1052,7 @@ private fun MegaPackShowcaseCard(
                         Text(
                             text = MegaPackConfig.PACK_TITLE,
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
-                            color = InkSlate,
+                            color = palette.ink,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
@@ -604,33 +1073,50 @@ private fun MegaPackShowcaseCard(
                     }
 
                     Text(
-                        text = "5 Cards per Pack • Full ${catalogSize.coerceAtLeast(1100)}+ MLBBDex Pool • 0.005% 1/1 Misprint",
+                        text = "Drag pack to inspect 3D seal • ${catalogSize.coerceAtLeast(1100)}+ MLBBDex Pool",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = SlateMuted
+                        color = palette.muted
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    Surface(
-                        color = palette.frostSurface,
-                        shape = RoundedCornerShape(999.dp),
-                        border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.25f))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            color = palette.frostSurface,
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.28f))
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Bolt,
-                                contentDescription = null,
-                                tint = palette.accentPrimary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "1/1 Misprint: 0.005% (1/20,000)",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = palette.accentPrimary
+                                text = "5 CARDS",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                                color = palette.accentPrimary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
+                        }
+                        Surface(
+                            color = palette.frostSurface,
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.25f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bolt,
+                                    contentDescription = null,
+                                    tint = palette.accentPrimary,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "1/1: 0.005%",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = palette.accentPrimary
+                                )
+                            }
                         }
                     }
 
@@ -698,7 +1184,7 @@ private fun BundlePurchaseCard(
                     Text(
                         text = bundle.label,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
-                        color = InkSlate
+                        color = palette.ink
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -720,7 +1206,7 @@ private fun BundlePurchaseCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Surface(
-                                color = if (canAffordCoins) palette.buttonPrimary else SlateMuted.copy(alpha = 0.4f),
+                                color = if (canAffordCoins) palette.buttonPrimary else palette.muted.copy(alpha = 0.4f),
                                 shape = CircleShape,
                                 modifier = Modifier.size(18.dp)
                             ) {
@@ -737,7 +1223,7 @@ private fun BundlePurchaseCard(
                             Text(
                                 text = "${bundle.coinCost} Coins",
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                color = if (canAffordCoins) InkSlate else SlateMuted
+                                color = if (canAffordCoins) palette.ink else palette.muted
                             )
                             if (bundle.discountPercent > 0) {
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -746,7 +1232,7 @@ private fun BundlePurchaseCard(
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         textDecoration = TextDecoration.LineThrough
                                     ),
-                                    color = SlateMuted
+                                    color = palette.muted
                                 )
                             }
                         }
@@ -763,7 +1249,7 @@ private fun BundlePurchaseCard(
                             style = MaterialTheme.typography.labelSmall.copy(
                                 textDecoration = TextDecoration.LineThrough
                             ),
-                            color = SlateMuted,
+                            color = palette.muted,
                             modifier = Modifier.padding(end = 8.dp, bottom = 2.dp)
                         )
                     }
@@ -774,7 +1260,7 @@ private fun BundlePurchaseCard(
                             containerColor = if (canAffordDiamonds) palette.cardSurface else palette.abyss.copy(alpha = 0.5f),
                             contentColor = palette.accentPrimary,
                             disabledContainerColor = palette.abyss.copy(alpha = 0.45f),
-                            disabledContentColor = SlateMuted
+                            disabledContentColor = palette.muted
                         ),
                         border = BorderStroke(
                             width = 1.4.dp,
@@ -789,7 +1275,7 @@ private fun BundlePurchaseCard(
                         Icon(
                             imageVector = Icons.Default.Diamond,
                             contentDescription = null,
-                            tint = if (canAffordDiamonds) palette.skyAccent else SlateMuted,
+                            tint = if (canAffordDiamonds) palette.skyAccent else palette.muted,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(5.dp))
@@ -854,7 +1340,7 @@ private fun DailyTierTile(
             Text(
                 text = "Day ${tier.dayIndex}",
                 style = MaterialTheme.typography.labelSmall,
-                color = if (isCurrentClaimable) palette.accentPrimary else SlateMuted
+                color = if (isCurrentClaimable) palette.accentPrimary else palette.muted
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -865,12 +1351,12 @@ private fun DailyTierTile(
             Text(
                 text = "Coins",
                 style = MaterialTheme.typography.labelSmall,
-                color = SlateMuted
+                color = palette.muted
             )
             if (tier.bonusDiamonds > 0) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Surface(
-                    color = SkyFrost,
+                    color = palette.frostSurface,
                     shape = RoundedCornerShape(999.dp)
                 ) {
                     Text(
@@ -915,12 +1401,12 @@ private fun PackOddsDialog(
     val palette = CollectorTheme.colors
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = PureWhiteCard,
+        containerColor = palette.cardSurface,
         title = {
             Text(
                 text = "${MegaPackConfig.PACK_TITLE} Drop Rates",
                 style = MaterialTheme.typography.headlineMedium,
-                color = InkSlate
+                color = palette.ink
             )
         },
         text = {
@@ -928,7 +1414,7 @@ private fun PackOddsDialog(
                 Text(
                     text = "Every pack draws from the complete MLBBDex skin pool with rarity-locked odds.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = SlateMuted
+                    color = palette.muted
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 SkinRarity.entries.reversed().forEach { rarity ->
@@ -952,13 +1438,13 @@ private fun PackOddsDialog(
                         Text(
                             text = formatted,
                             style = MaterialTheme.typography.labelMedium,
-                            color = InkSlate
+                            color = palette.ink
                         )
                     }
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Surface(
-                    color = SkyFrost,
+                    color = palette.frostSurface,
                     shape = RoundedCornerShape(10.dp),
                     border = BorderStroke(1.dp, palette.border)
                 ) {

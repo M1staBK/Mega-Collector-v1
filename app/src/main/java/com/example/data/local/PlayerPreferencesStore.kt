@@ -73,7 +73,14 @@ data class PlayerWalletState(
     val communityEpicPlusCollected: Int = 0,
     val communityMythicCollected: Int = 0,
     val communityTradesDone: Int = 0,
-    val claimedCommunityQuestIds: Set<String> = emptySet()
+    val claimedCommunityQuestIds: Set<String> = emptySet(),
+    // Cosmetics & Achievement Rewards
+    val unlockedFrameIds: Set<String> = setOf("frame_default"),
+    val equippedFrameId: String = "frame_default",
+    val unlockedBinderIds: Set<String> = setOf("binder_default"),
+    val equippedBinderId: String = "binder_default",
+    val unlockedThemeIds: Set<String> = emptySet(),
+    val claimedAchievementIds: Set<String> = emptySet()
 ) {
     fun currentScratcherStatus(nowMs: Long): HourlyChargeStatus =
         computeHourlyChargeStatus(scratcherStoredCharges, scratcherLastRefillMs, nowMs)
@@ -219,6 +226,13 @@ class PlayerPreferencesStore(private val context: Context) {
         val COMMUNITY_TRADES = intPreferencesKey("community_trades")
         val CLAIMED_COMMUNITY_QUESTS = stringSetPreferencesKey("claimed_community_quests")
         val FRESH_START_APPLIED_VERSION = intPreferencesKey("fresh_start_applied_version")
+
+        val UNLOCKED_FRAME_IDS = stringSetPreferencesKey("unlocked_frame_ids")
+        val EQUIPPED_FRAME_ID = stringPreferencesKey("equipped_frame_id")
+        val UNLOCKED_BINDER_IDS = stringSetPreferencesKey("unlocked_binder_ids")
+        val EQUIPPED_BINDER_ID = stringPreferencesKey("equipped_binder_id")
+        val UNLOCKED_THEME_IDS = stringSetPreferencesKey("unlocked_theme_ids")
+        val CLAIMED_ACHIEVEMENT_IDS = stringSetPreferencesKey("claimed_achievement_ids")
     }
 
     val walletFlow: Flow<PlayerWalletState> = context.collectorDataStore.data.map { prefs ->
@@ -282,7 +296,13 @@ class PlayerPreferencesStore(private val context: Context) {
             communityEpicPlusCollected = prefs[Keys.COMMUNITY_EPIC_PLUS] ?: 0,
             communityMythicCollected = prefs[Keys.COMMUNITY_MYTHIC] ?: 0,
             communityTradesDone = prefs[Keys.COMMUNITY_TRADES] ?: 0,
-            claimedCommunityQuestIds = prefs[Keys.CLAIMED_COMMUNITY_QUESTS] ?: emptySet()
+            claimedCommunityQuestIds = prefs[Keys.CLAIMED_COMMUNITY_QUESTS] ?: emptySet(),
+            unlockedFrameIds = (prefs[Keys.UNLOCKED_FRAME_IDS] ?: emptySet()) + "frame_default",
+            equippedFrameId = prefs[Keys.EQUIPPED_FRAME_ID] ?: "frame_default",
+            unlockedBinderIds = (prefs[Keys.UNLOCKED_BINDER_IDS] ?: emptySet()) + "binder_default",
+            equippedBinderId = prefs[Keys.EQUIPPED_BINDER_ID] ?: "binder_default",
+            unlockedThemeIds = prefs[Keys.UNLOCKED_THEME_IDS] ?: emptySet(),
+            claimedAchievementIds = prefs[Keys.CLAIMED_ACHIEVEMENT_IDS] ?: emptySet()
         )
     }
 
@@ -752,6 +772,106 @@ class PlayerPreferencesStore(private val context: Context) {
         context.collectorDataStore.edit { prefs ->
             prefs[Keys.THEME_ACCENT_ID] = accentId
         }
+    }
+
+    suspend fun purchaseAndEquipFrame(
+        frameId: String,
+        diamondCost: Int
+    ): Boolean {
+        var success = false
+        context.collectorDataStore.edit { prefs ->
+            val currentUnlocked = (prefs[Keys.UNLOCKED_FRAME_IDS] ?: emptySet()) + "frame_default"
+            if (frameId in currentUnlocked) {
+                prefs[Keys.EQUIPPED_FRAME_ID] = frameId
+                success = true
+                return@edit
+            }
+            if (diamondCost <= 0) return@edit
+            val curDiamonds = prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS
+            if (curDiamonds < diamondCost) return@edit
+            prefs[Keys.DIAMONDS] = curDiamonds - diamondCost
+            prefs[Keys.UNLOCKED_FRAME_IDS] = currentUnlocked + frameId
+            prefs[Keys.EQUIPPED_FRAME_ID] = frameId
+            success = true
+        }
+        return success
+    }
+
+    suspend fun equipFrame(frameId: String) {
+        context.collectorDataStore.edit { prefs ->
+            val currentUnlocked = (prefs[Keys.UNLOCKED_FRAME_IDS] ?: emptySet()) + "frame_default"
+            if (frameId in currentUnlocked) {
+                prefs[Keys.EQUIPPED_FRAME_ID] = frameId
+            }
+        }
+    }
+
+    suspend fun purchaseAndEquipBinder(
+        binderId: String,
+        diamondCost: Int
+    ): Boolean {
+        var success = false
+        context.collectorDataStore.edit { prefs ->
+            val currentUnlocked = (prefs[Keys.UNLOCKED_BINDER_IDS] ?: emptySet()) + "binder_default"
+            if (binderId in currentUnlocked) {
+                prefs[Keys.EQUIPPED_BINDER_ID] = binderId
+                success = true
+                return@edit
+            }
+            if (diamondCost <= 0) return@edit
+            val curDiamonds = prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS
+            if (curDiamonds < diamondCost) return@edit
+            prefs[Keys.DIAMONDS] = curDiamonds - diamondCost
+            prefs[Keys.UNLOCKED_BINDER_IDS] = currentUnlocked + binderId
+            prefs[Keys.EQUIPPED_BINDER_ID] = binderId
+            success = true
+        }
+        return success
+    }
+
+    suspend fun equipBinder(binderId: String) {
+        context.collectorDataStore.edit { prefs ->
+            val currentUnlocked = (prefs[Keys.UNLOCKED_BINDER_IDS] ?: emptySet()) + "binder_default"
+            if (binderId in currentUnlocked) {
+                prefs[Keys.EQUIPPED_BINDER_ID] = binderId
+            }
+        }
+    }
+
+    suspend fun claimAchievementReward(
+        achievementId: String,
+        coinReward: Int,
+        diamondReward: Int,
+        unlockFrameId: String?,
+        unlockBinderId: String?,
+        unlockThemeId: String?
+    ): Boolean {
+        var claimed = false
+        context.collectorDataStore.edit { prefs ->
+            val currentClaimed = prefs[Keys.CLAIMED_ACHIEVEMENT_IDS] ?: emptySet()
+            if (achievementId in currentClaimed) return@edit
+            prefs[Keys.CLAIMED_ACHIEVEMENT_IDS] = currentClaimed + achievementId
+            if (coinReward > 0) {
+                prefs[Keys.COINS] = (prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS) + coinReward
+            }
+            if (diamondReward > 0) {
+                prefs[Keys.DIAMONDS] = (prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS) + diamondReward
+            }
+            if (!unlockFrameId.isNullOrBlank()) {
+                val cur = (prefs[Keys.UNLOCKED_FRAME_IDS] ?: emptySet()) + "frame_default"
+                prefs[Keys.UNLOCKED_FRAME_IDS] = cur + unlockFrameId
+            }
+            if (!unlockBinderId.isNullOrBlank()) {
+                val cur = (prefs[Keys.UNLOCKED_BINDER_IDS] ?: emptySet()) + "binder_default"
+                prefs[Keys.UNLOCKED_BINDER_IDS] = cur + unlockBinderId
+            }
+            if (!unlockThemeId.isNullOrBlank()) {
+                val cur = prefs[Keys.UNLOCKED_THEME_IDS] ?: emptySet()
+                prefs[Keys.UNLOCKED_THEME_IDS] = cur + unlockThemeId
+            }
+            claimed = true
+        }
+        return claimed
     }
 
     /**

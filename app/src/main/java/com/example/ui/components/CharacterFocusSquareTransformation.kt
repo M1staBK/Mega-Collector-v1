@@ -12,15 +12,16 @@ import kotlin.math.roundToInt
 
 /**
  * Crops any landscape or portrait skin illustration into a 1:1 square centered on the hero character.
- * Combines fast Android FaceDetector (when a hero face is clearly visible) with an edge-energy +
- * contrast + upper-torso prior sliding window so armored/masked heroes are framed accurately
- * without chopping heads or locking onto empty sky/vignette margins.
+ * Uses a fast 32x24 saliency + upper-torso compositional grid (and optional FaceDetector only in
+ * full-resolution detail mode) and avoids costly CPU pixel sharpening on thumbnails.
  */
 class CharacterFocusSquareTransformation(
-    imageKey: String
+    imageKey: String,
+    private val targetPx: Int = 400,
+    private val fastMode: Boolean = true
 ) : Transformation {
 
-    override val cacheKey: String = "char_focus_sq_sr_v2_$imageKey"
+    override val cacheKey: String = "char_focus_sq_v3_${targetPx}_${fastMode}_$imageKey"
 
     override suspend fun transform(input: Bitmap, size: Size): Bitmap {
         val w = input.width
@@ -36,7 +37,7 @@ class CharacterFocusSquareTransformation(
         val cropped = if (w == h) {
             safeInput
         } else {
-            val faceCenter = detectPrimaryFaceNormalized(safeInput)
+            val faceCenter = if (!fastMode) detectPrimaryFaceNormalized(safeInput) else null
             val cropRect = computeFocusCropRect(
                 width = safeInput.width,
                 height = safeInput.height,
@@ -55,23 +56,29 @@ class CharacterFocusSquareTransformation(
             )
         }
 
-        val enhanced = CardDetailUpscaleTransformation.upscaleAndSharpen(cropped, targetMinPx = 920)
-        if (cropped !== safeInput && cropped !== enhanced && !cropped.isRecycled) {
+        val result = if (cropped.width > targetPx) {
+            Bitmap.createScaledBitmap(cropped, targetPx, targetPx, true)
+        } else if (!fastMode && cropped.width < targetPx) {
+            Bitmap.createScaledBitmap(cropped, targetPx, targetPx, true)
+        } else {
+            cropped
+        }
+
+        if (cropped !== safeInput && cropped !== result && !cropped.isRecycled) {
             cropped.recycle()
         }
-        if (safeInput !== input && safeInput !== enhanced && !safeInput.isRecycled) {
+        if (safeInput !== input && safeInput !== result && !safeInput.isRecycled) {
             safeInput.recycle()
         }
-        return enhanced
+        return result
     }
 
     private fun detectPrimaryFaceNormalized(bitmap: Bitmap): Pair<Float, Float>? {
         return try {
-            val targetW = 160
+            val targetW = 128
             val targetH = ((bitmap.height.toFloat() / bitmap.width.toFloat()) * targetW)
                 .roundToInt()
-                .coerceIn(64, 240)
-            // FaceDetector requires even width
+                .coerceIn(64, 200)
             val evenW = targetW and -2
             val small = Bitmap.createScaledBitmap(bitmap, evenW, targetH, true)
             val rgb565 = small.copy(Bitmap.Config.RGB_565, false)
@@ -86,7 +93,6 @@ class CharacterFocusSquareTransformation(
             if (best != null && best.confidence() >= 0.42f) {
                 val mid = android.graphics.PointF()
                 best.getMidPoint(mid)
-                // Offset Y slightly downward from eyes toward face + shoulders center
                 val nx = (mid.x / evenW.toFloat()).coerceIn(0f, 1f)
                 val ny = ((mid.y / targetH.toFloat()) + 0.08f).coerceIn(0f, 1f)
                 nx to ny
@@ -120,7 +126,6 @@ class CharacterFocusSquareTransformation(
         val energy = FloatArray(pixels.size)
         for (y in 0 until gridH) {
             val ny = (y + 0.5f) / gridH.toFloat()
-            // Upper-body compositional bias: head/chest (~0.14..0.62) stronger than sky/ground edges
             val verticalPrior = when {
                 ny < 0.08f -> 0.55f
                 ny <= 0.62f -> 1.45f
@@ -129,7 +134,6 @@ class CharacterFocusSquareTransformation(
             }
             for (x in 0 until gridW) {
                 val nx = (x + 0.5f) / gridW.toFloat()
-                // Penalize extreme outer 8% margins where watermarks/logos/vignettes sit
                 val horizontalPrior = if (nx < 0.08f || nx > 0.92f) 0.45f else 1.15f
 
                 val idx = y * gridW + x
@@ -139,7 +143,6 @@ class CharacterFocusSquareTransformation(
                 val down = luma[min(gridH - 1, y + 1) * gridW + x]
                 val grad = abs(right - left) + abs(down - up)
 
-                // Strong edges + vivid character armor/skin color over flat sky/dark fog
                 val rawScore = (grad * 0.85f) + (sat[idx] * 48f)
                 energy[idx] = rawScore * verticalPrior * horizontalPrior
             }
@@ -174,7 +177,6 @@ class CharacterFocusSquareTransformation(
             val squareSize = min(width, height).coerceAtLeast(1)
             if (width == height) return CropBounds(0, 0, width, height)
 
-            // 1. If a face was clearly detected, anchor square directly around it
             if (faceNormX != null && faceNormY != null) {
                 val centerX = (faceNormX * width).roundToInt()
                 val centerY = (faceNormY * height).roundToInt()
@@ -183,7 +185,6 @@ class CharacterFocusSquareTransformation(
                 return CropBounds(left, top, left + squareSize, top + squareSize)
             }
 
-            // 2. Slide a square window across the saliency energy grid to capture the character
             val grid = energyProvider?.invoke(GRID_W, GRID_H)
             if (grid != null && grid.size == GRID_W * GRID_H) {
                 if (width > height) {
@@ -245,7 +246,6 @@ class CharacterFocusSquareTransformation(
                 }
             }
 
-            // Default compositional fallback: horizontal center, upper-biased for portraits
             val left = ((width - squareSize) / 2).coerceIn(0, width - squareSize)
             val top = if (height > width) ((height - squareSize) * 0.25f).roundToInt() else 0
             return CropBounds(left, top, left + squareSize, top + squareSize)

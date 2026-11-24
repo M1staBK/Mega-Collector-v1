@@ -28,14 +28,14 @@ fun MegaCollectorTheme(
     content: @Composable () -> Unit
 ) {
     val palette = buildCollectorPalette(isDark = darkTheme, accent = accentOption)
-    val colorScheme = if (darkTheme) {
+    val colorScheme = if (palette.isDark) {
         darkColorScheme(
             primary = palette.accentPrimary,
-            onPrimary = MoonlightNight,
+            onPrimary = palette.canvas,
             primaryContainer = palette.frostSurface,
             onPrimaryContainer = palette.accentPrimary,
             secondary = palette.gold,
-            onSecondary = MoonlightNight,
+            onSecondary = palette.canvas,
             secondaryContainer = Color(0xFF2C2312),
             onSecondaryContainer = palette.goldText,
             tertiary = palette.gloomHalo,

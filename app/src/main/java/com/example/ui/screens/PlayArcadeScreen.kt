@@ -1640,13 +1640,48 @@ private fun MysteryVaultPickSection(
     }
 }
 
-private data class MemoryTileItem(
+internal data class MemoryTileItem(
     val id: Int,
     val pairKey: String,
     val title: String,
     val imageUrl: String,
     val fallbackIconIdx: Int
 )
+
+internal fun selectMemoryBlitzDeck(
+    catalog: List<SkinCatalogItem>,
+    random: Random = Random.Default
+): List<MemoryTileItem> {
+    val imageSkins = catalog.filter { it.imageUrl.isNotBlank() }
+    val sourcePool = if (imageSkins.size >= 3) imageSkins else catalog
+    val chosenSkins = sourcePool
+        .shuffled(random)
+        .distinctBy { it.heroName.lowercase() }
+        .take(3)
+        .let { distinct ->
+            if (distinct.size >= 3) distinct
+            else sourcePool.shuffled(random).take(3)
+        }
+
+    val pairs = if (chosenSkins.size == 3) {
+        chosenSkins.mapIndexed { idx, skin ->
+            Triple("skin_${skin.id}", skin.heroName, skin.imageUrl) to idx
+        }
+    } else {
+        listOf(
+            Triple("world", "World", "") to 0,
+            Triple("mega", "Mega", "") to 1,
+            Triple("expert", "Expert", "") to 2
+        )
+    }
+
+    return pairs.flatMapIndexed { pIdx, (info, iconIdx) ->
+        listOf(
+            MemoryTileItem(pIdx * 2, info.first, info.second, info.third, iconIdx),
+            MemoryTileItem(pIdx * 2 + 1, info.first, info.second, info.third, iconIdx)
+        )
+    }.shuffled(random)
+}
 
 @Composable
 private fun MemoryBlitzSection(
@@ -1658,40 +1693,14 @@ private fun MemoryBlitzSection(
     val palette = CollectorTheme.colors
     val context = LocalContext.current
     val performHaptic = rememberSafeHapticPerformer()
-    var gameSeed by remember { mutableIntStateOf(0) }
+    var roundNonce by remember { mutableIntStateOf(Random.nextInt(1, Int.MAX_VALUE)) }
     val hasCharges = status.charges > 0
 
-    val deck = remember(gameSeed, catalog.size) {
-        val imageSkins = catalog.filter { it.imageUrl.isNotBlank() }
-        val chosenSkins = when {
-            gameSeed == 0 && imageSkins.size >= 3 ->
-                imageSkins.take(18).shuffled(Random(101)).take(3)
-            imageSkins.size >= 3 ->
-                imageSkins.shuffled(Random(gameSeed + 101)).take(3)
-            catalog.size >= 3 ->
-                catalog.shuffled(Random(gameSeed + 101)).take(3)
-            else -> emptyList()
-        }
-        val pairs = if (chosenSkins.size == 3) {
-            chosenSkins.mapIndexed { idx, skin ->
-                Triple("skin_${skin.id}", skin.heroName, skin.imageUrl) to idx
-            }
-        } else {
-            listOf(
-                Triple("world", "World", "") to 0,
-                Triple("mega", "Mega", "") to 1,
-                Triple("expert", "Expert", "") to 2
-            )
-        }
-        pairs.flatMapIndexed { pIdx, (info, iconIdx) ->
-            listOf(
-                MemoryTileItem(pIdx * 2, info.first, info.second, info.third, iconIdx),
-                MemoryTileItem(pIdx * 2 + 1, info.first, info.second, info.third, iconIdx)
-            )
-        }.shuffled(Random(gameSeed + 404))
+    val deck = remember(roundNonce, catalog.size) {
+        selectMemoryBlitzDeck(catalog = catalog, random = Random(roundNonce))
     }
 
-    val decodedBitmaps = remember(gameSeed, deck) { mutableStateMapOf<String, ImageBitmap>() }
+    val decodedBitmaps = remember(roundNonce, deck) { mutableStateMapOf<String, ImageBitmap>() }
     LaunchedEffect(deck) {
         val urls = deck.map { it.imageUrl }.filter { it.isNotBlank() }.distinct()
         if (urls.isNotEmpty()) {
@@ -1701,7 +1710,7 @@ private fun MemoryBlitzSection(
                     urls.map { url ->
                         async {
                             if (decodedBitmaps.containsKey(url)) return@async
-                            val req = buildMlbbSquareImageRequest(context, url, crossfadeMs = 0)
+                            val req = buildMlbbSquareImageRequest(context, url, crossfadeMs = 0, compact = true)
                             val result = runCatching { loader.execute(req) }.getOrNull()
                             if (result is SuccessResult) {
                                 val bmp = runCatching { result.drawable.toBitmap().asImageBitmap() }.getOrNull()
@@ -1716,10 +1725,10 @@ private fun MemoryBlitzSection(
         }
     }
 
-    var matchedKeys by remember(gameSeed) { mutableStateOf<Set<String>>(emptySet()) }
-    var flippedIndices by remember(gameSeed) { mutableStateOf<List<Int>>(emptyList()) }
-    var moves by remember(gameSeed) { mutableIntStateOf(0) }
-    var boardCompleted by remember(gameSeed) { mutableStateOf(false) }
+    var matchedKeys by remember(roundNonce) { mutableStateOf<Set<String>>(emptySet()) }
+    var flippedIndices by remember(roundNonce) { mutableStateOf<List<Int>>(emptyList()) }
+    var moves by remember(roundNonce) { mutableIntStateOf(0) }
+    var boardCompleted by remember(roundNonce) { mutableStateOf(false) }
 
     LaunchedEffect(flippedIndices) {
         if (flippedIndices.size == 2) {
@@ -1794,7 +1803,7 @@ private fun MemoryBlitzSection(
 
             val fallbackTiers = listOf(
                 MlbbCollectionTier.WORLD,
-                MlbbCollectionTier.MEGA,
+                MlbbCollectionTier.MEGA_1,
                 MlbbCollectionTier.EXPERT
             )
 
@@ -1860,7 +1869,7 @@ private fun MemoryBlitzSection(
                                         }
                                         tile.imageUrl.isNotBlank() -> {
                                             SubcomposeAsyncImage(
-                                                model = rememberMlbbSquareImageRequest(tile.imageUrl, crossfadeMs = 0),
+                                                model = rememberMlbbSquareImageRequest(tile.imageUrl, crossfadeMs = 0, compact = true),
                                                 contentDescription = tile.title,
                                                 contentScale = ContentScale.Crop,
                                                 loading = {
@@ -1952,7 +1961,7 @@ private fun MemoryBlitzSection(
                 Button(
                     onClick = {
                         onButtonClickSfx()
-                        gameSeed++
+                        roundNonce = Random.nextInt(1, Int.MAX_VALUE)
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = palette.buttonPrimary,

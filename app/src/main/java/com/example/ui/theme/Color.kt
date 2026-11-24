@@ -22,6 +22,17 @@ val MoonlightGold = Color(0xFFE5B84B)
 val MoonlightGoldSoft = Color(0xFFF3D58D)
 val MoonlightCrimson = Color(0xFFE57388)
 
+// Obsidian Pack Noir Surface Tokens (black + purple + gold shine)
+val ObsidianPackCanvas = Color(0xFF07050C)
+val ObsidianPackAbyss = Color(0xFF0E0918)
+val ObsidianPackCard = Color(0xFF140F22)
+val ObsidianPackFrost = Color(0xFF221638)
+val ObsidianPackBorder = Color(0xFF5B3496)
+val ObsidianPackInk = Color(0xFFF5F0FF)
+val ObsidianPackMuted = Color(0xFFBBA9D9)
+val ObsidianPackGold = Color(0xFFFACC15)
+val ObsidianPackGoldBright = Color(0xFFFEF08A)
+
 val PearlLightCanvas = Color(0xFFEDF2FE)
 val PearlLightTint = Color(0xFFE3EBFC)
 val PearlLightCard = Color(0xFFF9FBFF)
@@ -59,6 +70,7 @@ val MisprintMagenta = Color(0xFFC084FC)
 @Immutable
 data class CollectorPalette(
     val isDark: Boolean,
+    val hasPackNoirShine: Boolean = false,
     val canvas: Color,
     val abyss: Color,
     val cardSurface: Color,
@@ -89,6 +101,11 @@ enum class ThemeAccentOption(
     val id: String,
     val label: String,
     val swatchColor: Color,
+    val secondarySwatchColor: Color? = null,
+    val forcesDarkCanvas: Boolean = false,
+    val hasPackNoirShine: Boolean = false,
+    val isUnlockedByDefault: Boolean = true,
+    val unlockHint: String? = null,
     val lightPrimary: Color,
     val lightButton: Color,
     val lightSky: Color,
@@ -118,6 +135,27 @@ enum class ThemeAccentOption(
         darkMint = Color(0xFF3CDDC4),
         darkFrost = Color(0xFF253047),
         darkHalo = Color(0xFF3A4D7A)
+    ),
+    OBSIDIAN_PACK(
+        id = "OBSIDIAN_PACK",
+        label = "Pack Noir",
+        swatchColor = Color(0xFF120B1F),
+        secondarySwatchColor = Color(0xFFFACC15),
+        forcesDarkCanvas = false,
+        hasPackNoirShine = true,
+        isUnlockedByDefault = true,
+        lightPrimary = Color(0xFF6B21A8),
+        lightButton = Color(0xFF6B21A8),
+        lightSky = Color(0xFF9333EA),
+        lightMint = Color(0xFFD97706),
+        lightFrost = Color(0xFFF1E8FF),
+        lightHalo = Color(0xFFE9D5FF),
+        darkPrimary = Color(0xFFFACC15),
+        darkButton = Color(0xFF7E22CE),
+        darkSky = Color(0xFFC084FC),
+        darkMint = Color(0xFFFDE047),
+        darkFrost = ObsidianPackFrost,
+        darkHalo = Color(0xFF6B21A8)
     ),
     ARENA_GOLD(
         id = "ARENA_GOLD",
@@ -186,9 +224,59 @@ enum class ThemeAccentOption(
         darkMint = Color(0xFFF472B6),
         darkFrost = Color(0xFF331B26),
         darkHalo = Color(0xFF5C263B)
+    ),
+    CELESTIAL_GOLD(
+        id = "CELESTIAL_GOLD",
+        label = "Celestial Aurum",
+        swatchColor = Color(0xFFFACC15),
+        secondarySwatchColor = Color(0xFF92400E),
+        forcesDarkCanvas = true,
+        hasPackNoirShine = true,
+        isUnlockedByDefault = false,
+        unlockHint = "Unlock via Vault Architect (25 Unique Skins) achievement",
+        lightPrimary = Color(0xFFD97706),
+        lightButton = Color(0xFFB45309),
+        lightSky = Color(0xFFFACC15),
+        lightMint = Color(0xFFFDE047),
+        lightFrost = Color(0xFF2D2209),
+        lightHalo = Color(0xFF78350F),
+        darkPrimary = Color(0xFFFDE047),
+        darkButton = Color(0xFFB45309),
+        darkSky = Color(0xFFFACC15),
+        darkMint = Color(0xFFFEF08A),
+        darkFrost = Color(0xFF281F0B),
+        darkHalo = Color(0xFF713F12)
+    ),
+    MYTHIC_PRISM(
+        id = "MYTHIC_PRISM",
+        label = "Mythic Prism",
+        swatchColor = Color(0xFF06B6D4),
+        secondarySwatchColor = Color(0xFFEC4899),
+        forcesDarkCanvas = true,
+        hasPackNoirShine = false,
+        isUnlockedByDefault = false,
+        unlockHint = "Unlock via Mythic Royalty (Collector/Legend) achievement",
+        lightPrimary = Color(0xFF06B6D4),
+        lightButton = Color(0xFF7C3AED),
+        lightSky = Color(0xFFEC4899),
+        lightMint = Color(0xFF38BDF8),
+        lightFrost = Color(0xFF1A223B),
+        lightHalo = Color(0xFF5B21B6),
+        darkPrimary = Color(0xFF67E8F9),
+        darkButton = Color(0xFF0891B2),
+        darkSky = Color(0xFFF472B6),
+        darkMint = Color(0xFF38BDF8),
+        darkFrost = Color(0xFF1B233D),
+        darkHalo = Color(0xFF581C87)
     );
 
+    fun isUnlocked(unlockedThemeIds: Set<String>): Boolean =
+        isUnlockedByDefault || id in unlockedThemeIds
+
     companion object {
+        val DEFAULT_UNLOCKED_IDS: Set<String> =
+            entries.filter { it.isUnlockedByDefault }.map { it.id }.toSet()
+
         fun fromId(id: String?): ThemeAccentOption =
             entries.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: SKY_COBALT
     }
@@ -198,15 +286,85 @@ fun buildCollectorPalette(
     isDark: Boolean,
     accent: ThemeAccentOption = ThemeAccentOption.SKY_COBALT
 ): CollectorPalette {
-    return if (isDark) {
+    val effectiveDark = isDark || accent.forcesDarkCanvas
+    if (accent == ThemeAccentOption.OBSIDIAN_PACK) {
+        return if (effectiveDark) {
+            CollectorPalette(
+                isDark = true,
+                hasPackNoirShine = true,
+                canvas = ObsidianPackCanvas,
+                abyss = ObsidianPackAbyss,
+                cardSurface = ObsidianPackCard,
+                frostSurface = ObsidianPackFrost,
+                border = ObsidianPackBorder,
+                glassHighlight = ObsidianPackGold.copy(alpha = 0.55f),
+                orbWatermark = Color(0xFF9333EA).copy(alpha = 0.14f),
+                ink = ObsidianPackInk,
+                muted = ObsidianPackMuted,
+                accentPrimary = ObsidianPackGold,
+                buttonPrimary = Color(0xFF7E22CE),
+                skyAccent = Color(0xFFA855F7),
+                mintAccent = ObsidianPackGoldBright,
+                gloomHalo = Color(0xFF6B21A8),
+                gold = ObsidianPackGold,
+                goldBright = ObsidianPackGoldBright,
+                goldText = ObsidianPackGoldBright,
+                goldSurfaceTint = Color(0xFF271B09),
+                crimson = MoonlightCrimson,
+                navBar = Color(0xFF0B0714),
+                goldButtonContent = ObsidianPackCanvas,
+                heroTopScrim = Color(0xFF22133B).copy(alpha = 0.88f),
+                heroMidScrim = ObsidianPackCanvas.copy(alpha = 0.94f),
+                misprintLabel = ObsidianPackGoldBright
+            )
+        } else {
+            val noirLightCanvas = Color(0xFFF6F2FC)
+            val noirLightAbyss = Color(0xFFEDE4FA)
+            CollectorPalette(
+                isDark = false,
+                hasPackNoirShine = true,
+                canvas = noirLightCanvas,
+                abyss = noirLightAbyss,
+                cardSurface = Color(0xFFFCFAFF),
+                frostSurface = accent.lightFrost,
+                border = Color(0xFFD8C5F4),
+                glassHighlight = Color(0xFFE9D8FF),
+                orbWatermark = Color(0xFF7E22CE).copy(alpha = 0.08f),
+                ink = Color(0xFF160E26),
+                muted = Color(0xFF5D4C78),
+                accentPrimary = accent.lightPrimary,
+                buttonPrimary = accent.lightButton,
+                skyAccent = accent.lightSky,
+                mintAccent = accent.lightMint,
+                gloomHalo = accent.lightHalo,
+                gold = ObsidianPackGold,
+                goldBright = ObsidianPackGoldBright,
+                goldText = PearlLightGoldText,
+                goldSurfaceTint = Color(0xFFFFF7DC),
+                crimson = PearlLightCrimson,
+                navBar = Color(0xFFFAF7FF),
+                goldButtonContent = Color(0xFF332000),
+                heroTopScrim = accent.lightFrost.copy(alpha = 0.80f),
+                heroMidScrim = noirLightCanvas.copy(alpha = 0.92f),
+                misprintLabel = accent.lightPrimary
+            )
+        }
+    }
+    return if (effectiveDark) {
+        val isCelestial = accent == ThemeAccentOption.CELESTIAL_GOLD
+        val darkCanvas = if (isCelestial) Color(0xFF0A0805) else MoonlightNight
+        val darkAbyss = if (isCelestial) Color(0xFF141008) else MoonlightAbyss
+        val darkCard = if (isCelestial) Color(0xFF1C160C) else MoonlightCard
+        val darkBorder = if (isCelestial) Color(0xFF6B4F14) else MoonlightBorder
         CollectorPalette(
             isDark = true,
-            canvas = MoonlightNight,
-            abyss = MoonlightAbyss,
-            cardSurface = MoonlightCard,
+            hasPackNoirShine = accent.hasPackNoirShine,
+            canvas = darkCanvas,
+            abyss = darkAbyss,
+            cardSurface = darkCard,
             frostSurface = accent.darkFrost,
-            border = MoonlightBorder,
-            glassHighlight = Color(0xFF3E4F73),
+            border = darkBorder,
+            glassHighlight = if (isCelestial) ObsidianPackGold.copy(alpha = 0.58f) else Color(0xFF3E4F73),
             orbWatermark = Color.White.copy(alpha = 0.04f),
             ink = MoonlightInk,
             muted = MoonlightMuted,
@@ -220,15 +378,16 @@ fun buildCollectorPalette(
             goldText = MoonlightGoldSoft,
             goldSurfaceTint = Color(0xFF282218),
             crimson = MoonlightCrimson,
-            navBar = MoonlightAbyss,
-            goldButtonContent = MoonlightNight,
+            navBar = darkAbyss,
+            goldButtonContent = darkCanvas,
             heroTopScrim = accent.darkFrost.copy(alpha = 0.86f),
-            heroMidScrim = MoonlightNight.copy(alpha = 0.92f),
+            heroMidScrim = darkCanvas.copy(alpha = 0.92f),
             misprintLabel = accent.darkPrimary
         )
     } else {
         CollectorPalette(
             isDark = false,
+            hasPackNoirShine = false,
             canvas = PearlLightCanvas,
             abyss = PearlLightTint,
             cardSurface = PearlLightCard,
