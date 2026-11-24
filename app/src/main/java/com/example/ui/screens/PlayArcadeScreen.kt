@@ -1804,7 +1804,7 @@ private fun MemoryBlitzSection(
             val fallbackTiers = listOf(
                 MlbbCollectionTier.WORLD,
                 MlbbCollectionTier.MEGA_1,
-                MlbbCollectionTier.EXPERT
+                MlbbCollectionTier.EXPERT_1
             )
 
             for (row in 0 until 2) {
@@ -1945,7 +1945,7 @@ private fun MemoryBlitzSection(
                                     }
                                 } else {
                                     MlbbCollectionBadge(
-                                        tier = MlbbCollectionTier.EXPERT,
+                                        tier = MlbbCollectionTier.EXPERT_1,
                                         dimmed = !hasCharges,
                                         modifier = Modifier.size(34.dp)
                                     )
