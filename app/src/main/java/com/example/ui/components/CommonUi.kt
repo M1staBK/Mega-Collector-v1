@@ -76,6 +76,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -974,6 +975,17 @@ fun AppPreloadOverlay(
     modifier: Modifier = Modifier
 ) {
     val palette = CollectorTheme.colors
+    val appContext = LocalContext.current
+    val launcherIcon = remember(appContext) {
+        runCatching {
+            val drawable = appContext.packageManager.getApplicationIcon(appContext.packageName)
+            val px = 384
+            val bmp = android.graphics.Bitmap.createBitmap(px, px, android.graphics.Bitmap.Config.ARGB_8888)
+            drawable.setBounds(0, 0, px, px)
+            drawable.draw(android.graphics.Canvas(bmp))
+            bmp.asImageBitmap()
+        }.getOrNull()
+    }
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0.05f, 1f),
         animationSpec = tween(durationMillis = 220),
@@ -992,29 +1004,42 @@ fun AppPreloadOverlay(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
-            Surface(
-                color = Color(0xFF241C14),
-                shape = RoundedCornerShape(26.dp),
-                shadowElevation = 10.dp,
-                border = BorderStroke(1.8.dp, palette.accentPrimary.copy(alpha = 0.7f)),
-                modifier = Modifier
-                    .size(92.dp)
-                    .testTag("preload_app_icon")
-            ) {
-                Box(
+            if (launcherIcon != null) {
+                // Same artwork as the home-screen game icon (background + foreground layers together)
+                Image(
+                    bitmap = launcherIcon,
+                    contentDescription = "MEGA Collector logo",
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(10.dp),
-                    contentAlignment = Alignment.Center
+                        .size(96.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .testTag("preload_app_icon")
+                )
+            } else {
+                Surface(
+                    color = Color(0xFF241C14),
+                    shape = RoundedCornerShape(26.dp),
+                    shadowElevation = 10.dp,
+                    border = BorderStroke(1.8.dp, palette.accentPrimary.copy(alpha = 0.7f)),
+                    modifier = Modifier
+                        .size(92.dp)
+                        .testTag("preload_app_icon")
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.app_icon_mega_fg),
-                        contentDescription = "MEGA Collector logo",
-                        contentScale = ContentScale.Crop,
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(16.dp))
-                    )
+                            .padding(10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.app_icon_mega_fg),
+                            contentDescription = "MEGA Collector logo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                    }
                 }
             }
 

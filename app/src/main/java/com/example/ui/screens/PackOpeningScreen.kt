@@ -319,11 +319,7 @@ fun PackOpeningScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    val headerText = if (session.bundle.packCount > 1) {
-                        "${MegaPackConfig.PACK_TITLE} (${session.bundle.packCount}x Bundle)"
-                    } else {
-                        MegaPackConfig.PACK_TITLE
-                    }
+                    val headerText = MegaPackConfig.PACK_TITLE
                     Text(
                         text = headerText,
                         style = MaterialTheme.typography.titleLarge,
@@ -331,9 +327,9 @@ fun PackOpeningScreen(
                     )
                     val subtitle = when {
                         !session.bundleCommitted && session.showingPackStack ->
-                            "Close now to cancel safely (${session.bundle.totalCards} cards)"
+                            "Swipe across the top to open"
                         session.showingPackStack ->
-                            "Pack ${session.currentPackIndex + 1} of ${session.bundle.packCount} • ${session.remainingPacksInStack} stacked"
+                            "Pack ${session.currentPackIndex + 1} of ${session.bundle.packCount}"
                         session.showSummaryGrid -> "Tap any card to 3D gyro inspect"
                         focusedCard != null ->
                             if (session.bundle.packCount > 1) {
@@ -341,7 +337,7 @@ fun PackOpeningScreen(
                             } else {
                                 "Revealed ${session.revealedIndices.size} of ${session.pulledCards.size}"
                             }
-                        else -> "${session.remainingUnrevealedCount} cards in Pack ${session.currentPackIndex + 1} • Tap or swipe"
+                        else -> "Tap the card to reveal"
                     }
                     Text(
                         text = subtitle,
@@ -1180,6 +1176,7 @@ private fun PackTearStage(
     val yawAnim = remember(keySeed) { Animatable(0f) }
     val pitchAnim = remember(keySeed) { Animatable(0f) }
     val squashAnim = remember(keySeed) { Animatable(0f) }
+    val cardRiseAnim = remember(keySeed) { Animatable(0f) }
     var tornCommitted by remember(keySeed) { mutableStateOf(false) }
     var isDraggingRotate by remember(keySeed) { mutableStateOf(false) }
 
@@ -1257,8 +1254,14 @@ private fun PackTearStage(
             }
             tearAnim.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                animationSpec = tween(
+                    durationMillis = (460f * (1f - tearAnim.value)).toInt().coerceIn(140, 460),
+                    easing = FastOutSlowInEasing
+                )
             )
+            // Let the cards slide up out of the opened pouch before the deck takes over
+            cardRiseAnim.animateTo(1f, tween(durationMillis = 480, easing = FastOutSlowInEasing))
+            delay(120L)
             onRipComplete()
         }
     }
@@ -1281,7 +1284,7 @@ private fun PackTearStage(
                 modifier = Modifier.testTag("pack_stack_counter_pill")
             ) {
                 Text(
-                    text = "PACK $currentPackNumber OF $packCount • $remainingPacksInStack IN STACK",
+                    text = "Pack $currentPackNumber of $packCount",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 0.6.sp
@@ -1324,9 +1327,9 @@ private fun PackTearStage(
                             scaleY = layerScale
                         }
                         .shadow(
-                            elevation = (5 + (10 - layer)).coerceAtLeast(3).dp,
+                            elevation = 1.5.dp,
                             shape = BoosterPouchShape,
-                            spotColor = Color.Black.copy(alpha = 0.52f)
+                            spotColor = Color.Black.copy(alpha = 0.30f)
                         )
                         .clip(BoosterPouchShape)
                         .testTag("stacked_pack_layer_$layer")
@@ -1345,20 +1348,6 @@ private fun PackTearStage(
                             .border(1.2.dp, satinTheme.crestTint.copy(alpha = 0.42f), BoosterPouchShape)
                     )
                 }
-            }
-
-            // Cast contact shadow on the 2nd pack directly beneath the lifted top pack
-            if (visibleStackLayers > 1) {
-                Box(
-                    modifier = Modifier
-                        .width(packWidthDp * 0.92f)
-                        .height(packHeightDp * 0.92f)
-                        .offset(y = (6f + pickUpProgress * 8f).dp)
-                        .zIndex(visibleStackLayers.toFloat() + 0.5f)
-                        .alpha((0.28f - pickUpProgress * 0.14f).coerceIn(0.08f, 0.30f))
-                        .clip(BoosterPouchShape)
-                        .background(Color.Black)
-                )
             }
 
             // TOP ACTIVE PACK ONLY: lifts off the stack when picked up, rotates as a full 3D mesh, and tears open
@@ -1463,52 +1452,23 @@ private fun PackTearStage(
                     }
                     .testTag("top_active_3d_pack")
             ) {
-                // Revealed Interior Chrome Foil Cavity & Peeking Cards when tearing open
-                if (tearProgress > 0.02f) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 12.dp)
-                            .padding(top = 48.dp, bottom = 180.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color(0xFFE2E8F0),
-                                        Color(0xFF475569),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    ) {
-                        Surface(
-                            color = Color(0xFFF8FAFC),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.5.dp, StudioGoldBright),
-                            shadowElevation = 4.dp,
+                // Cards sit INSIDE the pouch: drawn under the pack mesh, so the front of the pouch
+                // hides their lower part and they slide up out of the torn opening.
+                if (tearProgress > 0.04f) {
+                    val rise = (((tearProgress - 0.18f) / 0.82f).coerceIn(0f, 1f) * 0.40f +
+                        cardRiseAnim.value * 0.60f)
+                    for (i in 2 downTo 0) {
+                        val cardLift = rise * (74f - i * 14f)
+                        CardBackView(
+                            rarityHint = SkinRarity.COMMON,
+                            isMisprint = false,
+                            showTeaserLabel = false,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 14.dp)
-                                .height(68.dp)
-                                .graphicsLayer {
-                                    translationY = -tearProgress * 12f
-                                    rotationZ = tearGeometry.angleDeg * 0.18f
-                                }
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(
-                                                Color(0xFFE2E8F0),
-                                                StudioGoldBright.copy(alpha = 0.58f),
-                                                Color(0xFF93C5FD)
-                                            )
-                                        )
-                                    )
-                            )
-                        }
+                                .align(Alignment.TopCenter)
+                                .width(150.dp)
+                                .offset(x = ((i - 1) * 5f).dp, y = (128f - cardLift).dp)
+                                .graphicsLayer { rotationZ = (i - 1) * 2.4f * rise }
+                        )
                     }
                 }
 
@@ -1551,7 +1511,7 @@ private fun PackTearStage(
                                             scope.launch { squashAnim.animateTo(0.28f, tween(70)) }
                                         },
                                         onDragEnd = {
-                                            if (tearAnim.value >= 0.56f) {
+                                            if (tearAnim.value >= 0.62f) {
                                                 commitTear()
                                             } else {
                                                 scope.launch {
@@ -1582,11 +1542,16 @@ private fun PackTearStage(
                                         cumulativeDragX += dragAmount.x
                                         cumulativeDragY += dragAmount.y
                                         onCrinkle()
-                                        val stepDist = hypot(dragAmount.x, dragAmount.y)
-                                        val next = (tearAnim.value + stepDist / 320f).coerceIn(0f, 1f)
-                                        scope.launch { tearAnim.snapTo(next) }
-                                        if (next >= 0.65f) {
-                                            commitTear()
+                                        if (!tornCommitted) {
+                                            val travelPx = tearStripSize.width.coerceAtLeast(1) * 0.85f
+                                            val next = (
+                                                tearAnim.value +
+                                                    (abs(dragAmount.x) + abs(dragAmount.y) * 0.25f) / travelPx
+                                                ).coerceIn(0f, 1f)
+                                            scope.launch { tearAnim.snapTo(next) }
+                                            if (next >= 0.97f) {
+                                                commitTear()
+                                            }
                                         }
                                     }
                                 }
@@ -1740,7 +1705,7 @@ private fun PackTearStage(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = if (showingBack) "Flip Top Pack to Front  •  Drag to Spin" else "Turn Top Pack  •  Drag to Spin",
+                    text = if (showingBack) "Show Front" else "Turn Pack",
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = palette.ink
                 )

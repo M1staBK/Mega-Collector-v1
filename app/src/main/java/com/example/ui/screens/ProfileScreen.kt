@@ -681,7 +681,7 @@ fun ProfileScreen(
                                         color = palette.ink
                                     )
                                     Text(
-                                        text = "World > Mega (1-3) > Exalted (1-3) > Novice",
+                                        text = "World, then Mega down to Novice, each with 3 levels (III, II, I)",
                                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
                                         color = palette.muted
                                     )

@@ -1073,7 +1073,7 @@ private fun MegaPackShowcaseCard(
                     }
 
                     Text(
-                        text = "Drag pack to inspect 3D seal • ${catalogSize.coerceAtLeast(1100)}+ MLBBDex Pool",
+                        text = "Drag the pack to turn it",
                         style = MaterialTheme.typography.bodyMedium,
                         color = palette.muted
                     )
@@ -1095,29 +1095,6 @@ private fun MegaPackShowcaseCard(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
-                        Surface(
-                            color = palette.frostSurface,
-                            shape = RoundedCornerShape(999.dp),
-                            border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.25f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Bolt,
-                                    contentDescription = null,
-                                    tint = palette.accentPrimary,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "1/1: 0.005%",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = palette.accentPrimary
-                                )
-                            }
-                        }
                     }
 
                     if (bonusFreePacks > 0) {
@@ -1136,7 +1113,7 @@ private fun MegaPackShowcaseCard(
                                 .testTag("open_free_pack_button")
                         ) {
                             Text(
-                                text = "Open Free Pack ($bonusFreePacks Left)",
+                                text = "Open Free Pack ($bonusFreePacks)",
                                 style = MaterialTheme.typography.labelLarge
                             )
                         }
@@ -1225,16 +1202,6 @@ private fun BundlePurchaseCard(
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                 color = if (canAffordCoins) palette.ink else palette.muted
                             )
-                            if (bundle.discountPercent > 0) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "${bundle.fullCoinCost}",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        textDecoration = TextDecoration.LineThrough
-                                    ),
-                                    color = palette.muted
-                                )
-                            }
                         }
                     }
                 }
@@ -1243,16 +1210,6 @@ private fun BundlePurchaseCard(
 
                 // Right column: Diamond Purchase Pill Button
                 Column(horizontalAlignment = Alignment.End) {
-                    if (bundle.discountPercent > 0) {
-                        Text(
-                            text = "${bundle.packCount * 5} Gems",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                textDecoration = TextDecoration.LineThrough
-                            ),
-                            color = palette.muted,
-                            modifier = Modifier.padding(end = 8.dp, bottom = 2.dp)
-                        )
-                    }
                     OutlinedButton(
                         onClick = onBuyWithDiamonds,
                         enabled = canAffordDiamonds,

@@ -3,10 +3,13 @@ package com.example.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -252,20 +255,29 @@ fun MlbbCollectionBadge(
             }
         }
 
-        // Sub-rank medallion pip (Exalted 3..1 & Mega 3..1)
+        // Sub-rank pill: every rank except World has three variants (III, II, I)
         if (tier.subRankNumber in 1..3) {
+            val roman = when (tier.subRankNumber) {
+                3 -> "III"
+                2 -> "II"
+                else -> "I"
+            }
             Surface(
-                color = tier.secondaryColor.copy(alpha = if (dimmed) 0.65f else 0.94f),
-                shape = CircleShape,
+                color = tier.secondaryColor.copy(alpha = if (dimmed) 0.65f else 0.96f),
+                shape = RoundedCornerShape(999.dp),
                 border = BorderStroke(1.dp, tier.trimColor.copy(alpha = alphaMul)),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 1.dp)
-                    .size(16.dp)
+                    .height(16.dp)
+                    .defaultMinSize(minWidth = 18.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = "${tier.subRankNumber}",
+                        text = roman,
                         color = tier.coreColor.copy(alpha = alphaMul),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.ExtraBold

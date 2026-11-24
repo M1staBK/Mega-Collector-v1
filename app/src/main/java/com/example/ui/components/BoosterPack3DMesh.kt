@@ -47,7 +47,15 @@ internal fun computePackShadowHalfWidth(packWidthPx: Float, yawDeg: Float): Floa
     val yawRad = Math.toRadians(yawDeg.toDouble())
     val cosAbs = abs(cos(yawRad)).toFloat()
     val sinAbs = abs(sin(yawRad)).toFloat()
-    return packWidthPx * (0.43f * cosAbs + 0.036f * sinAbs)
+    // Thin sliver only: the shadow is the pack's edge-on thickness, never its full width.
+    return packWidthPx * (0.010f + 0.026f * sinAbs)
+}
+
+/** Shadow strength: invisible when the pack faces the camera, only a faint line once it turns side-on. */
+internal fun computePackShadowStrength(yawDeg: Float): Float {
+    val sinAbs = abs(sin(Math.toRadians(yawDeg.toDouble()))).toFloat()
+    val t = ((sinAbs - 0.30f) / 0.70f).coerceIn(0f, 1f)
+    return t * t
 }
 
 /**
@@ -57,12 +65,14 @@ data class PackMeshTextures(
     val frontBitmap: Bitmap,
     val backBitmap: Bitmap,
     val alphaMaskBitmap: Bitmap,
+    val backAlphaMaskBitmap: Bitmap,
     val sideFoilBitmap: Bitmap,
     val innerFoilBitmap: Bitmap,
     val opaqueWhiteBitmap: Bitmap,
     val frontShader: BitmapShader,
     val backShader: BitmapShader,
     val alphaShader: BitmapShader,
+    val backAlphaShader: BitmapShader,
     val sideShader: BitmapShader,
     val innerFoilShader: BitmapShader,
     val opaqueWhiteShader: BitmapShader,
@@ -171,7 +181,16 @@ object PackMeshTextureCache {
             }
         }
 
+        // Mirrored copy of the front silhouette: the back is cut to exactly the same outline as the front
+        val mirrorMatrix = android.graphics.Matrix().apply { preScale(-1f, 1f, TARGET_W / 2f, 0f) }
+        val backAlphaMaskBmp = Bitmap.createBitmap(TARGET_W, TARGET_H, Bitmap.Config.ARGB_8888)
+        NativeCanvas(backAlphaMaskBmp).drawBitmap(alphaMaskBmp, mirrorMatrix, null)
+
         val backBmp = renderBackSealBitmap(theme, packCount)
+        NativeCanvas(backBmp).drawBitmap(
+            backAlphaMaskBmp, 0f, 0f,
+            NativePaint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) }
+        )
         val sideBmp = renderSideFoilBitmap(theme)
         val innerBmp = renderInnerFoilBitmap()
         val whiteBmp = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).apply {
@@ -182,12 +201,14 @@ object PackMeshTextureCache {
             frontBitmap = frontBmp,
             backBitmap = backBmp,
             alphaMaskBitmap = alphaMaskBmp,
+            backAlphaMaskBitmap = backAlphaMaskBmp,
             sideFoilBitmap = sideBmp,
             innerFoilBitmap = innerBmp,
             opaqueWhiteBitmap = whiteBmp,
             frontShader = BitmapShader(frontBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
             backShader = BitmapShader(backBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
             alphaShader = BitmapShader(alphaMaskBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
+            backAlphaShader = BitmapShader(backAlphaMaskBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
             sideShader = BitmapShader(sideBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
             innerFoilShader = BitmapShader(innerBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
             opaqueWhiteShader = BitmapShader(whiteBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
@@ -566,10 +587,10 @@ fun BoosterPack3DMesh(
         val shadowLift = pickUpProgress.coerceIn(0f, 1f)
         val dropFade = (1f - lowerPouchDropProgress * 0.9f).coerceIn(0f, 1f)
         val shadowHalfW = computePackShadowHalfWidth(w, yawDeg)
-        val shadowOffsetX = sinY * cosAbs * (5f + shadowLift * 9f)
-        val shadowOffsetY = 9f + shadowLift * 18f + lowerPouchDropProgress * h * 0.24f
-        val shadowAlpha = (0.38f - shadowLift * 0.12f) * (0.55f + 0.45f * cosAbs) * dropFade
-        val shadowCornerR = min(22f, shadowHalfW * 0.90f)
+        val shadowOffsetX = sinY * 3f
+        val shadowOffsetY = 3f + shadowLift * 4f + lowerPouchDropProgress * h * 0.24f
+        val shadowAlpha = 0.20f * computePackShadowStrength(yawDeg) * dropFade
+        val shadowCornerR = min(6f, shadowHalfW * 0.90f)
         if (shadowAlpha > 0.01f) {
             shadowPaint.shader = LinearGradient(
                 0f, 0f, 0f, h,
@@ -629,6 +650,15 @@ fun BoosterPack3DMesh(
         var vCount = 0
         var tCount = 0
 
+        // Progressive tear: the cut travels across the pack with the finger. Columns the cut has not
+        // reached yet stay attached to the pouch; columns it has passed lift away from it.
+        val tearFrontPos = (tearProgress / 0.8f).coerceIn(0f, 1f)
+        fun cutWeight(uAlong: Float): Float {
+            val s = if (tearPeelDirX >= 0f) uAlong else 1f - uAlong
+            val x = ((tearFrontPos - s) / 0.16f).coerceIn(0f, 1f)
+            return x * x * (3f - 2f * x)
+        }
+
         fun emitVertex(
             xLocal: Float,
             yLocal: Float,
@@ -639,7 +669,8 @@ fun BoosterPack3DMesh(
             uCoord: Float,
             vCoord: Float,
             mat: Int,
-            isTornTopCap: Boolean = false
+            isTornTopCap: Boolean = false,
+            uAlong: Float = 0.5f
         ): Int {
             if (vCount >= maxVerts - 1) return vCount - 1
             val idx = vCount++
@@ -652,14 +683,15 @@ fun BoosterPack3DMesh(
 
             if (isTornTopCap && tearProgress > 0.01f) {
                 // Peel detached upper torn strip cleanly away along swipe direction
-                val capAngle = Math.toRadians((tearProgress * (tearAngleDeg * 0.42f + tearPeelDirX * -18f)).toDouble())
+                val peel = tearProgress * cutWeight(uAlong)
+                val capAngle = Math.toRadians((peel * (tearAngleDeg * 0.42f + tearPeelDirX * -18f)).toDouble())
                 val cCos = cos(capAngle).toFloat()
                 val cSin = sin(capAngle).toFloat()
                 val rx = mx * cCos - my * cSin
                 val ry = mx * cSin + my * cCos
-                mx = rx + tearPeelDirX * tearProgress * w * 0.56f
-                my = ry + tearPeelDirY * tearProgress * h * 0.25f
-                mz += tearProgress * w * 0.16f
+                mx = rx + tearPeelDirX * peel * w * 0.56f
+                my = ry + tearPeelDirY * peel * h * 0.25f
+                mz += peel * w * 0.16f
             } else if (!isTornTopCap && lowerPouchDropProgress > 0.005f) {
                 // Slide empty lower pouch downward cleanly as cards emerge from inside it
                 my += lowerPouchDropProgress * h * 0.36f
@@ -711,7 +743,7 @@ fun BoosterPack3DMesh(
             val shade = (0.64f + 0.36f * wrapDiff) * (0.84f + 0.16f * facing)
 
             val alphaMul = if (isTornTopCap && tearProgress > 0.01f) {
-                (1f - ((tearProgress - 0.12f).coerceAtLeast(0f) / 0.88f) * 0.88f).coerceIn(0f, 1f)
+                (1f - cutWeight(uAlong) * ((tearProgress - 0.12f).coerceAtLeast(0f) / 0.88f) * 0.88f).coerceIn(0f, 1f)
             } else if (!isTornTopCap && lowerPouchDropProgress > 0.005f) {
                 (1f - lowerPouchDropProgress * 0.94f).coerceIn(0f, 1f)
             } else 1f
@@ -816,7 +848,7 @@ fun BoosterPack3DMesh(
                     val zLocal = -(BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGrid, v) +
                         BoosterPouchPhysics.pouchBackCenterFinFraction(uGrid, v)) * w
                     val (nxL, nyL, nzL) = computeMeshNormal(uGrid, v, isFront = false)
-                    val backTexU = (1f - uGrid) * backW
+                    val backTexU = (1f - uTexNorm) * backW
                     emitVertex(xLocal, yLocal, zLocal, nxL, nyL, nzL, backTexU, v * backH, mat = 1)
                 }
             }
@@ -895,14 +927,15 @@ fun BoosterPack3DMesh(
                         var zLocal = BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGrid, v) * w
                         if (!isUpperCap && t < 0.24f) {
                             val flare = (1f - t / 0.24f).pow(1.4f)
-                            zLocal += tearProgress * w * 0.115f * flare
-                            yLocal += tearProgress * h * 0.008f * flare
+                            val cw = cutWeight(uGrid)
+                            zLocal += tearProgress * cw * w * 0.115f * flare
+                            yLocal += tearProgress * cw * h * 0.008f * flare
                         }
                         val (nxL, nyL, nzL) = computeMeshNormal(uGrid, v, isFront = true)
                         emitVertex(
                             xLocal, yLocal, zLocal, nxL, nyL, nzL,
                             uTexNorm * frontW, v * frontH,
-                            mat = 0, isTornTopCap = isUpperCap
+                            mat = 0, isTornTopCap = isUpperCap, uAlong = uGrid
                         )
                     }
                 }
@@ -938,14 +971,14 @@ fun BoosterPack3DMesh(
                             BoosterPouchPhysics.pouchBackCenterFinFraction(uGrid, v)) * w
                         if (!isUpperCap && t < 0.24f) {
                             val flare = (1f - t / 0.24f).pow(1.4f)
-                            zLocal -= tearProgress * w * 0.08f * flare
+                            zLocal -= tearProgress * cutWeight(uGrid) * w * 0.08f * flare
                         }
                         val (nxL, nyL, nzL) = computeMeshNormal(uGrid, v, isFront = false)
-                        val backTexU = (1f - uGrid) * backW
+                        val backTexU = (1f - uTexNorm) * backW
                         emitVertex(
                             xLocal, yLocal, zLocal, nxL, nyL, nzL,
                             backTexU, v * backH,
-                            mat = 1, isTornTopCap = isUpperCap
+                            mat = 1, isTornTopCap = isUpperCap, uAlong = uGrid
                         )
                     }
                 }
@@ -975,7 +1008,7 @@ fun BoosterPack3DMesh(
                         val xLocal = (uTexNorm - 0.5f) * w
                         val yLocal = (v - 0.5f) * h
                         val zBackLip = -(BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGrid, v) * w +
-                            tearProgress * w * 0.065f * (1f - t))
+                            tearProgress * cutWeight(uGrid) * w * 0.065f * (1f - t))
                         emitVertex(
                             xLocal, yLocal, zBackLip + 1.5f,
                             0f, 0.12f, 1f,
@@ -1007,10 +1040,10 @@ fun BoosterPack3DMesh(
                     val yLocal = (v - 0.5f) * h
                     val zBase = BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGridEdge, v) * w
                     val mouthFlareFront = if (!isUpperCap && t < 0.24f) {
-                        tearProgress * w * 0.115f * (1f - t / 0.24f).pow(1.4f)
+                        tearProgress * cutWeight(uGridEdge) * w * 0.115f * (1f - t / 0.24f).pow(1.4f)
                     } else 0f
                     val mouthFlareBack = if (!isUpperCap && t < 0.24f) {
-                        tearProgress * w * 0.08f * (1f - t / 0.24f).pow(1.4f)
+                        tearProgress * cutWeight(uGridEdge) * w * 0.08f * (1f - t / 0.24f).pow(1.4f)
                     } else 0f
                     val zFront = zBase + mouthFlareFront
                     val zBack = -(zBase + mouthFlareBack)
@@ -1018,9 +1051,9 @@ fun BoosterPack3DMesh(
                     val pleatInset = w * 0.010f * bellyRatio
                     val texY = v * sideH
 
-                    emitVertex(xEdge, yLocal, zFront, signX * 0.92f, 0f, 0.38f, 0.12f * sideW, texY, mat = 2, isTornTopCap = isUpperCap)
-                    emitVertex(xEdge - signX * pleatInset, yLocal, (zFront + zBack) * 0.5f, signX, 0f, 0f, 0.50f * sideW, texY, mat = 2, isTornTopCap = isUpperCap)
-                    emitVertex(xEdge, yLocal, zBack, signX * 0.92f, 0f, -0.38f, 0.88f * sideW, texY, mat = 2, isTornTopCap = isUpperCap)
+                    emitVertex(xEdge, yLocal, zFront, signX * 0.92f, 0f, 0.38f, 0.12f * sideW, texY, mat = 2, isTornTopCap = isUpperCap, uAlong = uGridEdge)
+                    emitVertex(xEdge - signX * pleatInset, yLocal, (zFront + zBack) * 0.5f, signX, 0f, 0f, 0.50f * sideW, texY, mat = 2, isTornTopCap = isUpperCap, uAlong = uGridEdge)
+                    emitVertex(xEdge, yLocal, zBack, signX * 0.92f, 0f, -0.38f, 0.88f * sideW, texY, mat = 2, isTornTopCap = isUpperCap, uAlong = uGridEdge)
                 }
                 for (j in 0 until rowSteps) {
                     val f0 = baseStart + j * 3
@@ -1069,8 +1102,8 @@ fun BoosterPack3DMesh(
                 val xLocal = (uTexNorm - 0.5f) * w
                 val zHalf = BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGrid, v) * w
                 val isUpperCap = isTearing && isTop
-                emitVertex(xLocal, yLocal, +zHalf, 0f, nyCap, 0.25f, uGrid * sideW, if (isTop) 0.04f * sideH else 0.96f * sideH, mat = 2, isTornTopCap = isUpperCap)
-                emitVertex(xLocal, yLocal, -zHalf, 0f, nyCap, -0.25f, uGrid * sideW, if (isTop) 0.08f * sideH else 0.92f * sideH, mat = 2, isTornTopCap = isUpperCap)
+                emitVertex(xLocal, yLocal, +zHalf, 0f, nyCap, 0.25f, uGrid * sideW, if (isTop) 0.04f * sideH else 0.96f * sideH, mat = 2, isTornTopCap = isUpperCap, uAlong = uGrid)
+                emitVertex(xLocal, yLocal, -zHalf, 0f, nyCap, -0.25f, uGrid * sideW, if (isTop) 0.08f * sideH else 0.92f * sideH, mat = 2, isTornTopCap = isUpperCap, uAlong = uGrid)
             }
             for (i in 0 until cols) {
                 val f0 = base + i * 2
@@ -1141,7 +1174,11 @@ fun BoosterPack3DMesh(
                 )
 
                 // Front uses front alphaMask; full-bleed back/side/inner use solid opaque specular mask
-                specPaint.shader = if (mat == 0) tex.alphaShader else tex.opaqueWhiteShader
+                specPaint.shader = when (mat) {
+                    0 -> tex.alphaShader
+                    1 -> tex.backAlphaShader
+                    else -> tex.opaqueWhiteShader
+                }
                 nc.drawVertices(
                     NativeCanvas.VertexMode.TRIANGLES,
                     totalVertFloats,
