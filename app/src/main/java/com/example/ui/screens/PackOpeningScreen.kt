@@ -89,6 +89,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -113,6 +114,7 @@ import com.example.model.OwnedCard
 import com.example.model.PackSatinTheme
 import com.example.model.SkinRarity
 import com.example.ui.components.BoosterPack3DMesh
+import com.example.ui.components.PackMeshTextureCache
 import com.example.ui.components.BoosterPouchPhysics
 import com.example.ui.components.BoosterPouchShape
 import com.example.ui.components.CardBackView
@@ -387,7 +389,7 @@ fun PackOpeningScreen(
                         PackTearStage(
                             keySeed = session.currentPackIndex,
                             coverRes = MegaPackConfig.COVER_DRAWABLE_RES,
-                            satinTheme = session.wrapperTheme,
+                            baseTheme = session.wrapperTheme,
                             packCount = session.bundle.packCount,
                             remainingPacksInStack = session.remainingPacksInStack,
                             currentPackNumber = session.currentPackIndex + 1,
@@ -1203,11 +1205,18 @@ private fun PulledSummaryGrid(
     }
 }
 
+/** Each pack of a bundle uses the next colour theme in the list, so a stack of 10 is not one colour. */
+private fun themeForPack(base: PackSatinTheme, packIndex: Int): PackSatinTheme {
+    val all = PackSatinTheme.ALL
+    val start = all.indexOfFirst { it.id == base.id }.coerceAtLeast(0)
+    return all[(start + packIndex.coerceAtLeast(0)) % all.size]
+}
+
 @Composable
 private fun PackTearStage(
     keySeed: Int,
     coverRes: Int,
-    satinTheme: PackSatinTheme,
+    baseTheme: PackSatinTheme,
     packCount: Int,
     remainingPacksInStack: Int,
     currentPackNumber: Int,
@@ -1219,6 +1228,20 @@ private fun PackTearStage(
     val palette = CollectorTheme.colors
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current.density
+    // Every pack in a bundle gets its own colour theme (pack 1 = base theme, pack 2 = next one, ...)
+    val satinTheme = themeForPack(baseTheme, currentPackNumber - 1)
+    val appContext = LocalContext.current
+    LaunchedEffect(currentPackNumber, baseTheme) {
+        // Build the next pack's textures ahead of time so the next pack never pops in blank
+        runCatching {
+            PackMeshTextureCache.getOrBuild(
+                appContext,
+                coverRes,
+                themeForPack(baseTheme, currentPackNumber),
+                packCount
+            )
+        }
+    }
     val tearAnim = remember(keySeed) { Animatable(0f) }
     val yawAnim = remember(keySeed) { Animatable(0f) }
     val pitchAnim = remember(keySeed) { Animatable(0f) }
@@ -1318,7 +1341,7 @@ private fun PackTearStage(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // Tall, sleek TCG booster pack proportions (196 x 368 dp => 1.88:1 ratio)
-        val packWidthDp = 238.dp
+        val packWidthDp = 288.dp
         val packHeightDp = 368.dp
         val prismCameraDistancePx = remember(density) { maxOf(820f * density, 1600f) }
 
@@ -1390,6 +1413,7 @@ private fun PackTearStage(
                 val offY = (layer * 3.8f + 4f).dp
                 val rotZ = ((layer * 1.15f) * if (layer % 2 == 0) -1f else 1f).coerceIn(-5.5f, 5.5f)
                 val shadeAlpha = (0.18f + layer * 0.045f).coerceIn(0.18f, 0.56f)
+                val layerTheme = themeForPack(baseTheme, currentPackNumber - 1 + layer)
 
                 Box(
                     modifier = Modifier
@@ -1421,8 +1445,9 @@ private fun PackTearStage(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .background(layerTheme.logoAccent.copy(alpha = 0.34f))
                             .background(Color.Black.copy(alpha = shadeAlpha))
-                            .border(1.2.dp, satinTheme.crestTint.copy(alpha = 0.42f), BoosterPouchShape)
+                            .border(1.2.dp, layerTheme.crestTint.copy(alpha = 0.42f), BoosterPouchShape)
                     )
                 }
             }
@@ -1534,18 +1559,20 @@ private fun PackTearStage(
                 if (tearProgress > 0.04f) {
                     val rise = (((tearProgress - 0.18f) / 0.82f).coerceIn(0f, 1f) * 0.40f +
                         cardRiseAnim.value * 0.60f)
-                    for (i in 2 downTo 0) {
-                        val cardLift = rise * (74f - i * 14f)
-                        CardBackView(
-                            rarityHint = SkinRarity.COMMON,
-                            isMisprint = false,
-                            showTeaserLabel = false,
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .width(196.dp)
-                                .offset(x = ((i - 1) * 5f).dp, y = (110f - cardLift).dp)
-                                .graphicsLayer { rotationZ = (i - 1) * 2.4f * rise }
-                        )
+                    Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
+                        for (i in 2 downTo 0) {
+                            val cardLift = rise * (74f - i * 14f)
+                            CardBackView(
+                                rarityHint = SkinRarity.COMMON,
+                                isMisprint = false,
+                                showTeaserLabel = false,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .width(232.dp)
+                                    .offset(x = ((i - 1) * 4f).dp, y = (112f - cardLift).dp)
+                                    .graphicsLayer { rotationZ = (i - 1) * 2.0f * rise }
+                            )
+                        }
                     }
                 }
 

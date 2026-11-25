@@ -77,7 +77,8 @@ data class PackMeshTextures(
     val innerFoilShader: BitmapShader,
     val opaqueWhiteShader: BitmapShader,
     val rowLeftEdgeU: FloatArray,
-    val rowRightEdgeU: FloatArray
+    val rowRightEdgeU: FloatArray,
+    val centerU: Float
 )
 
 object PackMeshTextureCache {
@@ -123,6 +124,10 @@ object PackMeshTextureCache {
 
         val frontBmp = Bitmap.createScaledBitmap(trimmed, TARGET_W, TARGET_H, true)
         if (trimmed !== frontBmp) trimmed.recycle()
+
+        if (theme.id != "obsidian_royale") {
+            shiftPurpleHue(frontBmp, themeHue(theme))
+        }
 
         if (theme.id != "obsidian_royale") {
             val c = NativeCanvas(frontBmp)
@@ -181,12 +186,25 @@ object PackMeshTextureCache {
             }
         }
 
-        // Mirrored copy of the front silhouette: the back is cut to exactly the same outline as the front
-        val mirrorMatrix = android.graphics.Matrix().apply { preScale(-1f, 1f, TARGET_W / 2f, 0f) }
-        val backAlphaMaskBmp = Bitmap.createBitmap(TARGET_W, TARGET_H, Bitmap.Config.ARGB_8888)
-        NativeCanvas(backAlphaMaskBmp).drawBitmap(alphaMaskBmp, mirrorMatrix, null)
+        // Centre of the visible pack inside the artwork. The mesh is centred on this, not on the image centre
+        val centerU = ((leftU.minOrNull() ?: 0f) + (rightU.maxOrNull() ?: 1f)) * 0.5f
 
         val backBmp = renderBackSealBitmap(theme, packCount)
+
+        // Back silhouette = front silhouette seen from behind, forced fully opaque (no see-through foil)
+        val backMaskPixels = IntArray(TARGET_W * TARGET_H)
+        for (y in 0 until TARGET_H) {
+            for (xb in 0 until TARGET_W) {
+                val uc = 1f - xb.toFloat() / (TARGET_W - 1)
+                val uFront = uc - 0.5f + centerU
+                val xf = (uFront * TARGET_W).toInt()
+                val a = if (xf in 0 until TARGET_W) (pixels[y * TARGET_W + xf] ushr 24) and 0xFF else 0
+                backMaskPixels[y * TARGET_W + xb] = ((if (a >= 90) 255 else 0) shl 24) or 0x00FFFFFF
+            }
+        }
+        val backAlphaMaskBmp = Bitmap.createBitmap(TARGET_W, TARGET_H, Bitmap.Config.ARGB_8888).apply {
+            setPixels(backMaskPixels, 0, TARGET_W, 0, 0, TARGET_W, TARGET_H)
+        }
         NativeCanvas(backBmp).drawBitmap(
             backAlphaMaskBmp, 0f, 0f,
             NativePaint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) }
@@ -213,7 +231,8 @@ object PackMeshTextureCache {
             innerFoilShader = BitmapShader(innerBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
             opaqueWhiteShader = BitmapShader(whiteBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
             rowLeftEdgeU = leftU,
-            rowRightEdgeU = rightU
+            rowRightEdgeU = rightU,
+            centerU = centerU
         )
     }
 
@@ -298,6 +317,36 @@ object PackMeshTextureCache {
      * Full-bleed 100% opaque back foil texture so back edges join cleanly into the V-pleat side gussets
      * without any translucent border seams or hairline gaps.
      */
+    private fun themeHue(theme: PackSatinTheme): Float {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(theme.logoAccent.toArgb(), hsv)
+        return hsv[0]
+    }
+
+    /** Recolours the purple parts of the artwork to the theme hue; gold, white and black stay as they are. */
+    private fun shiftPurpleHue(bmp: Bitmap, targetHue: Float) {
+        val w = bmp.width
+        val h = bmp.height
+        val px = IntArray(w * h)
+        bmp.getPixels(px, 0, w, 0, 0, w, h)
+        val hsv = FloatArray(3)
+        val delta = targetHue - 280f
+        for (i in px.indices) {
+            val p = px[i]
+            val alpha = (p ushr 24) and 0xFF
+            if (alpha == 0) continue
+            android.graphics.Color.colorToHSV(p, hsv)
+            val hue = hsv[0]
+            if (hsv[1] > 0.20f && hsv[2] > 0.10f && hue in 225f..340f) {
+                val edge = min(hue - 225f, 340f - hue) / 20f
+                val weight = edge.coerceIn(0f, 1f)
+                hsv[0] = (((hue + delta * weight) % 360f) + 360f) % 360f
+                px[i] = android.graphics.Color.HSVToColor(alpha, hsv)
+            }
+        }
+        bmp.setPixels(px, 0, w, 0, 0, w, h)
+    }
+
     private fun renderBackSealBitmap(
         theme: PackSatinTheme,
         packCount: Int
@@ -397,6 +446,10 @@ object PackMeshTextureCache {
             c.drawLine(rx + 4f, h * BoosterPouchPhysics.BOTTOM_CRIMP_FRAC, rx + 4f, h, ribDark)
         }
 
+        // Everything below is squeezed a little so the odds panel always sits inside the pack body
+        c.save()
+        c.scale(0.82f, 1f, w * 0.5f, 0f)
+
         val cardLeft = 36f
         val cardRight = w - 36f
         val cardTop = h * 0.25f
@@ -470,6 +523,7 @@ object PackMeshTextureCache {
             c.drawRect(bx, h * 0.79f, bx + bw, h * 0.845f, barPaint)
             bx += bw + 5f
         }
+        c.restore()
         return bmp
     }
 }
@@ -637,6 +691,38 @@ fun BoosterPack3DMesh(
         val backH = tex.backBitmap.height.toFloat()
         val sideW = tex.sideFoilBitmap.width.toFloat()
         val sideH = tex.sideFoilBitmap.height.toFloat()
+        // The pack can be wider than its artwork. Only the outer borders stretch; the middle
+        // (logo and title) keeps its natural proportions. The mesh is also centred on the pack.
+        val naturalW = min(h * frontW / frontH, w)
+        val minLeftU = tex.rowLeftEdgeU.minOrNull() ?: 0f
+        val maxRightU = tex.rowRightEdgeU.maxOrNull() ?: 1f
+        val halfSpanU = ((maxRightU - minLeftU) * 0.5f).coerceAtLeast(0.05f)
+        val stretchSteps = 128
+        val stretchCum = FloatArray(stretchSteps + 1)
+        run {
+            var prev = 0f
+            for (i in 1..stretchSteps) {
+                val u = i.toFloat() / stretchSteps
+                val d = abs(u - tex.centerU) / halfSpanU
+                val wgt = ((d - 0.50f) / 0.50f).coerceIn(0f, 1f)
+                stretchCum[i] = stretchCum[i - 1] + (prev + wgt) * 0.5f / stretchSteps
+                prev = wgt
+            }
+        }
+        fun cumAt(u: Float): Float {
+            val f = u.coerceIn(0f, 1f) * stretchSteps
+            val i0 = f.toInt().coerceIn(0, stretchSteps - 1)
+            val t = f - i0
+            return stretchCum[i0] * (1f - t) + stretchCum[i0 + 1] * t
+        }
+        val visibleTarget = w * 0.90f
+        val visibleNatural = (maxRightU - minLeftU) * naturalW
+        val deltaCum = (cumAt(maxRightU) - cumAt(minLeftU)).coerceAtLeast(1e-4f)
+        val stretchK = ((visibleTarget - visibleNatural) / (naturalW * deltaCum)).coerceAtLeast(0f)
+        fun mapXRaw(u: Float): Float = naturalW * (u + stretchK * cumAt(u))
+        val packCenterX = (mapXRaw(minLeftU) + mapXRaw(maxRightU)) * 0.5f
+        fun mapX(u: Float): Float = mapXRaw(u) - packCenterX
+
         val innerW = tex.innerFoilBitmap.width.toFloat()
         val innerH = tex.innerFoilBitmap.height.toFloat()
 
@@ -821,7 +907,7 @@ fun BoosterPack3DMesh(
                 for (i in 0..cols) {
                     val uGrid = i.toFloat() / cols.toFloat()
                     val uTexNorm = uL + (uR - uL) * uGrid
-                    val xLocal = (uTexNorm - 0.5f) * w
+                    val xLocal = mapX(uTexNorm)
                     val zLocal = BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGrid, v) * w
                     val (nxL, nyL, nzL) = computeMeshNormal(uGrid, v, isFront = true)
                     emitVertex(xLocal, yLocal, zLocal, nxL, nyL, nzL, uTexNorm * frontW, v * frontH, mat = 0)
@@ -844,11 +930,11 @@ fun BoosterPack3DMesh(
                 for (i in 0..cols) {
                     val uGrid = i.toFloat() / cols.toFloat()
                     val uTexNorm = uL + (uR - uL) * uGrid
-                    val xLocal = (uTexNorm - 0.5f) * w
+                    val xLocal = mapX(uTexNorm)
                     val zLocal = -(BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGrid, v) +
                         BoosterPouchPhysics.pouchBackCenterFinFraction(uGrid, v)) * w
                     val (nxL, nyL, nzL) = computeMeshNormal(uGrid, v, isFront = false)
-                    val backTexU = (1f - uTexNorm) * backW
+                    val backTexU = (0.5f - uTexNorm + tex.centerU) * backW
                     emitVertex(xLocal, yLocal, zLocal, nxL, nyL, nzL, backTexU, v * backH, mat = 1)
                 }
             }
@@ -867,7 +953,7 @@ fun BoosterPack3DMesh(
                 for (j in 0..rows) {
                     val v = j.toFloat() / rows.toFloat()
                     val uEdge = edges[j]
-                    val xEdge = (uEdge - 0.5f) * w
+                    val xEdge = mapX(uEdge)
                     val yLocal = (v - 0.5f) * h
                     val zHalf = BoosterPouchPhysics.pouchMeshHalfDepthFraction(if (isRightEdge) 1f else 0f, v) * w
                     val bellyRatio = ((zHalf / (w * BoosterPouchPhysics.BELLY_HALF_DEPTH_RATIO)) - 0.1f).coerceIn(0f, 1f)
@@ -922,7 +1008,7 @@ fun BoosterPack3DMesh(
                         val uL = sampleEdgeU(tex.rowLeftEdgeU, v)
                         val uR = sampleEdgeU(tex.rowRightEdgeU, v)
                         val uTexNorm = uL + (uR - uL) * uGrid
-                        val xLocal = (uTexNorm - 0.5f) * w
+                        val xLocal = mapX(uTexNorm)
                         var yLocal = (v - 0.5f) * h
                         var zLocal = BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGrid, v) * w
                         if (!isUpperCap && t < 0.24f) {
@@ -965,7 +1051,7 @@ fun BoosterPack3DMesh(
                         val uL = sampleEdgeU(tex.rowLeftEdgeU, v)
                         val uR = sampleEdgeU(tex.rowRightEdgeU, v)
                         val uTexNorm = uL + (uR - uL) * uGrid
-                        val xLocal = (uTexNorm - 0.5f) * w
+                        val xLocal = mapX(uTexNorm)
                         val yLocal = (v - 0.5f) * h
                         var zLocal = -(BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGrid, v) +
                             BoosterPouchPhysics.pouchBackCenterFinFraction(uGrid, v)) * w
@@ -974,7 +1060,7 @@ fun BoosterPack3DMesh(
                             zLocal -= tearProgress * cutWeight(uGrid) * w * 0.08f * flare
                         }
                         val (nxL, nyL, nzL) = computeMeshNormal(uGrid, v, isFront = false)
-                        val backTexU = (1f - uTexNorm) * backW
+                        val backTexU = (0.5f - uTexNorm + tex.centerU) * backW
                         emitVertex(
                             xLocal, yLocal, zLocal, nxL, nyL, nzL,
                             backTexU, v * backH,
@@ -1005,7 +1091,7 @@ fun BoosterPack3DMesh(
                         val uR = sampleEdgeU(tex.rowRightEdgeU, v)
                         val insetU = 0.025f
                         val uTexNorm = (uL + insetU) + ((uR - insetU) - (uL + insetU)) * uGrid
-                        val xLocal = (uTexNorm - 0.5f) * w
+                        val xLocal = mapX(uTexNorm)
                         val yLocal = (v - 0.5f) * h
                         val zBackLip = -(BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGrid, v) * w +
                             tearProgress * cutWeight(uGrid) * w * 0.065f * (1f - t))
@@ -1036,7 +1122,7 @@ fun BoosterPack3DMesh(
                     val t = j.toFloat() / rowSteps.toFloat()
                     val v = (if (isUpperCap) splitHere * t else splitHere + (1f - splitHere) * t).coerceIn(0f, 1f)
                     val uEdge = sampleEdgeU(edges, v)
-                    val xEdge = (uEdge - 0.5f) * w
+                    val xEdge = mapX(uEdge)
                     val yLocal = (v - 0.5f) * h
                     val zBase = BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGridEdge, v) * w
                     val mouthFlareFront = if (!isUpperCap && t < 0.24f) {
@@ -1099,7 +1185,7 @@ fun BoosterPack3DMesh(
             for (i in 0..cols) {
                 val uGrid = i.toFloat() / cols.toFloat()
                 val uTexNorm = uL + (uR - uL) * uGrid
-                val xLocal = (uTexNorm - 0.5f) * w
+                val xLocal = mapX(uTexNorm)
                 val zHalf = BoosterPouchPhysics.pouchMeshHalfDepthFraction(uGrid, v) * w
                 val isUpperCap = isTearing && isTop
                 emitVertex(xLocal, yLocal, +zHalf, 0f, nyCap, 0.25f, uGrid * sideW, if (isTop) 0.04f * sideH else 0.96f * sideH, mat = 2, isTornTopCap = isUpperCap, uAlong = uGrid)
