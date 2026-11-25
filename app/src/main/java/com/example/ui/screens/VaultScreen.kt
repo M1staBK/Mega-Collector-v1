@@ -57,6 +57,7 @@ import com.example.model.OwnedCard
 import com.example.model.SkinRarity
 import com.example.ui.components.EmptyVaultState
 import com.example.ui.components.HolographicCardView
+import com.example.ui.components.BinderBookDialog
 import com.example.ui.components.VaultBinderBannerFrame
 import com.example.ui.theme.CollectorTheme
 import com.example.ui.viewmodel.MegaCollectorUiState
@@ -93,6 +94,17 @@ fun VaultScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(VaultFilter.ALL) }
     var sortOrder by remember { mutableStateOf(VaultSortOrder.RARITY) }
+    var showBinderBook by remember { mutableStateOf(false) }
+    val binderCards = remember(uiState.ownedCards) {
+        uiState.ownedCards
+            .groupBy { it.catalogId }
+            .map { (_, copies) -> copies.maxWith(compareBy<OwnedCard>({ it.isMisprint }, { it.rarity.ordinal })) }
+            .sortedWith(
+                compareByDescending<OwnedCard> { it.isMisprint }
+                    .thenByDescending { it.rarity.ordinal }
+                    .thenBy { it.heroName }
+            )
+    }
 
     val countByCatalog = remember(uiState.ownedCards) {
         uiState.ownedCards.groupingBy { it.catalogId }.eachCount()
@@ -151,6 +163,11 @@ fun VaultScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 10.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .clickable {
+                    onButtonClickSfx()
+                    showBinderBook = true
+                }
                 .testTag("vault_binder_banner")
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
@@ -253,6 +270,22 @@ fun VaultScreen(
                     }
                 }
             }
+        }
+
+        Text(
+            text = "Tap your binder to open it and flip through your cards",
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.muted,
+            modifier = Modifier.padding(start = 22.dp, bottom = 4.dp)
+        )
+
+        if (showBinderBook) {
+            BinderBookDialog(
+                binder = equippedBinder,
+                cards = binderCards,
+                onInspectCard = onInspectCard,
+                onClose = { showBinderBook = false }
+            )
         }
 
         // Search Pill + Circular Sort Button Row

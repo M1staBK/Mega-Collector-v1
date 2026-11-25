@@ -11,7 +11,8 @@ enum class MetaRankFilter(val label: String, val apiParam: String) {
     EPIC("Epic", "epic"),
     LEGEND("Legend", "legend"),
     MYTHIC("Mythic", "mythic"),
-    GLORY("Mythic+", "glory")
+    HONOR("Honor", "honor"),
+    GLORY("Glory", "glory")
 }
 
 enum class MetaTierGrade(val label: String) {
@@ -76,19 +77,28 @@ data class HeroBuildGuide(
     val comboTip: String
 )
 
+data class CounterBuildItem(
+    val name: String,
+    val reason: String,
+    val iconUrl: String = ""
+)
+
+/** Rule-based "how to build against this hero" advice (not live match data). */
+data class CounterBuildPlan(
+    val headline: String,
+    val traits: List<String>,
+    val items: List<CounterBuildItem>,
+    val note: String
+)
+
 data class HeroMetaDetail(
     val heroStats: MetaHeroStats,
     val strongAgainst: List<HeroCounterMatchup>,
     val counteredBy: List<HeroCounterMatchup>,
     val synergies: List<HeroCounterMatchup>,
     val buildGuides: List<HeroBuildGuide>,
-    val skillSummary: List<Pair<String, String>>
-)
-
-data class RoneEndpointDiscovery(
-    val heroRankPaths: List<String>,
-    val heroListPaths: List<String>,
-    val heroDetailTemplates: List<String>,
-    val heroCounterTemplates: List<String>,
-    val heroBuildTemplates: List<String>
+    val skillSummary: List<Pair<String, String>>,
+    val counterBuild: CounterBuildPlan? = null,
+    /** Moonton's own matchup notes (strong / weak / assist descriptions). */
+    val officialNotes: List<Pair<String, String>> = emptyList()
 )

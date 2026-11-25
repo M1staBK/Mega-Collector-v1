@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.example.model.CounterBuildPlan
 import com.example.model.HeroBuildGuide
 import com.example.model.HeroCounterMatchup
 import com.example.model.HeroMetaDetail
@@ -184,13 +185,16 @@ fun MetaGuidesScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
                                     Text(
-                                        text = "MLBB Arena Meta",
-                                        style = MaterialTheme.typography.headlineMedium,
+                                        text = "MOBA META",
+                                        style = MaterialTheme.typography.headlineMedium.copy(
+                                            fontWeight = FontWeight.Black,
+                                            letterSpacing = 1.5.sp
+                                        ),
                                         color = palette.accentPrimary
                                     )
                                     Text(
-                                        text = "Live picks, bans, tier list, counters & builds",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        text = "Last 7 days of ranked games  •  tier = win rate + ¼ ban rate",
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = palette.muted
                                     )
                                 }
@@ -344,7 +348,7 @@ fun MetaGuidesScreen(
                             ) {
                                 CircularProgressIndicator(color = palette.accentPrimary)
                                 Text(
-                                    text = "Fetching live MLBB meta from arena.rone.dev...",
+                                    text = "Loading the live MLBB meta...",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = palette.muted
                                 )
@@ -434,15 +438,39 @@ fun MetaGuidesScreen(
                         }
                     }
 
-                    items(filteredSortedHeroes, key = { "${it.heroId}_${it.heroName}" }) { hero ->
-                        MetaHeroRowCard(
-                            hero = hero,
-                            sortMode = metaState.sortMode,
-                            onClick = {
-                                onButtonClickSfx()
-                                onOpenHeroDetail(hero)
+                    val showPodium = metaState.sortMode == MetaSortMode.TIER_LIST &&
+                        searchQuery.isBlank() && selectedRole == "All" && filteredSortedHeroes.size >= 3
+                    if (showPodium) {
+                        item(key = "meta_podium") {
+                            MetaPodium(
+                                heroes = filteredSortedHeroes.take(3),
+                                onClick = { hero ->
+                                    onButtonClickSfx()
+                                    onOpenHeroDetail(hero)
+                                }
+                            )
+                        }
+                    }
+
+                    val gradeCounts = filteredSortedHeroes.groupingBy { it.tierGrade }.eachCount()
+                    filteredSortedHeroes.forEachIndexed { index, hero ->
+                        if (metaState.sortMode == MetaSortMode.TIER_LIST &&
+                            (index == 0 || filteredSortedHeroes[index - 1].tierGrade != hero.tierGrade)
+                        ) {
+                            item(key = "tier_header_${hero.tierGrade.name}") {
+                                TierSectionHeader(grade = hero.tierGrade, count = gradeCounts[hero.tierGrade] ?: 0)
                             }
-                        )
+                        }
+                        item(key = "${hero.heroId}_${hero.heroName}") {
+                            MetaHeroRowCard(
+                                hero = hero,
+                                sortMode = metaState.sortMode,
+                                onClick = {
+                                    onButtonClickSfx()
+                                    onOpenHeroDetail(hero)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -450,7 +478,7 @@ fun MetaGuidesScreen(
     }
 
     val selectedDetail = metaState.selectedHeroDetail
-    if (selectedDetail != null || metaState.isLoadingDetail) {
+    if (selectedDetail != null || metaState.isLoadingDetail || metaState.detailError != null) {
         HeroDetailGuideDialog(
             detail = selectedDetail,
             isLoading = metaState.isLoadingDetail,
@@ -766,6 +794,12 @@ private fun HeroDetailGuideDialog(
                         }
                     }
 
+                    // Counter build (rule based) and Moonton's own matchup notes
+                    detail.counterBuild?.let { plan -> CounterBuildSection(plan = plan) }
+                    if (detail.officialNotes.isNotEmpty()) {
+                        OfficialNotesSection(notes = detail.officialNotes)
+                    }
+
                     // Build Guides
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -889,7 +923,8 @@ private fun MatchupGroupCard(
                             if (m.winRatePct > 0.0) {
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "%.1f%%".format(m.winRatePct),
+                                    text = "%.1f%%".format(m.winRatePct) +
+                                        if (m.deltaWinRatePct != 0.0) " (%+.1f)".format(m.deltaWinRatePct) else "",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = accent
                                 )
@@ -947,12 +982,27 @@ private fun BuildGuideCard(guide: HeroBuildGuide) {
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(1.dp, palette.border)
                     ) {
-                        Text(
-                            text = item.name,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.ink,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (item.iconUrl.isNotBlank()) {
+                                AsyncImage(
+                                    model = rememberMlbbSquareImageRequest(item.iconUrl),
+                                    contentDescription = item.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(RoundedCornerShape(5.dp))
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                            }
+                            Text(
+                                text = item.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.ink
+                            )
+                        }
                     }
                 }
             }
@@ -973,4 +1023,260 @@ private fun tierBadgeColor(grade: MetaTierGrade): Color = when (grade) {
     MetaTierGrade.A -> Color(0xFF0284C7)
     MetaTierGrade.B -> Color(0xFF10B981)
     MetaTierGrade.C -> Color(0xFF64748B)
+}
+
+
+@Composable
+private fun MetaPodium(
+    heroes: List<MetaHeroStats>,
+    onClick: (MetaHeroStats) -> Unit
+) {
+    val palette = CollectorTheme.colors
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        listOf(1, 0, 2).forEach { place ->
+            val hero = heroes[place]
+            val first = place == 0
+            val tierColor = tierBadgeColor(hero.tierGrade)
+            Surface(
+                color = palette.cardSurface,
+                shape = RoundedCornerShape(20.dp),
+                shadowElevation = if (first) 6.dp else 2.dp,
+                border = BorderStroke(if (first) 1.6.dp else 1.dp, if (first) StudioGold else palette.border),
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { onClick(hero) }
+                    .testTag("meta_podium_${place + 1}")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = if (first) 16.dp else 12.dp, horizontal = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "#${place + 1}",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black),
+                        color = if (first) StudioGold else palette.muted
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(if (first) 72.dp else 56.dp)
+                            .clip(CircleShape)
+                            .background(palette.frostSurface),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (hero.iconUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = rememberMlbbSquareImageRequest(hero.iconUrl),
+                                contentDescription = hero.heroName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                    Text(
+                        text = hero.heroName,
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                        color = palette.ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "%.1f%% win".format(hero.winRatePct),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = RarityUncommon
+                    )
+                    Surface(
+                        color = tierColor.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(7.dp),
+                        border = BorderStroke(1.dp, tierColor.copy(alpha = 0.65f))
+                    ) {
+                        Text(
+                            text = "${hero.tierGrade.label} Tier",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                            color = tierColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TierSectionHeader(grade: MetaTierGrade, count: Int) {
+    val palette = CollectorTheme.colors
+    val color = tierBadgeColor(grade)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Surface(color = color, shape = RoundedCornerShape(10.dp)) {
+            Text(
+                text = "${grade.label} TIER",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black),
+                color = Color.White,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+            )
+        }
+        Text(
+            text = "$count heroes",
+            style = MaterialTheme.typography.labelMedium,
+            color = palette.muted
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(color.copy(alpha = 0.35f))
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CounterBuildSection(plan: CounterBuildPlan) {
+    val palette = CollectorTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.Shield,
+                contentDescription = null,
+                tint = StudioGold,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "COUNTER BUILD",
+                style = MaterialTheme.typography.titleMedium,
+                color = palette.ink
+            )
+        }
+        Surface(
+            color = palette.frostSurface,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, StudioGold.copy(alpha = 0.45f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = plan.headline,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                    color = palette.ink
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    plan.traits.forEach { trait ->
+                        Surface(
+                            color = palette.cardSurface,
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, palette.border)
+                        ) {
+                            Text(
+                                text = trait,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.accentPrimary,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+                plan.items.forEach { item ->
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(palette.cardSurface),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (item.iconUrl.isNotBlank()) {
+                                AsyncImage(
+                                    model = rememberMlbbSquareImageRequest(item.iconUrl),
+                                    contentDescription = item.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Text(
+                                    text = item.name.take(1),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = StudioGold
+                                )
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = item.name,
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                color = palette.ink
+                            )
+                            Text(
+                                text = item.reason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.muted
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = plan.note,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.muted
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OfficialNotesSection(notes: List<Pair<String, String>>) {
+    val palette = CollectorTheme.colors
+    Surface(
+        color = palette.frostSurface,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, palette.border),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = "FROM THE GAME'S OWN HERO NOTES",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = palette.accentPrimary
+            )
+            notes.forEach { (label, text) ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                    color = palette.ink
+                )
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.muted
+                )
+            }
+        }
+    }
 }

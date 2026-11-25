@@ -16,6 +16,7 @@ import com.example.data.local.PlayerPreferencesStore
 import com.example.data.local.PlayerWalletState
 import com.example.data.remote.AuthenticatedUser
 import com.example.data.remote.FirestoreCollectorService
+import com.example.data.remote.MobaMetaRepository
 import com.example.data.repository.CollectorRepository
 import com.example.model.AchievementBadgeUi
 import com.example.model.AchievementCatalog
@@ -27,6 +28,9 @@ import com.example.model.DailyRewardTier
 import com.example.model.DecodedTradeSlip
 import com.example.model.DiamondExchangeOption
 import com.example.model.MegaPackConfig
+import com.example.model.MetaHeroStats
+import com.example.model.MetaRankFilter
+import com.example.model.MetaSortMode
 import com.example.model.MlbbCollectionTier
 import com.example.model.OwnedCard
 import com.example.model.P2PTradeListing
@@ -38,6 +42,7 @@ import com.example.model.QuizQuestionBank
 import com.example.model.SkinCatalogItem
 import com.example.model.SkinRarity
 import com.example.model.TradeListing
+import com.example.ui.screens.MetaGuidesUiState
 import com.example.ui.components.PackMeshTextureCache
 import com.example.ui.components.buildMlbbCardImageRequest
 import com.example.ui.components.buildMlbbSquareImageRequest
@@ -52,6 +57,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -1107,6 +1113,72 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 summaryPackOnly = false
             )
         }
+    }
+
+    // ---------------- MLBB meta: picks, bans, tier list, counters and builds ----------------
+    private val roneRepository by lazy { MobaMetaRepository(getApplication<Application>()) }
+    private val _metaState = MutableStateFlow(MetaGuidesUiState())
+    val metaState: StateFlow<MetaGuidesUiState> = _metaState.asStateFlow()
+    private var metaLoadedOnce = false
+
+    fun loadMetaIfNeeded() {
+        if (!metaLoadedOnce) refreshMeta(force = false)
+    }
+
+    fun refreshMeta(force: Boolean = true) {
+        metaLoadedOnce = true
+        val rank = _metaState.value.rankFilter
+        _metaState.update { it.copy(isLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            roneRepository.fetchMetaHeroStats(rank, uiState.value.catalog, forceRefresh = force)
+                .onSuccess { heroes ->
+                    _metaState.update {
+                        if (it.rankFilter == rank) it.copy(isLoading = false, heroes = heroes, errorMessage = null) else it
+                    }
+                }
+                .onFailure { err ->
+                    _metaState.update {
+                        if (it.rankFilter == rank) {
+                            it.copy(isLoading = false, errorMessage = err.localizedMessage ?: "Could not load the meta right now.")
+                        } else {
+                            it
+                        }
+                    }
+                }
+        }
+    }
+
+    fun selectMetaRankFilter(filter: MetaRankFilter) {
+        if (_metaState.value.rankFilter == filter && _metaState.value.heroes.isNotEmpty()) return
+        _metaState.update { it.copy(rankFilter = filter, heroes = emptyList()) }
+        refreshMeta(force = false)
+    }
+
+    fun selectMetaSortMode(mode: MetaSortMode) {
+        _metaState.update { it.copy(sortMode = mode) }
+    }
+
+    fun openMetaHeroDetail(hero: MetaHeroStats) {
+        _metaState.update { it.copy(isLoadingDetail = true, selectedHeroDetail = null, detailError = null) }
+        viewModelScope.launch {
+            roneRepository.fetchHeroMetaDetail(hero, uiState.value.catalog)
+                .onSuccess { detail ->
+                    _metaState.update { it.copy(isLoadingDetail = false, selectedHeroDetail = detail, detailError = null) }
+                }
+                .onFailure { err ->
+                    _metaState.update {
+                        it.copy(
+                            isLoadingDetail = false,
+                            selectedHeroDetail = null,
+                            detailError = err.localizedMessage ?: "Could not load counters and builds for ${hero.heroName}."
+                        )
+                    }
+                }
+        }
+    }
+
+    fun dismissMetaHeroDetail() {
+        _metaState.update { it.copy(isLoadingDetail = false, selectedHeroDetail = null, detailError = null) }
     }
 
     /** "Reveal All Cards": flips just the cards of the pack that is open right now (5 cards). */

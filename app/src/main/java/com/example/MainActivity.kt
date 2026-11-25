@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
+import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Recycling
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.AssignmentTurnedIn
+import androidx.compose.material.icons.outlined.Leaderboard
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.SportsEsports
@@ -97,6 +99,7 @@ import com.example.ui.components.ProvideCollectorSettings
 import com.example.ui.components.SettingsGearButton
 import com.example.ui.components.SkyStudioBackdrop
 import com.example.ui.screens.CardInspectScreen
+import com.example.ui.screens.MetaGuidesScreen
 import com.example.ui.screens.PackOpeningScreen
 import com.example.ui.screens.PlayArcadeScreen
 import com.example.ui.screens.ProfileScreen
@@ -118,6 +121,7 @@ private enum class CollectorTab(
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 ) {
+    META("meta", R.string.nav_meta, Icons.Filled.Leaderboard, Icons.Outlined.Leaderboard),
     PLAY("play", R.string.nav_play, Icons.Filled.SportsEsports, Icons.Outlined.SportsEsports),
     QUESTS("quests", R.string.nav_quests, Icons.Filled.AssignmentTurnedIn, Icons.Outlined.AssignmentTurnedIn),
     PACKS("packs", R.string.nav_packs, Icons.Filled.Style, Icons.Outlined.Style),
@@ -265,7 +269,7 @@ fun MegaCollectorApp(
     val scope = rememberCoroutineScope()
 
     val mainPagerState = rememberPagerState(
-        initialPage = CollectorTab.PACKS.ordinal,
+        initialPage = CollectorTab.META.ordinal,
         pageCount = { CollectorTab.entries.size }
     )
     val vaultPagerState = rememberPagerState(
@@ -537,6 +541,21 @@ fun MegaCollectorApp(
                                         onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
                                         onButtonClickSfx = viewModel::playClick
                                     )
+
+                                    CollectorTab.META -> {
+                                        val metaState by viewModel.metaState.collectAsStateWithLifecycle()
+                                        LaunchedEffect(Unit) { viewModel.loadMetaIfNeeded() }
+                                        MetaGuidesScreen(
+                                            metaState = metaState,
+                                            onSelectRankFilter = viewModel::selectMetaRankFilter,
+                                            onSelectSortMode = viewModel::selectMetaSortMode,
+                                            onRefreshMeta = { viewModel.refreshMeta(force = true) },
+                                            onOpenHeroDetail = viewModel::openMetaHeroDetail,
+                                            onDismissHeroDetail = viewModel::dismissMetaHeroDetail,
+                                            onOpenSettings = {},
+                                            onButtonClickSfx = viewModel::playClick
+                                        )
+                                    }
 
                                     CollectorTab.PROFILE -> ProfileScreen(
                                         uiState = uiState,
