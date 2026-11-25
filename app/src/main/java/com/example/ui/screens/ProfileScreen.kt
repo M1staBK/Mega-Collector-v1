@@ -134,8 +134,11 @@ fun ProfileScreen(
         uiState.ownedCards.sumOf { it.prestigeScore }
     }
 
-    val collectionTier = remember(totalPrestige) {
-        MlbbCollectionTier.fromPrestige(totalPrestige)
+    val uniqueLegends = remember(uiState.ownedCards) {
+        MlbbCollectionTier.uniqueLegendCount(uiState.ownedCards)
+    }
+    val collectionTier = remember(totalPrestige, uniqueLegends) {
+        MlbbCollectionTier.fromCollection(totalPrestige, uniqueLegends)
     }
     val collectorRank = collectionTier.title
 
@@ -618,7 +621,11 @@ fun ProfileScreen(
                             )
                             Text(
                                 text = if (nextTier != null) {
-                                    "${nextTier.minPower - totalPrestige} Power to ${nextTier.title}"
+                                    if (totalPrestige >= nextTier.minPower && uniqueLegends < nextTier.legendsRequired) {
+                                        "Own ${nextTier.legendsRequired} Legend skin(s) to reach ${nextTier.title}"
+                                    } else {
+                                        "${(nextTier.minPower - totalPrestige).coerceAtLeast(0)} Power to ${nextTier.title}"
+                                    }
                                 } else {
                                     "Max Tier Unlocked: World Collector!"
                                 },
@@ -711,7 +718,7 @@ fun ProfileScreen(
                                     ) {
                                         rowTiers.forEach { tier ->
                                             val isCurrent = tier == collectionTier
-                                            val isUnlocked = totalPrestige >= tier.minPower
+                                            val isUnlocked = totalPrestige >= tier.minPower && uniqueLegends >= tier.legendsRequired
                                             Surface(
                                                 color = if (isCurrent) palette.frostSurface else palette.canvas,
                                                 shape = RoundedCornerShape(12.dp),

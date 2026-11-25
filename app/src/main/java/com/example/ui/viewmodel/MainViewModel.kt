@@ -88,7 +88,9 @@ data class PackOpeningSession(
     val isCommittingRip: Boolean = false,
     val revealedIndices: Set<Int> = emptySet(),
     val focusedRevealedIndex: Int? = null,
-    val showSummaryGrid: Boolean = false
+    val showSummaryGrid: Boolean = false,
+    /** True when the summary shows only the current pack's cards ("Reveal All Cards"), not the whole bundle. */
+    val summaryPackOnly: Boolean = false
 ) {
     val isRipped: Boolean get() = bundleCommitted && !showingPackStack
     val remainingPacksInStack: Int get() = (bundle.packCount - currentPackIndex).coerceAtLeast(1)
@@ -319,8 +321,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         soundEngine.setMuted(wallet.soundMuted)
         _preloadProgress.value = 0.24f
 
-        // Decode bundled artwork drawables into memory caches off the main thread
-        withContext(Dispatchers.IO) {
+        // Decode bundled artwork drawables into memory caches in the background (does not hold the bar)
+        viewModelScope.launch(Dispatchers.IO) {
             val drawables = listOf(
                 R.drawable.bg_card_back,
                 R.drawable.img_pack_mega_obsidian,
@@ -357,18 +359,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (within24h) {
             _syncStatus.value = CatalogSyncStatus.Synced(count)
         } else if (!isRobolectricEnv()) {
-            _syncStatus.value = CatalogSyncStatus.Syncing(0, "Connecting to mlbbdex.com...")
-            repository.syncSkinsFromApi { synced, stage ->
-                _syncStatus.value = CatalogSyncStatus.Syncing(synced, stage)
+            val runCatalogSync: suspend () -> Unit = {
+                _syncStatus.value = CatalogSyncStatus.Syncing(0, "Connecting to mlbbdex.com...")
+                repository.syncSkinsFromApi { synced, stage ->
+                    _syncStatus.value = CatalogSyncStatus.Syncing(synced, stage)
+                }
+                    .onSuccess { syncedCount ->
+                        _syncStatus.value = CatalogSyncStatus.Synced(syncedCount)
+                    }
+                    .onFailure { err ->
+                        _syncStatus.value = CatalogSyncStatus.Error(
+                            err.localizedMessage ?: "Could not reach mlbbdex.com/api/v1/skins/"
+                        )
+                    }
             }
-                .onSuccess { syncedCount ->
-                    _syncStatus.value = CatalogSyncStatus.Synced(syncedCount)
-                }
-                .onFailure { err ->
-                    _syncStatus.value = CatalogSyncStatus.Error(
-                        err.localizedMessage ?: "Could not reach mlbbdex.com/api/v1/skins/"
-                    )
-                }
+            if (count > 0) {
+                // Catalog already on the phone: refresh it quietly, never make the player wait
+                viewModelScope.launch { runCatalogSync() }
+            } else {
+                runCatalogSync()
+            }
         } else {
             syncCatalog()
         }
@@ -379,13 +389,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .asSequence()
             .map { it.imageUrl }
             .filter { it.isNotBlank() }
-            .take(60)
+            .take(14)
             .toList()
         val preloadUrls = (ownedUrls + catalogUrls)
             .asSequence()
             .filter { it.isNotBlank() }
             .distinct()
-            .take(60)
+            .take(14)
             .toList()
 
         if (!isRobolectricEnv() && preloadUrls.isNotEmpty()) {
@@ -393,7 +403,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val completed = AtomicInteger(0)
             val total = preloadUrls.size
             val semaphore = Semaphore(10)
-            withTimeoutOrNull(4200L) {
+            withTimeoutOrNull(1400L) {
                 coroutineScope {
                     preloadUrls.map { url ->
                         async(Dispatchers.IO) {
@@ -414,14 +424,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Smooth finish of the loading progress bar before revealing studio
         if (!isRobolectricEnv()) {
-            val steps = listOf(0.88f, 0.95f, 1.0f)
-            for (target in steps) {
-                if (_preloadProgress.value < target) {
-                    _preloadProgress.value = target
-                    delay(55L)
-                }
-            }
-            delay(80L)
+            _preloadProgress.value = 1f
+            delay(60L)
         } else {
             _preloadProgress.value = 1f
         }
@@ -563,8 +567,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val wallet = repository.walletFlow.first()
             val owned = db.collectorDao().getAllOwnedOnce().map { it.toDomain() }
-            val prestige = owned.sumOf { it.prestigeScore }
-            val rank = MlbbCollectionTier.fromPrestige(prestige).title
+            val rank = MlbbCollectionTier.fromOwnedCards(owned).title
             val pinned = AchievementCatalog.evaluate(wallet, owned)
                 .filter { it.isPinned }
                 .map { it.definition.id }
@@ -1036,7 +1039,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     session.copy(
                         currentPackIndex = nextPack,
                         showingPackStack = true,
-                        focusedRevealedIndex = null
+                        focusedRevealedIndex = null,
+                        showSummaryGrid = false,
+                        summaryPackOnly = false
                     )
                 }
                 else -> session.copy(
@@ -1098,7 +1103,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 showingPackStack = false,
                 revealedIndices = cur.pulledCards.indices.toSet(),
                 focusedRevealedIndex = null,
-                showSummaryGrid = true
+                showSummaryGrid = true,
+                summaryPackOnly = false
+            )
+        }
+    }
+
+    /** "Reveal All Cards": flips just the cards of the pack that is open right now (5 cards). */
+    fun revealCurrentPackCards() {
+        soundEngine.playClick()
+        _packSession.update { session ->
+            if (session == null || !session.bundleCommitted || session.pulledCards.isEmpty()) {
+                return@update session
+            }
+            val range = session.currentPackCardIndices
+            if (range.isEmpty()) return@update session
+            session.copy(
+                revealedIndices = session.revealedIndices + range.toSet(),
+                focusedRevealedIndex = null,
+                showSummaryGrid = true,
+                summaryPackOnly = true
             )
         }
     }

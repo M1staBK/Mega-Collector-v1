@@ -80,6 +80,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -207,6 +208,7 @@ fun PackOpeningScreen(
     onRevealCard: (Int) -> Unit,
     onAdvanceFromReveal: () -> Unit,
     onShowSummaryGrid: () -> Unit,
+    onRevealCurrentPack: () -> Unit = {},
     onFocusRevealedCard: (Int) -> Unit,
     onInspectCard: (Long) -> Unit,
     onClose: () -> Unit
@@ -398,7 +400,7 @@ fun PackOpeningScreen(
 
                     session.showSummaryGrid -> {
                         PulledSummaryGrid(
-                            cards = session.pulledCards,
+                            cards = if (session.summaryPackOnly) session.currentPackCards else session.pulledCards,
                             onInspectCard = onInspectCard,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -672,15 +674,33 @@ fun PackOpeningScreen(
                             ) {
                                 Text(
                                     text = if (session.bundleCommitted) {
-                                        "Quick-Open Remaining (${session.remainingPacksInStack}x)"
+                                        "Open All Remaining Packs (${session.remainingPacksInStack})"
                                     } else {
-                                        "Open All ${session.bundle.packCount} Packs Now"
+                                        "Open All Packs (${session.bundle.totalCards} cards)"
                                     },
                                     color = palette.accentPrimary
                                 )
                             }
                         }
                     }
+                }
+            } else if (session.showSummaryGrid && session.summaryPackOnly && session.hasNextPackInStack) {
+                Button(
+                    onClick = onAdvanceFromReveal,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.buttonPrimary,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp)
+                        .testTag("next_pack_after_reveal_button")
+                ) {
+                    Text(
+                        "Next Pack (${session.bundle.packCount - session.currentPackIndex - 1} Left)",
+                        style = MaterialTheme.typography.titleMedium
+                    )
                 }
             } else if (session.showSummaryGrid) {
                 Button(
@@ -771,8 +791,23 @@ fun PackOpeningScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (!session.allRevealed) {
-                            TextButton(onClick = onShowSummaryGrid) {
-                                Text("Reveal All Cards", color = palette.accentPrimary)
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                if (!session.currentPackAllRevealed) {
+                                    TextButton(
+                                        onClick = onRevealCurrentPack,
+                                        modifier = Modifier.testTag("reveal_all_cards_button")
+                                    ) {
+                                        Text("Reveal All Cards", color = palette.accentPrimary)
+                                    }
+                                }
+                                if (session.bundle.packCount > 1) {
+                                    TextButton(
+                                        onClick = onShowSummaryGrid,
+                                        modifier = Modifier.testTag("open_all_packs_button")
+                                    ) {
+                                        Text("Open All Packs", color = palette.accentPrimary)
+                                    }
+                                }
                             }
                         } else {
                             OutlinedButton(
@@ -824,14 +859,26 @@ fun PackOpeningScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = onShowSummaryGrid) {
+                        TextButton(
+                            onClick = onRevealCurrentPack,
+                            modifier = Modifier.testTag("reveal_all_cards_button")
+                        ) {
                             Text("Reveal All Cards", color = palette.accentPrimary)
                         }
-                        Text(
-                            text = "${session.remainingUnrevealedCount} face-down",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.muted
-                        )
+                        if (session.bundle.packCount > 1) {
+                            TextButton(
+                                onClick = onShowSummaryGrid,
+                                modifier = Modifier.testTag("open_all_packs_button")
+                            ) {
+                                Text("Open All Packs", color = palette.accentPrimary)
+                            }
+                        } else {
+                            Text(
+                                text = "${session.remainingUnrevealedCount} face-down",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.muted
+                            )
+                        }
                     }
                 }
             }
@@ -1271,7 +1318,7 @@ private fun PackTearStage(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // Tall, sleek TCG booster pack proportions (196 x 368 dp => 1.88:1 ratio)
-        val packWidthDp = 196.dp
+        val packWidthDp = 238.dp
         val packHeightDp = 368.dp
         val prismCameraDistancePx = remember(density) { maxOf(820f * density, 1600f) }
 
@@ -1307,6 +1354,36 @@ private fun PackTearStage(
                 .height(packHeightDp + 38.dp),
             contentAlignment = Alignment.Center
         ) {
+            // Soft ground shadow under the whole stack: tight and dark while the pack rests,
+            // wider, lighter and lower while the top pack is lifted off the stack
+            Canvas(
+                modifier = Modifier
+                    .width(packWidthDp + 44.dp)
+                    .height(packHeightDp + 38.dp)
+                    .zIndex(-1f)
+            ) {
+                val cx = size.width / 2f
+                val lift = pickUpProgress.coerceIn(0f, 1f)
+                val baseY = size.height - 9.dp.toPx() + lift * 6.dp.toPx()
+                val rx = size.width * (0.34f + lift * 0.07f)
+                val ry = 12.dp.toPx() * (1f + lift * 0.7f)
+                scale(scaleX = 1f, scaleY = ry / rx, pivot = Offset(cx, baseY)) {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0f to Color.Black.copy(alpha = 0.50f - lift * 0.24f),
+                                0.55f to Color.Black.copy(alpha = 0.22f - lift * 0.10f),
+                                1f to Color.Transparent
+                            ),
+                            center = Offset(cx, baseY),
+                            radius = rx
+                        ),
+                        radius = rx,
+                        center = Offset(cx, baseY)
+                    )
+                }
+            }
+
             // Stationary underlying stacked packs (layers 1..9 underneath — NEVER rotate when top pack rotates)
             for (layer in (visibleStackLayers - 1) downTo 1) {
                 val offX = (sin(layer * 1.45f) * 6.5f - layer * 1.3f).dp
@@ -1465,8 +1542,8 @@ private fun PackTearStage(
                             showTeaserLabel = false,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
-                                .width(150.dp)
-                                .offset(x = ((i - 1) * 5f).dp, y = (128f - cardLift).dp)
+                                .width(196.dp)
+                                .offset(x = ((i - 1) * 5f).dp, y = (110f - cardLift).dp)
                                 .graphicsLayer { rotationZ = (i - 1) * 2.4f * rise }
                         )
                     }

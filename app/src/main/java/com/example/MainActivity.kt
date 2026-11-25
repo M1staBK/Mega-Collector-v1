@@ -150,6 +150,21 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = initialBarStyle,
             navigationBarStyle = initialBarStyle
         )
+        // Paint the window in the player's theme colour from the very first frame (no colour flash on boot)
+        val bootPalette = com.example.ui.theme.buildCollectorPalette(
+            isDark = initialBootTheme.darkModeEnabled,
+            accent = com.example.ui.theme.ThemeAccentOption.fromId(initialBootTheme.themeAccentId)
+        )
+        window.setBackgroundDrawable(
+            android.graphics.drawable.ColorDrawable(
+                android.graphics.Color.argb(
+                    255,
+                    (bootPalette.canvas.red * 255f).toInt(),
+                    (bootPalette.canvas.green * 255f).toInt(),
+                    (bootPalette.canvas.blue * 255f).toInt()
+                )
+            )
+        )
         setContent {
             MegaCollectorRoot(
                 onThemeChanged = { darkMode ->
@@ -457,6 +472,7 @@ fun MegaCollectorApp(
                                     CollectorTab.QUESTS -> QuestsScreen(
                                         uiState = uiState,
                                         onClaimQuest = viewModel::claimQuest,
+                                        onClaimAchievement = viewModel::claimAchievementReward,
                                         onGoToBinder = {
                                             navigateToTab(CollectorTab.VAULT, VaultSubTab.COLLECTION)
                                         },
@@ -562,6 +578,7 @@ fun MegaCollectorApp(
                     onRevealCard = viewModel::revealCardAt,
                     onAdvanceFromReveal = viewModel::advanceToNextFaceDownCard,
                     onShowSummaryGrid = viewModel::showPulledSummaryGrid,
+                    onRevealCurrentPack = viewModel::revealCurrentPackCards,
                     onFocusRevealedCard = viewModel::focusRevealedCard,
                     onInspectCard = { cardId ->
                         viewModel.playClick()

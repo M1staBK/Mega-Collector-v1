@@ -161,7 +161,7 @@ fun ShopPacksScreen(
                             modifier = Modifier.weight(1f)
                         ) {
                             val collectionTier = remember(uiState.ownedCards) {
-                                MlbbCollectionTier.fromPrestige(uiState.ownedCards.sumOf { it.prestigeScore })
+                                MlbbCollectionTier.fromOwnedCards(uiState.ownedCards)
                             }
                             Surface(
                                 color = palette.frostSurface,

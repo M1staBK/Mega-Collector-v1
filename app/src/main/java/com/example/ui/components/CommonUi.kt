@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -1052,35 +1053,22 @@ fun AppPreloadOverlay(
                 color = palette.ink
             )
 
-            Surface(
-                color = palette.cardSurface,
-                shape = RoundedCornerShape(999.dp),
-                shadowElevation = 4.dp,
-                border = BorderStroke(1.2.dp, palette.glassHighlight),
+            // Flat bar in the theme accent, sitting directly on the app background
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(14.dp)
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(palette.accentPrimary.copy(alpha = 0.16f))
                     .testTag("preload_progress_bar")
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(2.dp)
+                        .fillMaxWidth(fraction = animatedProgress)
+                        .fillMaxHeight()
                         .clip(RoundedCornerShape(999.dp))
-                        .background(palette.frostSurface)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(fraction = animatedProgress)
-                            .height(10.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(
-                                Brush.horizontalGradient(
-                                    listOf(palette.buttonPrimary, palette.skyAccent)
-                                )
-                            )
-                    )
-                }
+                        .background(palette.accentPrimary)
+                )
             }
         }
     }

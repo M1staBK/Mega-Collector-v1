@@ -239,7 +239,7 @@ enum class MlbbCollectionTier(
         levelNumber = 19,
         title = "Mega Collector 3",
         shortLabel = "Mega 3",
-        minPower = 10500,
+        minPower = 16000,
         primaryColor = Color(0xFFCA8A04),
         secondaryColor = Color(0xFF713F12),
         trimColor = Color(0xFFFDE047),
@@ -251,7 +251,7 @@ enum class MlbbCollectionTier(
         levelNumber = 20,
         title = "Mega Collector 2",
         shortLabel = "Mega 2",
-        minPower = 14000,
+        minPower = 21000,
         primaryColor = Color(0xFFEAB308),
         secondaryColor = Color(0xFF854D0E),
         trimColor = Color(0xFFFEF08A),
@@ -263,7 +263,7 @@ enum class MlbbCollectionTier(
         levelNumber = 21,
         title = "Mega Collector 1",
         shortLabel = "Mega 1",
-        minPower = 18000,
+        minPower = 27000,
         primaryColor = Color(0xFFFACC15),
         secondaryColor = Color(0xFFA16207),
         trimColor = Color(0xFFFFFBEB),
@@ -275,7 +275,7 @@ enum class MlbbCollectionTier(
         levelNumber = 22,
         title = "World Collector",
         shortLabel = "World",
-        minPower = 24000,
+        minPower = 36000,
         primaryColor = Color(0xFFDC2626),
         secondaryColor = Color(0xFF7F1D1D),
         trimColor = Color(0xFFF59E0B),
@@ -284,12 +284,34 @@ enum class MlbbCollectionTier(
         subRankNumber = 0
     );
 
+    /** Distinct Legend skins a collector must own before this tier unlocks (power alone is not enough). */
+    val legendsRequired: Int
+        get() = when (this) {
+            MEGA_3 -> 1
+            MEGA_2 -> 2
+            MEGA_1 -> 3
+            WORLD -> 5
+            else -> 0
+        }
+
     fun nextTier(): MlbbCollectionTier? =
         entries.firstOrNull { it.levelNumber == levelNumber + 1 }
 
     companion object {
         /** Reference order: Left/Top is rarest (WORLD) down to entry (NOVICE_3). */
         val RAREST_LEFT_TO_RIGHT: List<MlbbCollectionTier> = entries.sortedByDescending { it.levelNumber }
+
+        fun uniqueLegendCount(cards: List<OwnedCard>): Int =
+            cards.filter { it.rarity == SkinRarity.LEGEND }.map { it.catalogId }.distinct().size
+
+        /** Tier from power AND Legend ownership: Mega and World need Legend skins, not just duplicates. */
+        fun fromCollection(totalPrestige: Int, uniqueLegends: Int): MlbbCollectionTier =
+            RAREST_LEFT_TO_RIGHT.firstOrNull {
+                totalPrestige >= it.minPower && uniqueLegends >= it.legendsRequired
+            } ?: NOVICE_3
+
+        fun fromOwnedCards(cards: List<OwnedCard>): MlbbCollectionTier =
+            fromCollection(cards.sumOf { it.prestigeScore }, uniqueLegendCount(cards))
 
         fun fromPrestige(totalPrestige: Int): MlbbCollectionTier =
             RAREST_LEFT_TO_RIGHT.firstOrNull { totalPrestige >= it.minPower } ?: NOVICE_3

@@ -94,6 +94,7 @@ import com.example.data.local.PlayerWalletState
 import com.example.model.QuizQuestion
 import com.example.model.QuizQuestionBank
 import com.example.model.QuizQuestionType
+import com.example.model.SkinRarity
 import com.example.model.SkinCatalogItem
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1645,40 +1646,127 @@ internal data class MemoryTileItem(
     val pairKey: String,
     val title: String,
     val imageUrl: String,
-    val fallbackIconIdx: Int
+    val fallbackIconIdx: Int,
+    /** 0 = hero art / default badge, 1 = collection rank badge, 2 = coloured label tile */
+    val kind: Int = 0,
+    val tint: Color = Color.Unspecified
+)
+
+internal enum class MemoryTheme(val label: String) {
+    HEROES("Hero Match"),
+    RANKS("Rank Match"),
+    RARITY("Rarity Match"),
+    ROLES("Role Match"),
+    EQUIPMENT("Equipment Match")
+}
+
+/** One memory board layout: a theme (what the tiles show) and a size (how many pairs). */
+internal data class MemoryVariant(val theme: MemoryTheme, val pairs: Int) {
+    val columns: Int get() = if (pairs <= 3) 3 else 4
+    val rows: Int get() = ((pairs * 2) + columns - 1) / columns
+    val perfectMoves: Int get() = pairs + 1
+    val title: String
+        get() = when {
+            pairs <= 3 -> theme.label
+            pairs == 4 -> "${theme.label} +"
+            else -> "${theme.label} XL"
+        }
+
+    /** Reward for a board: (coins, diamonds). Bigger boards pay more. */
+    fun rewardFor(moves: Int): Pair<Int, Int> {
+        val bonus = (pairs - 3) * 8
+        return if (moves <= perfectMoves) (50 + bonus) to (if (pairs >= 6) 4 else 3)
+        else (35 + bonus / 2) to 2
+    }
+}
+
+internal fun pickMemoryVariant(
+    catalog: List<SkinCatalogItem>,
+    random: Random = Random.Default
+): MemoryVariant {
+    val heroesAvailable = catalog.filter { it.imageUrl.isNotBlank() }
+        .map { it.heroName.lowercase() }
+        .distinct()
+        .size >= 6
+    val themes = MemoryTheme.entries.filter { it != MemoryTheme.HEROES || heroesAvailable }
+    val theme = themes[random.nextInt(themes.size)]
+    val sizes = listOf(3, 3, 4, 6)
+    return MemoryVariant(theme, sizes[random.nextInt(sizes.size)])
+}
+
+private data class MemoryPairInfo(
+    val key: String,
+    val title: String,
+    val imageUrl: String,
+    val iconIdx: Int,
+    val kind: Int = 0,
+    val tint: Color = Color.Unspecified
 )
 
 internal fun selectMemoryBlitzDeck(
     catalog: List<SkinCatalogItem>,
-    random: Random = Random.Default
+    random: Random = Random.Default,
+    variant: MemoryVariant = MemoryVariant(MemoryTheme.HEROES, 3)
 ): List<MemoryTileItem> {
-    val imageSkins = catalog.filter { it.imageUrl.isNotBlank() }
-    val sourcePool = if (imageSkins.size >= 3) imageSkins else catalog
-    val chosenSkins = sourcePool
-        .shuffled(random)
-        .distinctBy { it.heroName.lowercase() }
-        .take(3)
-        .let { distinct ->
-            if (distinct.size >= 3) distinct
-            else sourcePool.shuffled(random).take(3)
+    val pairCount = variant.pairs
+
+    fun rankPairs(): List<MemoryPairInfo> =
+        MlbbCollectionTier.entries.shuffled(random).take(pairCount).map { tier ->
+            MemoryPairInfo("rank_${tier.name}", tier.shortLabel, "", 100 + tier.ordinal, kind = 1)
         }
 
-    val pairs = if (chosenSkins.size == 3) {
-        chosenSkins.mapIndexed { idx, skin ->
-            Triple("skin_${skin.id}", skin.heroName, skin.imageUrl) to idx
+    val pairs: List<MemoryPairInfo> = when (variant.theme) {
+        MemoryTheme.HEROES -> {
+            val imageSkins = catalog.filter { it.imageUrl.isNotBlank() }
+            val sourcePool = if (imageSkins.size >= pairCount) imageSkins else catalog
+            val chosen = sourcePool
+                .shuffled(random)
+                .distinctBy { it.heroName.lowercase() }
+                .take(pairCount)
+            if (chosen.size == pairCount) {
+                chosen.mapIndexed { idx, skin ->
+                    MemoryPairInfo("skin_${skin.id}", skin.heroName, skin.imageUrl, idx)
+                }
+            } else if (pairCount == 3) {
+                listOf(
+                    MemoryPairInfo("world", "World", "", 0),
+                    MemoryPairInfo("mega", "Mega", "", 1),
+                    MemoryPairInfo("expert", "Expert", "", 2)
+                )
+            } else {
+                rankPairs()
+            }
         }
-    } else {
-        listOf(
-            Triple("world", "World", "") to 0,
-            Triple("mega", "Mega", "") to 1,
-            Triple("expert", "Expert", "") to 2
-        )
+        MemoryTheme.RANKS -> rankPairs()
+        MemoryTheme.RARITY -> SkinRarity.entries.shuffled(random).take(pairCount).map { rarity ->
+            MemoryPairInfo("rarity_${rarity.name}", rarity.displayName, "", 0, kind = 2, tint = rarity.primaryColor)
+        }
+        MemoryTheme.ROLES -> listOf(
+            "Tank" to Color(0xFF3B82F6),
+            "Fighter" to Color(0xFFF97316),
+            "Assassin" to Color(0xFFEF4444),
+            "Mage" to Color(0xFF8B5CF6),
+            "Marksman" to Color(0xFFEAB308),
+            "Support" to Color(0xFF10B981)
+        ).shuffled(random).take(pairCount).map { (name, color) ->
+            MemoryPairInfo("role_$name", name, "", 0, kind = 2, tint = color)
+        }
+        MemoryTheme.EQUIPMENT -> listOf(
+            "Winter Crown" to Color(0xFF38BDF8),
+            "Wind of Nature" to Color(0xFF22C55E),
+            "Immortality" to Color(0xFFF59E0B),
+            "Haas's Claws" to Color(0xFFDC2626),
+            "Blade of Despair" to Color(0xFF7C3AED),
+            "Berserker's Fury" to Color(0xFFF97316)
+        ).shuffled(random).take(pairCount).map { (name, color) ->
+            MemoryPairInfo("equip_$name", name, "", 0, kind = 2, tint = color)
+        }
     }
 
-    return pairs.flatMapIndexed { pIdx, (info, iconIdx) ->
+    return pairs.flatMapIndexed { pIdx, info ->
         listOf(
-            MemoryTileItem(pIdx * 2, info.first, info.second, info.third, iconIdx),
-            MemoryTileItem(pIdx * 2 + 1, info.first, info.second, info.third, iconIdx)
+            MemoryTileItem(pIdx * 2, info.key, info.title, info.imageUrl, info.iconIdx, info.kind, info.tint),
+            MemoryTileItem(pIdx * 2 + 1, info.key, info.title, info.imageUrl, info.iconIdx, info.kind, info.tint)
         )
     }.shuffled(random)
 }
@@ -1696,8 +1784,11 @@ private fun MemoryBlitzSection(
     var roundNonce by remember { mutableIntStateOf(Random.nextInt(1, Int.MAX_VALUE)) }
     val hasCharges = status.charges > 0
 
+    val variant = remember(roundNonce, catalog.size) {
+        pickMemoryVariant(catalog = catalog, random = Random(roundNonce xor 0x5F3759DF))
+    }
     val deck = remember(roundNonce, catalog.size) {
-        selectMemoryBlitzDeck(catalog = catalog, random = Random(roundNonce))
+        selectMemoryBlitzDeck(catalog = catalog, random = Random(roundNonce), variant = variant)
     }
 
     val decodedBitmaps = remember(roundNonce, deck) { mutableStateMapOf<String, ImageBitmap>() }
@@ -1738,10 +1829,10 @@ private fun MemoryBlitzSection(
                 val updatedMatched = matchedKeys + a.pairKey
                 matchedKeys = updatedMatched
                 flippedIndices = emptyList()
-                if (updatedMatched.size >= 3 && !boardCompleted) {
+                if (updatedMatched.size >= variant.pairs && !boardCompleted) {
                     boardCompleted = true
                     performHaptic(HapticFeedbackType.LongPress)
-                    val (coins, diamonds) = if (moves <= 4) 50 to 3 else 35 to 2
+                    val (coins, diamonds) = variant.rewardFor(moves)
                     onCompleteMatch(moves, coins, diamonds)
                 }
             } else {
@@ -1793,7 +1884,8 @@ private fun MemoryBlitzSection(
                 text = if (boardCompleted) {
                     "Board cleared in $moves moves! Reward claimed."
                 } else {
-                    "Match all 3 hero pairs in <=4 moves for +50 Coins & +3 Diamonds! (Moves: $moves)"
+                    val perfect = variant.rewardFor(0)
+                    "${variant.title}: match all ${variant.pairs} pairs in ${variant.perfectMoves} moves or less for +${perfect.first} Coins & +${perfect.second} Diamonds! (Moves: $moves)"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = palette.muted
@@ -1807,15 +1899,15 @@ private fun MemoryBlitzSection(
                 MlbbCollectionTier.EXPERT_1
             )
 
-            for (row in 0 until 2) {
+            for (row in 0 until variant.rows) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = if (row == 0) 8.dp else 0.dp),
+                        .padding(bottom = if (row < variant.rows - 1) 8.dp else 0.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    for (col in 0 until 3) {
-                        val idx = row * 3 + col
+                    for (col in 0 until variant.columns) {
+                        val idx = row * variant.columns + col
                         val tile = deck[idx]
                         val isMatched = tile.pairKey in matchedKeys
                         val isFaceUp = isMatched || idx in flippedIndices
@@ -1928,10 +2020,25 @@ private fun MemoryBlitzSection(
                                                 horizontalAlignment = Alignment.CenterHorizontally,
                                                 modifier = Modifier.padding(6.dp)
                                             ) {
-                                                MlbbCollectionBadge(
-                                                    tier = fallbackTiers[tile.fallbackIconIdx % fallbackTiers.size],
-                                                    modifier = Modifier.size(34.dp)
-                                                )
+                                                when (tile.kind) {
+                                                    1 -> MlbbCollectionBadge(
+                                                        tier = MlbbCollectionTier.entries[
+                                                            (tile.fallbackIconIdx - 100)
+                                                                .coerceIn(0, MlbbCollectionTier.entries.lastIndex)
+                                                        ],
+                                                        modifier = Modifier.size(34.dp)
+                                                    )
+                                                    2 -> Box(
+                                                        modifier = Modifier
+                                                            .size(30.dp)
+                                                            .clip(RoundedCornerShape(999.dp))
+                                                            .background(tile.tint)
+                                                    )
+                                                    else -> MlbbCollectionBadge(
+                                                        tier = fallbackTiers[tile.fallbackIconIdx % fallbackTiers.size],
+                                                        modifier = Modifier.size(34.dp)
+                                                    )
+                                                }
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = tile.title,

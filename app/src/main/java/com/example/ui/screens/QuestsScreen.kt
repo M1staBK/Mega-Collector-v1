@@ -53,8 +53,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.model.AchievementBadgeUi
 import com.example.model.QuestCategory
 import com.example.model.QuestUiItem
+import com.example.ui.components.BadgeIconVector
 import com.example.ui.components.FrostedGlassCard
 import com.example.ui.components.SettingsGearButton
 import com.example.ui.theme.CollectorTheme
@@ -73,6 +75,7 @@ import com.example.ui.viewmodel.MegaCollectorUiState
 fun QuestsScreen(
     uiState: MegaCollectorUiState,
     onClaimQuest: (QuestUiItem) -> Unit,
+    onClaimAchievement: (AchievementBadgeUi) -> Unit = {},
     onGoToBinder: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onButtonClickSfx: () -> Unit,
@@ -81,6 +84,20 @@ fun QuestsScreen(
 ) {
     val palette = CollectorTheme.colors
     var selectedCategory by remember { mutableStateOf(QuestCategory.DAILY) }
+    var showAchievements by remember { mutableStateOf(false) }
+    val sortedAchievements = remember(uiState.achievements) {
+        uiState.achievements.sortedWith(
+            compareBy<AchievementBadgeUi> {
+                when {
+                    it.canClaim -> 0
+                    it.isUnlocked && it.isClaimed -> 2
+                    it.isUnlocked -> 2
+                    else -> 1
+                }
+            }.thenByDescending { it.progressFraction }
+        )
+    }
+    val claimableAchievements = remember(uiState.achievements) { uiState.achievements.count { it.canClaim } }
 
     val filteredQuests = remember(uiState.quests, selectedCategory) {
         uiState.quests.filter { it.definition.category == selectedCategory }
@@ -261,18 +278,21 @@ fun QuestsScreen(
                         .padding(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    QuestCategory.entries.forEach { cat ->
-                        val selected = selectedCategory == cat
-                        val readyInCat = uiState.quests.count { it.definition.category == cat && it.canClaim }
-                        val label = if (readyInCat > 0) {
-                            "${cat.title.substringBefore(" ")} ($readyInCat)"
+                    val tabs: List<Pair<String, QuestCategory?>> =
+                        QuestCategory.entries.map { it.title.substringBefore(" ") to it } +
+                            ("Achievements" to null)
+                    tabs.forEach { (name, cat) ->
+                        val selected = if (cat == null) showAchievements else (!showAchievements && selectedCategory == cat)
+                        val ready = if (cat == null) {
+                            claimableAchievements
                         } else {
-                            cat.title.substringBefore(" ")
+                            uiState.quests.count { it.definition.category == cat && it.canClaim }
                         }
+                        val label = if (ready > 0) "$name ($ready)" else name
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .weight(1f)
+                                .weight(if (cat == null) 1.55f else 1f)
                                 .clip(RoundedCornerShape(999.dp))
                                 .background(
                                     brush = if (selected) {
@@ -285,14 +305,19 @@ fun QuestsScreen(
                                 )
                                 .clickable {
                                     onButtonClickSfx()
-                                    selectedCategory = cat
+                                    if (cat == null) {
+                                        showAchievements = true
+                                    } else {
+                                        showAchievements = false
+                                        selectedCategory = cat
+                                    }
                                 }
-                                .padding(vertical = 10.dp, horizontal = 8.dp)
-                                .testTag("quest_tab_${cat.name.lowercase()}")
+                                .padding(vertical = 10.dp, horizontal = 4.dp)
+                                .testTag(if (cat == null) "quest_tab_achievements" else "quest_tab_${cat.name.lowercase()}")
                         ) {
                             Text(
                                 text = label,
-                                style = MaterialTheme.typography.labelLarge.copy(
+                                style = MaterialTheme.typography.labelMedium.copy(
                                     fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Bold
                                 ),
                                 color = if (selected) Color.White else palette.muted,
@@ -308,7 +333,7 @@ fun QuestsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                if (selectedCategory == QuestCategory.COMMUNITY) {
+                if (!showAchievements && selectedCategory == QuestCategory.COMMUNITY) {
                     item {
                         Surface(
                             color = SkyFrost,
@@ -336,11 +361,23 @@ fun QuestsScreen(
                     }
                 }
 
-                items(filteredQuests, key = { it.definition.id }) { item ->
-                    QuestCardRow(
-                        quest = item,
-                        onClaim = { onClaimQuest(item) }
-                    )
+                if (showAchievements) {
+                    items(sortedAchievements, key = { "ach_" + it.definition.id }) { badge ->
+                        AchievementMissionRow(
+                            badge = badge,
+                            onClaim = {
+                                onButtonClickSfx()
+                                onClaimAchievement(badge)
+                            }
+                        )
+                    }
+                } else {
+                    items(filteredQuests, key = { it.definition.id }) { item ->
+                        QuestCardRow(
+                            quest = item,
+                            onClaim = { onClaimQuest(item) }
+                        )
+                    }
                 }
             }
         }
@@ -553,6 +590,138 @@ private fun QuestCardRow(
                         ),
                         color = Color.White
                     )
+                }
+            }
+        }
+    }
+}
+
+
+/**
+ * Achievement shown like a quest. When it is claimable the whole row, the medallion icon and the
+ * CLAIM pill all collect the reward with a single tap.
+ */
+@Composable
+private fun AchievementMissionRow(
+    badge: AchievementBadgeUi,
+    onClaim: () -> Unit
+) {
+    val palette = CollectorTheme.colors
+    val def = badge.definition
+    val canClaim = badge.canClaim
+    val shown = badge.currentProgress.coerceAtMost(def.targetCount)
+
+    Surface(
+        color = if (canClaim) palette.buttonPrimary else palette.cardSurface,
+        shape = RoundedCornerShape(22.dp),
+        shadowElevation = if (canClaim) 5.dp else 2.dp,
+        border = BorderStroke(
+            width = if (canClaim) 1.6.dp else 1.2.dp,
+            color = when {
+                canClaim -> palette.accentPrimary
+                badge.isClaimed -> palette.accentPrimary.copy(alpha = 0.45f)
+                else -> palette.glassHighlight
+            }
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .clickable(enabled = canClaim, onClick = onClaim)
+            .testTag("achievement_row_${def.id}")
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    if (canClaim) {
+                        Brush.horizontalGradient(listOf(palette.buttonPrimary, palette.skyAccent))
+                    } else {
+                        Brush.horizontalGradient(
+                            listOf(palette.cardSurface, palette.cardSurface, palette.frostSurface)
+                        )
+                    }
+                )
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    color = if (canClaim) Color.White else palette.frostSurface,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, def.accentColor.copy(alpha = if (badge.isUnlocked) 0.7f else 0.3f)),
+                    shadowElevation = 2.dp,
+                    modifier = Modifier.size(58.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            imageVector = BadgeIconVector(def.iconStyle),
+                            contentDescription = def.title,
+                            tint = def.accentColor.copy(alpha = if (badge.isUnlocked) 1f else 0.4f),
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = def.title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = if (canClaim) Color.White else palette.ink
+                    )
+                    Text(
+                        text = def.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (canClaim) Color.White.copy(alpha = 0.90f) else palette.muted
+                    )
+                    if (def.rewardSummaryText.isNotBlank()) {
+                        Text(
+                            text = "Reward: ${def.rewardSummaryText}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (canClaim) Color.White else palette.accentPrimary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        LinearProgressIndicator(
+                            progress = { badge.progressFraction },
+                            color = if (canClaim) Color.White else palette.accentPrimary,
+                            trackColor = if (canClaim) Color.White.copy(alpha = 0.35f) else palette.frostSurface,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                        )
+                        when {
+                            canClaim -> Surface(
+                                color = Color.White,
+                                shape = RoundedCornerShape(999.dp)
+                            ) {
+                                Text(
+                                    text = "CLAIM",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                    color = Color(0xFF0F172A),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                                )
+                            }
+                            badge.isUnlocked -> Text(
+                                text = if (badge.isClaimed) "Claimed" else "Done",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = palette.accentPrimary
+                            )
+                            else -> Text(
+                                text = "$shown/${def.targetCount}",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = palette.muted
+                            )
+                        }
+                    }
                 }
             }
         }
