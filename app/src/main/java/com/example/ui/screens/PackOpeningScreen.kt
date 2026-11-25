@@ -1568,7 +1568,7 @@ private fun PackTearStage(
                                 showTeaserLabel = false,
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
-                                    .width(232.dp)
+                                    .width(220.dp)
                                     .offset(x = ((i - 1) * 4f).dp, y = (112f - cardLift).dp)
                                     .graphicsLayer { rotationZ = (i - 1) * 2.0f * rise }
                             )

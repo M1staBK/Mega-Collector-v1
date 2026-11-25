@@ -162,6 +162,7 @@ object PackMeshTextureCache {
 
         val leftU = FloatArray(MESH_ROWS + 1)
         val rightU = FloatArray(MESH_ROWS + 1)
+        val rowHasPixels = BooleanArray(MESH_ROWS + 1)
         for (row in 0..MESH_ROWS) {
             val py = ((row.toFloat() / MESH_ROWS) * (TARGET_H - 1)).roundToInt().coerceIn(0, TARGET_H - 1)
             val rowOffset = py * TARGET_W
@@ -179,10 +180,51 @@ object PackMeshTextureCache {
                 leftU[row] = inset
                 rightU[row] = 1f - inset
             } else {
+                rowHasPixels[row] = true
                 val safeMin = if (maxX - minX >= 6) minX + 1 else minX
                 val safeMax = if (maxX - minX >= 6) maxX else (maxX + 1)
                 leftU[row] = (safeMin.toFloat() / TARGET_W.toFloat()).coerceIn(0f, 0.20f)
                 rightU[row] = (safeMax.toFloat() / TARGET_W.toFloat()).coerceIn(0.80f, 1f)
+            }
+        }
+
+        // Rows with no solid pixels (the very top / bottom crimp rows) used to fall back to the FULL image
+        // width, which made thin strips stick out of the pack corners and broke centring. Borrow the
+        // edges of the closest row that really has pixels instead.
+        if (rowHasPixels.any { it }) {
+            for (row in 0..MESH_ROWS) {
+                if (rowHasPixels[row]) continue
+                var best = -1
+                var bestDist = Int.MAX_VALUE
+                for (r in 0..MESH_ROWS) {
+                    if (rowHasPixels[r] && abs(r - row) < bestDist) {
+                        best = r
+                        bestDist = abs(r - row)
+                    }
+                }
+                if (best >= 0) {
+                    leftU[row] = leftU[best]
+                    rightU[row] = rightU[best]
+                }
+            }
+            // End rows copy their neighbour so the crimp corners stay clean
+            leftU[0] = leftU[1]
+            rightU[0] = rightU[1]
+            leftU[MESH_ROWS] = leftU[MESH_ROWS - 1]
+            rightU[MESH_ROWS] = rightU[MESH_ROWS - 1]
+            // 3-row median removes single-row spikes but keeps real steps
+            val l0 = leftU.copyOf()
+            val r0 = rightU.copyOf()
+            for (row in 1 until MESH_ROWS) {
+                leftU[row] = median3(l0[row - 1], l0[row], l0[row + 1])
+                rightU[row] = median3(r0[row - 1], r0[row], r0[row + 1])
+            }
+            // No row may stick out more than a crimp's width beyond the pack body
+            val bodyLeft = leftU.slice(4..MESH_ROWS - 4).sorted().let { it[it.size / 2] }
+            val bodyRight = rightU.slice(4..MESH_ROWS - 4).sorted().let { it[it.size / 2] }
+            for (row in 0..MESH_ROWS) {
+                leftU[row] = max(leftU[row], bodyLeft - 0.06f)
+                rightU[row] = min(rightU[row], bodyRight + 0.06f)
             }
         }
 
@@ -317,6 +359,9 @@ object PackMeshTextureCache {
      * Full-bleed 100% opaque back foil texture so back edges join cleanly into the V-pleat side gussets
      * without any translucent border seams or hairline gaps.
      */
+    private fun median3(a: Float, b: Float, c: Float): Float =
+        max(min(a, b), min(max(a, b), c))
+
     private fun themeHue(theme: PackSatinTheme): Float {
         val hsv = FloatArray(3)
         android.graphics.Color.colorToHSV(theme.logoAccent.toArgb(), hsv)
