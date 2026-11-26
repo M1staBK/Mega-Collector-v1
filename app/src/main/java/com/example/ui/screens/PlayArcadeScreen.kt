@@ -1275,7 +1275,9 @@ private fun HourlyPrismTimingTapGame(
 
     var isAiming by remember(hasCharges) { mutableStateOf(hasCharges) }
     val sweepAnim = remember { Animatable(0.05f) }
-    var lastResultText by remember { mutableStateOf("Tap when the marker crosses the Green Center!") }
+    var lastResultText by remember { mutableStateOf("Tap when the marker crosses the Green!") }
+    // Where the zones sit changes every round
+    var targetCenter by remember { mutableFloatStateOf(Random.nextFloat() * 0.70f + 0.15f) }
 
     LaunchedEffect(isAiming, hasCharges) {
         if (!hasCharges) {
@@ -1285,19 +1287,19 @@ private fun HourlyPrismTimingTapGame(
         while (isAiming && hasCharges) {
             sweepAnim.animateTo(
                 targetValue = 0.95f,
-                animationSpec = tween(durationMillis = 1150, easing = LinearEasing)
+                animationSpec = tween(durationMillis = 640, easing = LinearEasing)
             )
             if (!isAiming) break
             sweepAnim.animateTo(
                 targetValue = 0.05f,
-                animationSpec = tween(durationMillis = 1150, easing = LinearEasing)
+                animationSpec = tween(durationMillis = 640, easing = LinearEasing)
             )
         }
     }
 
     val centerGreen = Color(0xFF10B981)
     val innerYellow = Color(0xFFFACC15)
-    val outerWhite = Color(0xFFF8FAFC)
+    val trackDark = Color(0xFF1E293B)
     var currentPos by remember { mutableFloatStateOf(0.5f) }
     currentPos = sweepAnim.value
 
@@ -1330,7 +1332,7 @@ private fun HourlyPrismTimingTapGame(
 
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Recharges +1/hr (max 3). Green Center (+5 💎) • Yellow Inner (+2 💎) • White Edge (+1 💎)",
+                text = "Recharges +1/hr (max 3). Green (+5 💎) • Yellow (+2 💎) • Miss = nothing. The zones move every round!",
                 style = MaterialTheme.typography.bodyMedium,
                 color = SlateMuted
             )
@@ -1344,22 +1346,22 @@ private fun HourlyPrismTimingTapGame(
                     .clip(RoundedCornerShape(12.dp))
                     .border(1.2.dp, palette.border, RoundedCornerShape(12.dp))
             ) {
-                // Outer Track: White
+                // Track: a miss pays nothing
                 drawRoundRect(
-                    color = outerWhite,
+                    color = trackDark,
                     cornerRadius = CornerRadius(12f, 12f)
                 )
-                // 2nd Inner Zone: Yellow
+                // Yellow: thin band around the target
                 drawRect(
                     color = innerYellow,
-                    topLeft = Offset(size.width * 0.30f, 0f),
-                    size = Size(size.width * 0.40f, size.height)
+                    topLeft = Offset(size.width * (targetCenter - 0.10f), 0f),
+                    size = Size(size.width * 0.20f, size.height)
                 )
-                // Center Stripe: Green
+                // Green: a very thin stripe in the middle of the yellow
                 drawRect(
                     color = centerGreen,
-                    topLeft = Offset(size.width * 0.44f, 0f),
-                    size = Size(size.width * 0.12f, size.height)
+                    topLeft = Offset(size.width * (targetCenter - 0.035f), 0f),
+                    size = Size(size.width * 0.07f, size.height)
                 )
                 // High-contrast Needle Marker (dark outline + electric blue core)
                 val markerX = size.width * currentPos
@@ -1391,7 +1393,8 @@ private fun HourlyPrismTimingTapGame(
                 Button(
                     onClick = {
                         onButtonClickSfx()
-                        lastResultText = "Aiming! Tap Strike on the Green Center!"
+                        lastResultText = "Aiming! Tap Strike on the Green!"
+                        targetCenter = Random.nextFloat() * 0.70f + 0.15f
                         isAiming = true
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -1417,20 +1420,20 @@ private fun HourlyPrismTimingTapGame(
                         if (!hasCharges || !isAiming) return@Button
                         // Stop the animation immediately where the player struck
                         isAiming = false
-                        val distFromCenter = abs(sweepAnim.value - 0.5f)
+                        val distFromCenter = abs(sweepAnim.value - targetCenter)
                         when {
-                            distFromCenter <= 0.06f -> {
+                            distFromCenter <= 0.035f -> {
                                 lastResultText = "GREEN BULLSEYE! +5 💎 Diamonds"
                                 onStrike(5, "Green Bullseye!")
                             }
-                            distFromCenter <= 0.20f -> {
-                                lastResultText = "Yellow Zone Hit! +2 💎 Diamonds"
-                                onStrike(2, "Yellow Inner Hit!")
+                            distFromCenter <= 0.10f -> {
+                                lastResultText = "Yellow Hit! +2 💎 Diamonds"
+                                onStrike(2, "Yellow Hit!")
                             }
                             else -> {
                                 onButtonClickSfx()
-                                lastResultText = "White Zone Hit! +1 💎 Diamond"
-                                onStrike(1, "White Outer Hit!")
+                                lastResultText = "Missed! No diamonds this time"
+                                onStrike(0, "Missed!")
                             }
                         }
                     },
@@ -1653,7 +1656,7 @@ internal data class MemoryTileItem(
 )
 
 internal enum class MemoryTheme(val label: String) {
-    HEROES("Hero Match"),
+    HEROES("Skin Match"),
     RANKS("Rank Match"),
     RARITY("Rarity Match"),
     ROLES("Role Match"),
@@ -1684,14 +1687,9 @@ internal fun pickMemoryVariant(
     catalog: List<SkinCatalogItem>,
     random: Random = Random.Default
 ): MemoryVariant {
-    val heroesAvailable = catalog.filter { it.imageUrl.isNotBlank() }
-        .map { it.heroName.lowercase() }
-        .distinct()
-        .size >= 6
-    val themes = MemoryTheme.entries.filter { it != MemoryTheme.HEROES || heroesAvailable }
-    val theme = themes[random.nextInt(themes.size)]
+    // Skins only: every tile is a skin from the catalog. Only the board size changes between rounds.
     val sizes = listOf(3, 3, 4, 6)
-    return MemoryVariant(theme, sizes[random.nextInt(sizes.size)])
+    return MemoryVariant(MemoryTheme.HEROES, sizes[random.nextInt(sizes.size)])
 }
 
 private data class MemoryPairInfo(

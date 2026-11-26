@@ -828,7 +828,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         diamondDelta = earned
                     )
                     syncCloudProfileNow()
-                    _snackbarMessage.value = "$winLabel +$earned 💎 Diamonds!"
+                    _snackbarMessage.value =
+                        if (earned > 0) "$winLabel +$earned 💎 Diamonds!" else "$winLabel No diamonds this time."
                 }
                 .onFailure { err ->
                     _snackbarMessage.value = err.localizedMessage ?: "Prism Strike recharging!"

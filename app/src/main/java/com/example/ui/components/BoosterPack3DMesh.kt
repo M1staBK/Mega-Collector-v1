@@ -125,6 +125,10 @@ object PackMeshTextureCache {
         val frontBmp = Bitmap.createScaledBitmap(trimmed, TARGET_W, TARGET_H, true)
         if (trimmed !== frontBmp) trimmed.recycle()
 
+        // The cover PNG has tiny see-through flecks and scratches inside the pack body; fill them so
+        // nothing shows through from behind.
+        repairPngHoles(frontBmp)
+
         if (theme.id != "obsidian_royale") {
             shiftPurpleHue(frontBmp, themeHue(theme))
         }
@@ -359,6 +363,57 @@ object PackMeshTextureCache {
      * Full-bleed 100% opaque back foil texture so back edges join cleanly into the V-pleat side gussets
      * without any translucent border seams or hairline gaps.
      */
+    private fun lerpArgb(a: Int, b: Int, t: Float): Int {
+        val r = (((a shr 16) and 0xFF) * (1f - t) + ((b shr 16) and 0xFF) * t).roundToInt()
+        val g = (((a shr 8) and 0xFF) * (1f - t) + ((b shr 8) and 0xFF) * t).roundToInt()
+        val bl = ((a and 0xFF) * (1f - t) + (b and 0xFF) * t).roundToInt()
+        return (0xFF shl 24) or (r shl 16) or (g shl 8) or bl
+    }
+
+    /**
+     * Inside the pack body (between the two crimped ends) every row is solid from its first to its last
+     * solid pixel. Any gap in between is a PNG flaw, so it is filled by blending the pixels on each side.
+     */
+    private fun repairPngHoles(bmp: Bitmap) {
+        val w = bmp.width
+        val h = bmp.height
+        val px = IntArray(w * h)
+        bmp.getPixels(px, 0, w, 0, 0, w, h)
+        val y0 = (h * (BoosterPouchPhysics.TOP_CRIMP_FRAC + 0.012f)).toInt()
+        val y1 = (h * (BoosterPouchPhysics.BOTTOM_CRIMP_FRAC - 0.012f)).toInt()
+        for (y in y0..y1) {
+            val row = y * w
+            var minX = -1
+            var maxX = -1
+            for (x in 0 until w) {
+                if (((px[row + x] ushr 24) and 0xFF) >= 210) {
+                    if (minX < 0) minX = x
+                    maxX = x
+                }
+            }
+            if (minX < 0 || maxX - minX < 8) continue
+            var x = minX
+            while (x <= maxX) {
+                if (((px[row + x] ushr 24) and 0xFF) >= 210) {
+                    x++
+                    continue
+                }
+                var e = x
+                while (e <= maxX && ((px[row + e] ushr 24) and 0xFF) < 210) e++
+                val len = e - x
+                if (len <= 40 && x > minX) {
+                    val left = px[row + x - 1]
+                    val right = if (e <= maxX) px[row + e] else left
+                    for (k in 0 until len) {
+                        px[row + x + k] = lerpArgb(left, right, (k + 1f) / (len + 1f))
+                    }
+                }
+                x = e
+            }
+        }
+        bmp.setPixels(px, 0, w, 0, 0, w, h)
+    }
+
     private fun median3(a: Float, b: Float, c: Float): Float =
         max(min(a, b), min(max(a, b), c))
 

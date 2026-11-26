@@ -114,6 +114,12 @@ import com.example.ui.theme.ThemeAccentOption
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.MegaCollectorUiState
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.text.style.TextAlign
 
 private enum class CollectorTab(
     val route: String,
@@ -294,18 +300,35 @@ fun MegaCollectorApp(
         uiState.quests.count { it.canClaim }
     }
 
+    // Short toast at the bottom of the screen (replaces the old snackbar)
+    var toastText by remember { mutableStateOf("") }
+    var toastVisible by remember { mutableStateOf(false) }
+    var toastNonce by remember { mutableStateOf(0) }
+    fun showToast(msg: String) {
+        toastText = msg
+        toastVisible = true
+        toastNonce += 1
+    }
+
     LaunchedEffect(uiState.snackbarMessage) {
         val msg = uiState.snackbarMessage
         if (msg != null) {
-            snackbarHostState.showSnackbar(msg)
+            showToast(msg)
             viewModel.consumeSnackbar()
         }
     }
 
     LaunchedEffect(authError) {
         if (authError != null) {
-            snackbarHostState.showSnackbar(authError)
+            showToast(authError)
             onConsumeAuthError()
+        }
+    }
+
+    LaunchedEffect(toastNonce) {
+        if (toastVisible) {
+            delay(1600L)
+            toastVisible = false
         }
     }
 
@@ -333,7 +356,6 @@ fun MegaCollectorApp(
                     Scaffold(
                         containerColor = Color.Transparent,
                         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                         bottomBar = {
                             if (!useRail && packSession == null && inspectingCardId == null) {
                                 Surface(
@@ -538,7 +560,7 @@ fun MegaCollectorApp(
                                         onClearDecodedSlip = viewModel::clearDecodedSlip,
                                         onCompleteTrade = viewModel::completeTradeWithSlip,
                                         onGoogleSignInClick = onGoogleSignInClick,
-                                        onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                                        onShowToast = { msg -> showToast(msg) },
                                         onButtonClickSfx = viewModel::playClick
                                     )
 
@@ -643,6 +665,35 @@ fun MegaCollectorApp(
                     },
                     onButtonClickSfx = viewModel::playClick
                 )
+            }
+
+            AnimatedVisibility(
+                visible = toastVisible,
+                enter = fadeIn(tween(150)) + slideInVertically(animationSpec = tween(190), initialOffsetY = { it / 2 }),
+                exit = fadeOut(tween(150)) + slideOutVertically(animationSpec = tween(150), targetOffsetY = { it / 2 }),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(
+                        start = 20.dp,
+                        end = 20.dp,
+                        bottom = if (packSession == null && inspectingCardId == null) 96.dp else 28.dp
+                    )
+            ) {
+                Surface(
+                    color = Color(0xFF111827),
+                    shape = RoundedCornerShape(14.dp),
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(1.dp, Color(0x33FFFFFF))
+                ) {
+                    Text(
+                        text = toastText,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                }
             }
 
             // Asset Preload Launch Overlay (theme-accented bar only, zero status/stage copy)

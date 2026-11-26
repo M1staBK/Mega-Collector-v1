@@ -85,6 +85,8 @@ import com.example.ui.theme.SlateMuted
 import com.example.ui.theme.StudioCrimson
 import com.example.ui.theme.StudioGold
 import java.util.Locale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.layout.heightIn
 
 data class MetaGuidesUiState(
     val isLoading: Boolean = false,
@@ -646,6 +648,7 @@ private fun HeroDetailGuideDialog(
             border = BorderStroke(1.2.dp, palette.border),
             modifier = Modifier
                 .fillMaxWidth(0.94f)
+                .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.88f).dp)
                 .testTag("hero_meta_detail_dialog")
         ) {
             if (isLoading && detail == null) {
@@ -669,7 +672,7 @@ private fun HeroDetailGuideDialog(
                 Column(
                     modifier = Modifier
                         .verticalScroll(rememberScrollState())
-                        .padding(18.dp),
+                        .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 36.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Row(
@@ -1009,8 +1012,8 @@ private fun BuildGuideCard(guide: HeroBuildGuide) {
             if (guide.comboTip.isNotBlank()) {
                 Text(
                     text = guide.comboTip,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.muted
+                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                    color = palette.ink.copy(alpha = 0.88f)
                 )
             }
         }
