@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Close
