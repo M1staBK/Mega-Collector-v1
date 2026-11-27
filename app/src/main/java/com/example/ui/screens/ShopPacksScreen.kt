@@ -106,6 +106,8 @@ import com.example.ui.theme.SkyFrost
 import com.example.ui.theme.SlateMuted
 import com.example.ui.viewmodel.MegaCollectorUiState
 import java.util.Locale
+import com.example.ui.theme.ThemeAccentOption
+import androidx.compose.material.icons.filled.Palette
 
 private enum class ShopSection(val label: String) {
     PACKS("Booster Packs"),
@@ -113,8 +115,9 @@ private enum class ShopSection(val label: String) {
 }
 
 private enum class CosmeticSubTab(val label: String) {
-    FRAMES("Profile Frames"),
-    BINDERS("Binder Designs")
+    FRAMES("Frames"),
+    BINDERS("Binders"),
+    THEMES("Themes")
 }
 
 @Composable
@@ -127,6 +130,7 @@ fun ShopPacksScreen(
     onExchangeDiamondsForCoins: (DiamondExchangeOption) -> Unit,
     onPurchaseOrEquipFrame: (ProfileFrameItem) -> Unit = {},
     onPurchaseOrEquipBinder: (CardBinderDesign) -> Unit = {},
+    onPurchaseOrEquipTheme: (ThemeAccentOption) -> Unit = {},
     onGoToArcade: () -> Unit = {},
     onGoToMissions: () -> Unit = {},
     onGoToBinder: () -> Unit = {},
@@ -183,16 +187,12 @@ fun ShopPacksScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = "MEGA Collector",
+                                    text = "Packs",
                                     style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
                                     color = palette.ink
                                 )
                                 Text(
-                                    text = if (palette.isDark) {
-                                        "Moonlight Sky Card Studio"
-                                    } else {
-                                        "MOBA Legends Sky Card Studio"
-                                    },
+                                    text = "Open boosters and shop cosmetics",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = palette.muted
                                 )
@@ -334,6 +334,7 @@ fun ShopPacksScreen(
                         },
                         onPurchaseOrEquipFrame = onPurchaseOrEquipFrame,
                         onPurchaseOrEquipBinder = onPurchaseOrEquipBinder,
+                        onPurchaseOrEquipTheme = onPurchaseOrEquipTheme,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -638,6 +639,7 @@ private fun CosmeticsShopSection(
     onSelectTab: (CosmeticSubTab) -> Unit,
     onPurchaseOrEquipFrame: (ProfileFrameItem) -> Unit,
     onPurchaseOrEquipBinder: (CardBinderDesign) -> Unit,
+    onPurchaseOrEquipTheme: (ThemeAccentOption) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val palette = CollectorTheme.colors
@@ -690,9 +692,7 @@ private fun CosmeticsShopSection(
                         .minimumInteractiveComponentSize()
                         .clip(RoundedCornerShape(999.dp))
                         .clickable { onSelectTab(tab) }
-                        .testTag(
-                            if (tab == CosmeticSubTab.FRAMES) "cosmetics_tab_frames" else "cosmetics_tab_binders"
-                        )
+                        .testTag("cosmetics_tab_${tab.name.lowercase()}")
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -700,7 +700,11 @@ private fun CosmeticsShopSection(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = if (tab == CosmeticSubTab.FRAMES) Icons.Default.Person else Icons.Default.Book,
+                            imageVector = when (tab) {
+                                CosmeticSubTab.FRAMES -> Icons.Default.Person
+                                CosmeticSubTab.BINDERS -> Icons.Default.Book
+                                CosmeticSubTab.THEMES -> Icons.Default.Palette
+                            },
                             contentDescription = null,
                             tint = if (selected) Color.White else palette.muted,
                             modifier = Modifier.size(16.dp)
@@ -780,6 +784,61 @@ private fun CosmeticsShopSection(
                                 canAfford = canAfford,
                                 testTag = "cosmetic_frame_${frame.id}",
                                 onClick = { onPurchaseOrEquipFrame(frame) }
+                            )
+                        }
+                    }
+                }
+            }
+        } else if (activeCosmeticTab == CosmeticSubTab.THEMES) {
+            ThemeAccentOption.entries.filter { it.diamondCost > 0 }.forEach { accent ->
+                val isUnlocked = accent.isUnlocked(uiState.wallet.unlockedThemeIds)
+                val isEquipped = uiState.wallet.themeAccentId == accent.id
+                val canAfford = isUnlocked || uiState.wallet.diamonds >= accent.diamondCost
+                FrostedGlassCard(
+                    cornerRadius = 22.dp,
+                    borderColor = if (isEquipped) palette.accentPrimary else palette.glassHighlight,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(accent.swatchColor, accent.secondarySwatchColor ?: accent.swatchColor)
+                                    )
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = accent.label,
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                color = palette.ink
+                            )
+                            Text(
+                                text = "Colour theme with its own light and dark look.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.muted
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            CosmeticActionButton(
+                                isEquipped = isEquipped,
+                                isUnlocked = isUnlocked,
+                                isAchievementExclusive = false,
+                                diamondCost = accent.diamondCost,
+                                canAfford = canAfford,
+                                testTag = "cosmetic_theme_${accent.id}",
+                                onClick = { onPurchaseOrEquipTheme(accent) }
                             )
                         }
                     }

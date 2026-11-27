@@ -143,7 +143,7 @@ fun QuestsScreen(
                     ) {
                         Spacer(modifier = Modifier.size(48.dp))
                         Text(
-                            text = "Quests & Missions",
+                            text = "Quests",
                             style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
                             color = Color.White
                         )

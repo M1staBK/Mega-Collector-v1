@@ -54,15 +54,21 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.Coil
+import coil.compose.AsyncImage
 import com.example.model.CardBinderDesign
 import com.example.model.OwnedCard
+import com.example.ui.theme.CollectorTheme
 import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.sin
@@ -96,6 +102,13 @@ fun PremiumBinder(
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val context = LocalContext.current
+    val palette = CollectorTheme.colors
+    val dark = palette.isDark
+    val titleColor = if (dark) Color.White else palette.ink
+    val subColor = if (dark) Color(0xFF9AA7BD) else Color(0xFF6B6558)
+    val controlColor = if (dark) Color.White else palette.ink
+    val accent = if (dark) binder.trimGold else palette.accentPrimary
 
     val pages = remember(cards) { cards.chunked(CARDS_PER_PAGE) }
     // Sheet 0 is the cover; every other sheet carries two card pages (front and back).
@@ -103,6 +116,18 @@ fun PremiumBinder(
 
     var spread by remember { mutableStateOf(0) }
     val flip = remember { Animatable(0f) }
+
+    // Load the pictures of the pages around the current spread ahead of time so turning never shows blanks.
+    LaunchedEffect(spread, pages) {
+        val loader = Coil.imageLoader(context.applicationContext)
+        val firstPage = ((spread - 2).coerceAtLeast(0)) * 2
+        val lastPage = ((spread + 3) * 2 + 1).coerceAtMost(pages.size - 1)
+        for (pageIndex in firstPage..lastPage) {
+            pages.getOrNull(pageIndex)?.forEach { card ->
+                loader.enqueue(buildMlbbCardImageRequest(context, card.imageUrl, crossfadeMs = 0, compact = true))
+            }
+        }
+    }
 
     // A new bookmark starts at its first page (or stays closed if the binder is still closed).
     LaunchedEffect(selectedBookmark) {
@@ -133,7 +158,7 @@ fun PremiumBinder(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .drawDesk(binder)
+            .drawDesk(binder, dark)
     ) {
         val tabW = 30.dp
         val bookW: Dp = minOf(maxWidth - tabW * 2 - 8.dp, 520.dp)
@@ -161,22 +186,22 @@ fun PremiumBinder(
                     Text(
                         text = binder.name,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White
+                        color = titleColor
                     )
                     Text(
                         text = "${activeMark?.label ?: "ALL"}  •  ${cards.size} cards  •  $totalCollected collected",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF9AA7BD)
+                        color = subColor
                     )
                 }
                 if (spread > 0) {
                     Text(
                         text = "Close binder",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = binder.trimGold,
+                        color = accent,
                         modifier = Modifier
                             .clip(RoundedCornerShape(999.dp))
-                            .border(1.dp, binder.trimGold.copy(alpha = 0.5f), RoundedCornerShape(999.dp))
+                            .border(1.dp, accent.copy(alpha = 0.5f), RoundedCornerShape(999.dp))
                             .clickable {
                                 onButtonClickSfx()
                                 scope.launch {
@@ -210,7 +235,7 @@ fun PremiumBinder(
                     for (i in 1..16) {
                         val grow = i * 2.6f.dp.toPx()
                         drawRoundRect(
-                            color = Color.Black.copy(alpha = 0.030f),
+                            color = Color.Black.copy(alpha = if (dark) 0.030f else 0.020f),
                             topLeft = Offset(left - grow * 0.8f, top - grow * 0.4f + 16.dp.toPx()),
                             size = Size(
                                 (right - left) + grow * 1.6f,
@@ -221,7 +246,7 @@ fun PremiumBinder(
                     }
                     // contact shadow right under the book
                     drawRoundRect(
-                        color = Color.Black.copy(alpha = 0.28f),
+                        color = Color.Black.copy(alpha = if (dark) 0.28f else 0.16f),
                         topLeft = Offset(left + 6.dp.toPx(), top + 14.dp.toPx()),
                         size = Size((right - left) - 12.dp.toPx(), pageH.toPx() - top),
                         cornerRadius = CornerRadius(12.dp.toPx())
@@ -390,6 +415,7 @@ fun PremiumBinder(
                     bookmarks.forEach { mark ->
                         BookmarkTab(
                             mark = mark,
+                            dark = dark,
                             selected = mark.key == selectedBookmark,
                             enabled = mark.count > 0 || mark.key == "ALL",
                             modifier = Modifier.weight(1f),
@@ -420,7 +446,7 @@ fun PremiumBinder(
                     Icon(
                         Icons.Default.ChevronLeft,
                         contentDescription = "Previous page",
-                        tint = if (spread > 0) Color.White else Color(0x44FFFFFF),
+                        tint = if (spread > 0) controlColor else controlColor.copy(alpha = 0.25f),
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -435,7 +461,7 @@ fun PremiumBinder(
                         }
                     },
                     style = MaterialTheme.typography.labelLarge,
-                    color = Color(0xFFCBD5E1),
+                    color = subColor,
                     textAlign = TextAlign.Center
                 )
                 IconButton(
@@ -446,7 +472,7 @@ fun PremiumBinder(
                     Icon(
                         Icons.Default.ChevronRight,
                         contentDescription = "Next page",
-                        tint = if (spread < sheetCount) Color.White else Color(0x44FFFFFF),
+                        tint = if (spread < sheetCount) controlColor else controlColor.copy(alpha = 0.25f),
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -456,11 +482,20 @@ fun PremiumBinder(
     }
 }
 
-/** Dark desk with a soft glow in the binder's own colour. */
-private fun Modifier.drawDesk(binder: CardBinderDesign): Modifier =
+/** Soft desk: dark slate in dark mode, warm pearl in light mode, with a faint glow in the binder's colour. */
+private fun Modifier.drawDesk(binder: CardBinderDesign, dark: Boolean): Modifier =
     this
-        .background(Brush.verticalGradient(listOf(Color(0xFF0B0F1C), Color(0xFF070A14), Color(0xFF05070E))))
-        .background(Brush.radialGradient(listOf(binder.coverPrimary.copy(alpha = 0.30f), Color.Transparent)))
+        .background(
+            Brush.verticalGradient(
+                if (dark) listOf(Color(0xFF0B0F1C), Color(0xFF070A14), Color(0xFF05070E))
+                else listOf(Color(0xFFFBF8F1), Color(0xFFF2EDE0), Color(0xFFEAE4D4))
+            )
+        )
+        .background(
+            Brush.radialGradient(
+                listOf(binder.coverPrimary.copy(alpha = if (dark) 0.28f else 0.12f), Color.Transparent)
+            )
+        )
 
 // ------------------------------------------------------------------ halves
 
@@ -525,58 +560,29 @@ private fun RightHalf(
 
 @Composable
 private fun LeatherCover(binder: CardBinderDesign, totalCollected: Int) {
-    val shape = RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 20.dp, bottomEnd = 20.dp)
+    val shape = RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 18.dp, bottomEnd = 18.dp)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .clip(shape)
-            .background(
-                Brush.linearGradient(
-                    listOf(binder.coverPrimary, binder.coverSecondary, binder.coverPrimary.copy(alpha = 0.85f))
-                )
-            )
+            .background(Brush.linearGradient(listOf(binder.coverPrimary, binder.coverSecondary)))
     ) {
-        // leather sheen and a soft highlight on the top edge
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
-                        listOf(Color.White.copy(alpha = 0.14f), Color.Transparent, Color.Black.copy(alpha = 0.22f))
-                    )
-                )
-        )
         // spine strip
         Box(
             modifier = Modifier
                 .fillMaxHeight()
                 .width(22.dp)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(binder.spineColor, binder.spineColor.copy(alpha = 0.7f))
-                    )
-                )
+                .background(binder.spineColor)
         )
-        // stitched border and embossed frame
+        // one clean brass line frame
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val inset = 14.dp.toPx()
+            val inset = 20.dp.toPx()
             drawRoundRect(
-                color = binder.trimGold.copy(alpha = 0.55f),
-                topLeft = Offset(inset + 14.dp.toPx(), inset),
-                size = Size(size.width - inset * 2 - 14.dp.toPx(), size.height - inset * 2),
-                cornerRadius = CornerRadius(14.dp.toPx()),
-                style = Stroke(
-                    width = 1.4.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(7.dp.toPx(), 5.dp.toPx()))
-                )
-            )
-            val inner = 26.dp.toPx()
-            drawRoundRect(
-                color = binder.trimGold.copy(alpha = 0.9f),
-                topLeft = Offset(inner + 14.dp.toPx(), inner),
-                size = Size(size.width - inner * 2 - 14.dp.toPx(), size.height - inner * 2),
+                color = binder.trimGold.copy(alpha = 0.85f),
+                topLeft = Offset(inset + 22.dp.toPx(), inset),
+                size = Size(size.width - inset * 2 - 22.dp.toPx(), size.height - inset * 2),
                 cornerRadius = CornerRadius(10.dp.toPx()),
-                style = Stroke(width = 1.6.dp.toPx())
+                style = Stroke(width = 1.2.dp.toPx())
             )
         }
         Column(
@@ -590,32 +596,21 @@ private fun LeatherCover(binder: CardBinderDesign, totalCollected: Int) {
                 imageVector = Icons.Default.AutoAwesome,
                 contentDescription = null,
                 tint = binder.trimGold,
-                modifier = Modifier.size(30.dp)
+                modifier = Modifier.size(26.dp)
             )
             Text(
                 text = binder.name.uppercase(),
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Black,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
                     letterSpacing = 1.4.sp
                 ),
                 color = binder.trimGold,
                 textAlign = TextAlign.Center
             )
-            Box(
-                modifier = Modifier
-                    .width(44.dp)
-                    .height(1.dp)
-                    .background(binder.trimGold.copy(alpha = 0.7f))
-            )
             Text(
                 text = "$totalCollected CARDS",
                 style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 2.sp),
-                color = Color.White.copy(alpha = 0.78f)
-            )
-            Text(
-                text = "MOBA COMPANION",
-                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 2.sp),
-                color = Color.White.copy(alpha = 0.5f)
+                color = Color.White.copy(alpha = 0.7f)
             )
         }
     }
@@ -761,16 +756,10 @@ private fun Sleeve(
         contentAlignment = Alignment.Center
     ) {
         if (card != null) {
-            Box(
-                modifier = Modifier
-                    .size(cardW, cardH - 8.dp)
-            ) {
-                HolographicCardView(
-                    card = card,
-                    compact = true,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            BinderCardFace(
+                card = card,
+                modifier = Modifier.size(cardW, cardH - 8.dp)
+            )
         } else {
             Icon(
                 imageVector = Icons.Default.AutoAwesome,
@@ -817,40 +806,110 @@ private fun SpineRings(
     }
 }
 
+/** Static, lightweight card for the binder: just the art, a rarity frame and the name. No animation, so turning pages stays smooth. */
+@Composable
+private fun BinderCardFace(card: OwnedCard, modifier: Modifier) {
+    val context = LocalContext.current
+    val request = remember(card.imageUrl) {
+        buildMlbbCardImageRequest(context, card.imageUrl, crossfadeMs = 0, compact = true)
+    }
+    val shape = RoundedCornerShape(7.dp)
+    val rarityColor = card.rarity.primaryColor
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(Color(0xFF111827))
+            .border(1.5.dp, rarityColor.copy(alpha = 0.9f), shape)
+    ) {
+        AsyncImage(
+            model = request,
+            contentDescription = card.skinName,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))))
+                .padding(horizontal = 6.dp, vertical = 5.dp)
+        ) {
+            Text(
+                text = card.heroName,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = card.skinName,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.72f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (card.isMisprint) {
+            Text(
+                text = "1/1",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .background(Color(0xFFF43F5E), RoundedCornerShape(5.dp))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+            )
+        }
+    }
+}
+
 @Composable
 private fun BookmarkTab(
     mark: BinderBookmark,
     selected: Boolean,
     enabled: Boolean,
+    dark: Boolean,
     modifier: Modifier,
     onClick: () -> Unit
 ) {
     val pullOut = if (selected) 8.dp else 0.dp
+    val shape = RoundedCornerShape(topEnd = 9.dp, bottomEnd = 9.dp)
+    val paper = if (dark) Color(0xFF2A3142) else Color(0xFFF3ECDA)
+    val ink = if (dark) Color(0xFFE5E9F2) else Color(0xFF2B2A26)
     Box(
         modifier = modifier
             .fillMaxWidth()
             .offset(x = pullOut)
-            .clip(RoundedCornerShape(topEnd = 9.dp, bottomEnd = 9.dp))
-            .background(
-                Brush.horizontalGradient(
-                    listOf(mark.color.copy(alpha = if (enabled) 0.95f else 0.30f), mark.color.copy(alpha = if (enabled) 0.75f else 0.22f))
-                )
-            )
+            .clip(shape)
+            .background(if (selected) paper else paper.copy(alpha = 0.92f))
             .border(
-                BorderStroke(if (selected) 1.5.dp else 0.5.dp, Color.White.copy(alpha = if (selected) 0.9f else 0.25f)),
-                RoundedCornerShape(topEnd = 9.dp, bottomEnd = 9.dp)
+                BorderStroke(
+                    if (selected) 1.2.dp else 0.5.dp,
+                    if (selected) mark.color else ink.copy(alpha = 0.18f)
+                ),
+                shape
             )
             .clickable(enabled = enabled, onClick = onClick)
             .testTag("binder_bookmark_${mark.key}"),
         contentAlignment = Alignment.Center
     ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxHeight()
+                .width(if (selected) 7.dp else 4.dp)
+                .background(mark.color.copy(alpha = if (enabled) 1f else 0.3f))
+        )
         Text(
             text = mark.label,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.ExtraBold),
-            color = Color(0xFF0B1020).copy(alpha = if (enabled) 1f else 0.5f),
+            color = ink.copy(alpha = if (enabled) 1f else 0.4f),
             maxLines = 1,
             softWrap = false,
-            modifier = Modifier.rotate(90f)
+            modifier = Modifier
+                .padding(start = 4.dp)
+                .rotate(90f)
         )
     }
 }

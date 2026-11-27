@@ -80,6 +80,7 @@ data class PlayerWalletState(
     val unlockedBinderIds: Set<String> = setOf("binder_default"),
     val equippedBinderId: String = "binder_default",
     val unlockedThemeIds: Set<String> = emptySet(),
+    val arcadeCharges: Map<String, Pair<Int, Long>> = emptyMap(),
     val claimedAchievementIds: Set<String> = emptySet()
 ) {
     fun currentScratcherStatus(nowMs: Long): HourlyChargeStatus =
@@ -96,6 +97,11 @@ data class PlayerWalletState(
 
     fun currentMemoryMatchStatus(nowMs: Long): HourlyChargeStatus =
         computeHourlyChargeStatus(memoryMatchStoredCharges, memoryMatchLastRefillMs, nowMs)
+
+    fun currentArcadeStatus(gameId: String, nowMs: Long): HourlyChargeStatus {
+        val (stored, last) = arcadeCharges[gameId] ?: (MAX_HOURLY_CHARGES to 0L)
+        return computeHourlyChargeStatus(stored, last, nowMs)
+    }
 
     fun currentQuizCooldownRemainingMs(nowMs: Long): Long {
         if (quizLastCompletedMs <= 0L) return 0L
@@ -135,6 +141,9 @@ data class HourlyChargeStatus(
     val charges: Int,
     val msUntilNextCharge: Long
 )
+
+/** Hourly minigames that share the generic charge system (see consumeArcadeChargeAndAward). */
+val ARCADE_GAME_IDS: List<String> = listOf("combo", "sequence", "rush")
 
 data class BootThemePrefs(
     val themeAccentId: String = "SKY_COBALT",
@@ -302,8 +311,74 @@ class PlayerPreferencesStore(private val context: Context) {
             unlockedBinderIds = (prefs[Keys.UNLOCKED_BINDER_IDS] ?: emptySet()) + "binder_default",
             equippedBinderId = prefs[Keys.EQUIPPED_BINDER_ID] ?: "binder_default",
             unlockedThemeIds = prefs[Keys.UNLOCKED_THEME_IDS] ?: emptySet(),
+            arcadeCharges = ARCADE_GAME_IDS.associateWith { id ->
+                (prefs[intPreferencesKey("arcade_${id}_charges")] ?: PlayerWalletState.MAX_HOURLY_CHARGES) to
+                    (prefs[longPreferencesKey("arcade_${id}_last_refill_ms")] ?: 0L)
+            },
             claimedAchievementIds = prefs[Keys.CLAIMED_ACHIEVEMENT_IDS] ?: emptySet()
         )
+    }
+
+    suspend fun consumeArcadeChargeAndAward(
+        gameId: String,
+        coinReward: Int,
+        diamondReward: Int,
+        nowMs: Long,
+        todayEpochDay: Long,
+        currentWeekKey: Long
+    ): Boolean {
+        val chargeKey = intPreferencesKey("arcade_${gameId}_charges")
+        val refillKey = longPreferencesKey("arcade_${gameId}_last_refill_ms")
+        var recorded = false
+        context.collectorDataStore.edit { prefs ->
+            val stored = prefs[chargeKey] ?: PlayerWalletState.MAX_HOURLY_CHARGES
+            val lastRefill = prefs[refillKey] ?: 0L
+            val status = PlayerWalletState.computeHourlyChargeStatus(stored, lastRefill, nowMs)
+            if (status.charges > 0) {
+                val newRefillAnchor = when {
+                    status.charges >= PlayerWalletState.MAX_HOURLY_CHARGES -> nowMs
+                    else -> {
+                        val elapsed = (nowMs - lastRefill).coerceAtLeast(0L)
+                        val gained = (elapsed / PlayerWalletState.ONE_HOUR_MS).toInt()
+                        lastRefill + gained * PlayerWalletState.ONE_HOUR_MS
+                    }
+                }
+                prefs[chargeKey] = status.charges - 1
+                prefs[refillKey] = newRefillAnchor
+                if (coinReward > 0) {
+                    prefs[Keys.COINS] = (prefs[Keys.COINS] ?: PlayerWalletState.DEFAULT_STARTER_COINS) + coinReward
+                }
+                if (diamondReward > 0) {
+                    prefs[Keys.DIAMONDS] =
+                        (prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS) + diamondReward
+                    resetDailyIfNeeded(prefs, todayEpochDay)
+                    resetWeeklyIfNeeded(prefs, currentWeekKey)
+                    prefs[Keys.DAILY_MINIGAMES_WON] = (prefs[Keys.DAILY_MINIGAMES_WON] ?: 0) + 1
+                    prefs[Keys.WEEKLY_MINIGAMES_WON] = (prefs[Keys.WEEKLY_MINIGAMES_WON] ?: 0) + 1
+                }
+                recorded = true
+            }
+        }
+        return recorded
+    }
+
+    /** Buys a colour theme with diamonds and applies it. Returns false if the player cannot pay. */
+    suspend fun purchaseAndEquipTheme(accentId: String, diamondCost: Int): Boolean {
+        var success = false
+        context.collectorDataStore.edit { prefs ->
+            val unlocked = prefs[Keys.UNLOCKED_THEME_IDS] ?: emptySet()
+            if (accentId in unlocked) {
+                success = true
+                return@edit
+            }
+            val diamonds = prefs[Keys.DIAMONDS] ?: PlayerWalletState.DEFAULT_STARTER_DIAMONDS
+            if (diamondCost <= 0 || diamonds < diamondCost) return@edit
+            prefs[Keys.DIAMONDS] = diamonds - diamondCost
+            prefs[Keys.UNLOCKED_THEME_IDS] = unlocked + accentId
+            success = true
+        }
+        if (success) setThemeAccentId(accentId)
+        return success
     }
 
     suspend fun spendForPackBundleAndRecordProgress(

@@ -117,7 +117,7 @@ fun AuthScreen(
                     )
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = "Mega Collector",
+                        contentDescription = "MOBA Companion",
                         tint = StudioGold,
                         modifier = Modifier.size(40.dp)
                     )
@@ -128,7 +128,7 @@ fun AuthScreen(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "MEGA COLLECTOR",
+                        text = "MOBA COMPANION",
                         style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.ExtraBold),
                         color = palette.accentPrimary,
                         textAlign = TextAlign.Center

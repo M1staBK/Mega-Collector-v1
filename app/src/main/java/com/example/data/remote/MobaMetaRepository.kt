@@ -50,8 +50,8 @@ class MobaMetaRepository(@Suppress("unused") private val context: Context) {
 
     private val api: MobaMetaApi by lazy {
         val okHttp = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val req = chain.request().newBuilder()
                     .header("Accept", "application/json")
@@ -225,10 +225,16 @@ class MobaMetaRepository(@Suppress("unused") private val context: Context) {
         val key = rank.apiParam
         rankCache[key]?.let { if (!forceRefresh && fresh(it.atMs)) return@runCatching it.value }
 
-        val profiles = runCatching { loadProfiles(forceRefresh) }.getOrDefault(emptyMap())
-        val json = getJson(
-            "/heroes/rank?days=7&rank=${rank.apiParam}&sort_field=win_rate&sort_order=desc&size=200&index=1&lang=en"
-        )
+        // The hero list (roles and lanes) and the rank list load at the same time
+        val (profiles, json) = coroutineScope {
+            val profilesD = async { runCatching { loadProfiles(forceRefresh) }.getOrDefault(emptyMap()) }
+            val rankD = async {
+                getJson(
+                    "/heroes/rank?days=7&rank=${rank.apiParam}&sort_field=win_rate&sort_order=desc&size=200&index=1&lang=en"
+                )
+            }
+            profilesD.await() to rankD.await()
+        }
 
         val raws = ArrayList<RawRate>()
         for (rec in json.records()) {

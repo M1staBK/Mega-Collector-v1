@@ -882,6 +882,26 @@ class CollectorRepository(
         prefs.setThemeAccentId(accentId)
     }
 
+    suspend fun consumeArcadeCharge(gameId: String, coins: Int, diamonds: Int): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            val ok = prefs.consumeArcadeChargeAndAward(
+                gameId = gameId,
+                coinReward = coins,
+                diamondReward = diamonds,
+                nowMs = System.currentTimeMillis(),
+                todayEpochDay = currentLocalEpochDay(),
+                currentWeekKey = currentLocalWeekKey()
+            )
+            if (ok) Result.success(Unit)
+            else Result.failure(IllegalStateException("No charges left: +1 charge refills every hour (max 3)."))
+        }
+
+    suspend fun purchaseThemeAccent(accentId: String, label: String, diamondCost: Int): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            if (prefs.purchaseAndEquipTheme(accentId, diamondCost)) Result.success(Unit)
+            else Result.failure(IllegalStateException("Not enough diamonds for $label."))
+        }
+
     suspend fun purchaseProfileFrame(frame: ProfileFrameItem): Result<ProfileFrameItem> = withContext(Dispatchers.IO) {
         if (frame.isAchievementExclusive) {
             return@withContext Result.failure(

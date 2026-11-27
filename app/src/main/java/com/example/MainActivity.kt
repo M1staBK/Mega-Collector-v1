@@ -484,6 +484,7 @@ fun MegaCollectorApp(
                                         uiState = uiState,
                                         onClaimScratcherPrize = viewModel::claimScratcherPrize,
                                         onAwardPrismDiamonds = viewModel::awardPrismDiamonds,
+                                        onAwardArcade = viewModel::awardArcadeGame,
                                         onSpinWheelPrize = viewModel::spinWheelPrize,
                                         onWheelTickSfx = viewModel::playWheelTick,
                                         onCompleteHourlyQuiz = viewModel::completeHourlyQuiz,
@@ -519,6 +520,7 @@ fun MegaCollectorApp(
                                         onExchangeDiamondsForCoins = viewModel::exchangeDiamondsForCoins,
                                         onPurchaseOrEquipFrame = viewModel::purchaseOrEquipFrame,
                                         onPurchaseOrEquipBinder = viewModel::purchaseOrEquipBinder,
+                                        onPurchaseOrEquipTheme = viewModel::purchaseOrEquipTheme,
                                         onGoToArcade = { navigateToTab(CollectorTab.PLAY) },
                                         onGoToMissions = { navigateToTab(CollectorTab.QUESTS) },
                                         onGoToBinder = {
@@ -592,6 +594,8 @@ fun MegaCollectorApp(
                                         },
                                         onTogglePinnedBadge = viewModel::togglePinnedBadge,
                                         onClaimAchievementReward = viewModel::claimAchievementReward,
+                                        onEquipFrame = viewModel::purchaseOrEquipFrame,
+                                        onEquipBinder = viewModel::purchaseOrEquipBinder,
                                         onOpenSettings = {},
                                         onButtonClickSfx = viewModel::playClick
                                     )
@@ -771,12 +775,12 @@ private fun VaultTabHost(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "My Collection",
+                        text = "Vault",
                         style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
                         color = palette.ink
                     )
                     Text(
-                        text = "Browse your cards and skins",
+                        text = "Your binder, recycling and trades",
                         style = MaterialTheme.typography.bodyMedium,
                         color = palette.muted
                     )

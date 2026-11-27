@@ -154,6 +154,7 @@ fun PlayArcadeScreen(
     uiState: MegaCollectorUiState,
     onClaimScratcherPrize: (Int) -> Unit,
     onAwardPrismDiamonds: (Int, String) -> Unit,
+    onAwardArcade: (gameId: String, title: String, coins: Int, diamonds: Int, label: String) -> Unit = { _, _, _, _, _ -> },
     onSpinWheelPrize: (label: String, coins: Int, diamonds: Int, freePacks: Int) -> Unit,
     onWheelTickSfx: (Float) -> Unit,
     onCompleteHourlyQuiz: (Int, Int) -> Unit,
@@ -208,12 +209,12 @@ fun PlayArcadeScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Arcade",
+                                text = "Play",
                                 style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
                                 color = palette.ink
                             )
                             Text(
-                                text = "Challenge yourself",
+                                text = "Minigames and hourly rewards",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = palette.muted
                             )
@@ -341,6 +342,15 @@ fun PlayArcadeScreen(
                 HourlyPrismTimingTapGame(
                     status = uiState.prismStatus,
                     onStrike = onAwardPrismDiamonds,
+                    onButtonClickSfx = onButtonClickSfx
+                )
+            }
+
+            // New hourly minigames: Combo Cracker, Spell Sequence, Minion Rush
+            item {
+                ExtraMinigamesSection(
+                    statuses = uiState.arcadeStatuses,
+                    onAward = onAwardArcade,
                     onButtonClickSfx = onButtonClickSfx
                 )
             }

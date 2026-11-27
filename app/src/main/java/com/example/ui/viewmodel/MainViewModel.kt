@@ -145,6 +145,7 @@ data class MegaCollectorUiState(
     val nextDailyDayIndex: Int = 1,
     val scratcherStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
     val prismStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
+    val arcadeStatuses: Map<String, HourlyChargeStatus> = emptyMap(),
     val wheelStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
     val mysteryPickStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
     val memoryMatchStatus: HourlyChargeStatus = HourlyChargeStatus(3, 0L),
@@ -282,6 +283,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             nextDailyDayIndex = nextDay,
             scratcherStatus = scratcherStatus,
             prismStatus = prismStatus,
+            arcadeStatuses = com.example.data.local.ARCADE_GAME_IDS.associateWith { wallet.currentArcadeStatus(it, eph.nowMs) },
             wheelStatus = wheelStatus,
             mysteryPickStatus = mysteryPickStatus,
             memoryMatchStatus = memoryMatchStatus,
@@ -812,6 +814,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 .onFailure { err ->
                     _snackbarMessage.value = err.localizedMessage ?: "Scratcher recharging!"
+                }
+        }
+    }
+
+    fun awardArcadeGame(gameId: String, title: String, coins: Int, diamonds: Int, label: String) {
+        viewModelScope.launch {
+            repository.consumeArcadeCharge(gameId, coins, diamonds)
+                .onSuccess {
+                    if (diamonds >= 3) soundEngine.playRewardChime() else soundEngine.playClick()
+                    recordCloudHistory(
+                        type = CollectorHistoryType.MINIGAME,
+                        title = title,
+                        detail = label,
+                        diamondDelta = diamonds
+                    )
+                    syncCloudProfileNow()
+                    _snackbarMessage.value = buildString {
+                        append("$title: +$coins coins")
+                        if (diamonds > 0) append(", +$diamonds 💎")
+                    }
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "$title is recharging!"
+                }
+        }
+    }
+
+    fun purchaseOrEquipTheme(accent: ThemeAccentOption) {
+        soundEngine.playClick()
+        val wallet = uiState.value.wallet
+        if (accent.isUnlocked(wallet.unlockedThemeIds)) {
+            viewModelScope.launch {
+                repository.setThemeAccentId(accent.id)
+                _snackbarMessage.value = "Theme applied: ${accent.label}"
+            }
+            return
+        }
+        viewModelScope.launch {
+            repository.purchaseThemeAccent(accent.id, accent.label, accent.diamondCost)
+                .onSuccess {
+                    soundEngine.playRewardChime()
+                    _snackbarMessage.value = "Unlocked & applied: ${accent.label}!"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "Cannot unlock theme."
                 }
         }
     }

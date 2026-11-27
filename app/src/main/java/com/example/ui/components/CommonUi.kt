@@ -1009,7 +1009,7 @@ fun AppPreloadOverlay(
                 // Same artwork as the home-screen game icon (background + foreground layers together)
                 Image(
                     bitmap = launcherIcon,
-                    contentDescription = "MEGA Collector logo",
+                    contentDescription = "MOBA Companion logo",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(96.dp)
@@ -1034,7 +1034,7 @@ fun AppPreloadOverlay(
                     ) {
                         Image(
                             painter = painterResource(id = R.drawable.app_icon_mega_fg),
-                            contentDescription = "MEGA Collector logo",
+                            contentDescription = "MOBA Companion logo",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -1045,7 +1045,7 @@ fun AppPreloadOverlay(
             }
 
             Text(
-                text = "MEGA COLLECTOR",
+                text = "MOBA COMPANION",
                 style = MaterialTheme.typography.headlineMedium.copy(
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 1.6.sp

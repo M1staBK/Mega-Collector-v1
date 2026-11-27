@@ -100,6 +100,13 @@ import com.example.ui.viewmodel.MegaCollectorUiState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
+import com.example.model.ProfileFrameItem
+import com.example.model.CardBinderDesign
 
 @Composable
 fun ProfileScreen(
@@ -112,6 +119,8 @@ fun ProfileScreen(
     onSyncCatalog: () -> Unit,
     onTogglePinnedBadge: (AchievementBadgeUi) -> Unit,
     onClaimAchievementReward: (AchievementBadgeUi) -> Unit = {},
+    onEquipFrame: (ProfileFrameItem) -> Unit = {},
+    onEquipBinder: (CardBinderDesign) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onButtonClickSfx: () -> Unit,
     modifier: Modifier = Modifier
@@ -119,6 +128,7 @@ fun ProfileScreen(
     val palette = CollectorTheme.colors
     val context = LocalContext.current
     var showEditAlias by remember { mutableStateOf(false) }
+    var showEditCosmetics by remember { mutableStateOf(false) }
     var showSelfProfilePreview by remember { mutableStateOf(false) }
     var showCollectionLadderDialog by remember { mutableStateOf(false) }
     var inspectedBadgeId by remember { mutableStateOf<String?>(null) }
@@ -382,28 +392,53 @@ fun ProfileScreen(
                             DiamondsPill(diamonds = uiState.wallet.diamonds)
                         }
 
-                        OutlinedButton(
-                            onClick = {
-                                onButtonClickSfx()
-                                showSelfProfilePreview = true
-                            },
-                            shape = RoundedCornerShape(999.dp),
-                            border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.55f)),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("profile_preview_public_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Visibility,
-                                contentDescription = null,
-                                tint = palette.accentPrimary,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = "Public Card",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = palette.accentPrimary
-                            )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    onButtonClickSfx()
+                                    showEditCosmetics = true
+                                },
+                                shape = RoundedCornerShape(999.dp),
+                                border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.55f)),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("profile_edit_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = null,
+                                    tint = palette.accentPrimary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "Edit",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = palette.accentPrimary
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    onButtonClickSfx()
+                                    showSelfProfilePreview = true
+                                },
+                                shape = RoundedCornerShape(999.dp),
+                                border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.55f)),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("profile_preview_public_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Visibility,
+                                    contentDescription = null,
+                                    tint = palette.accentPrimary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "Public Card",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = palette.accentPrimary
+                                )
+                            }
                         }
                     }
 
@@ -1151,6 +1186,25 @@ fun ProfileScreen(
         }
     }
 
+    if (showEditCosmetics) {
+        EditProfileCosmeticsDialog(
+            equippedFrameId = uiState.wallet.equippedFrameId,
+            unlockedFrameIds = uiState.wallet.unlockedFrameIds,
+            equippedBinderId = uiState.wallet.equippedBinderId,
+            unlockedBinderIds = uiState.wallet.unlockedBinderIds,
+            onEquipFrame = onEquipFrame,
+            onEquipBinder = onEquipBinder,
+            onEditAlias = {
+                showEditCosmetics = false
+                showEditAlias = true
+            },
+            onDismiss = {
+                onButtonClickSfx()
+                showEditCosmetics = false
+            }
+        )
+    }
+
     if (showEditAlias) {
         var draftAlias by remember { mutableStateOf(uiState.wallet.collectorAlias) }
         AlertDialog(
@@ -1419,6 +1473,164 @@ private fun StatTile(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
                 color = palette.muted
+            )
+        }
+    }
+}
+
+
+/** Pick your profile frame and your binder. Locked items are bought in Packs > Cosmetics. */
+@Composable
+private fun EditProfileCosmeticsDialog(
+    equippedFrameId: String,
+    unlockedFrameIds: Set<String>,
+    equippedBinderId: String,
+    unlockedBinderIds: Set<String>,
+    onEquipFrame: (ProfileFrameItem) -> Unit,
+    onEquipBinder: (CardBinderDesign) -> Unit,
+    onEditAlias: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val palette = CollectorTheme.colors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = palette.cardSurface,
+        title = { Text("Edit profile", color = palette.ink) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onEditAlias,
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.dp, palette.accentPrimary.copy(alpha = 0.55f)),
+                    modifier = Modifier.testTag("profile_edit_alias_button")
+                ) {
+                    Text("Change collector tag", color = palette.accentPrimary)
+                }
+
+                Text(
+                    text = "PROFILE FRAME",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = palette.muted
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CosmeticCatalog.FRAMES.forEach { frame ->
+                        val owned = frame.id in unlockedFrameIds
+                        CosmeticPickChip(
+                            name = frame.name,
+                            swatch = listOf(frame.primaryColor, frame.secondaryColor),
+                            owned = owned,
+                            equipped = frame.id == equippedFrameId,
+                            testTag = "profile_pick_frame_${frame.id}",
+                            onClick = { if (owned) onEquipFrame(frame) }
+                        )
+                    }
+                }
+
+                Text(
+                    text = "BINDER",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = palette.muted
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CosmeticCatalog.BINDERS.forEach { binder ->
+                        val owned = binder.id in unlockedBinderIds
+                        CosmeticPickChip(
+                            name = binder.name,
+                            swatch = listOf(binder.coverPrimary, binder.coverSecondary),
+                            owned = owned,
+                            equipped = binder.id == equippedBinderId,
+                            testTag = "profile_pick_binder_${binder.id}",
+                            onClick = { if (owned) onEquipBinder(binder) }
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Greyed items are not unlocked yet. Buy them in Packs > Cosmetics.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.muted
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done", color = palette.accentPrimary)
+            }
+        }
+    )
+}
+
+@Composable
+private fun CosmeticPickChip(
+    name: String,
+    swatch: List<Color>,
+    owned: Boolean,
+    equipped: Boolean,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    val palette = CollectorTheme.colors
+    Surface(
+        color = if (equipped) palette.frostSurface else palette.cardSurface,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(
+            if (equipped) 2.dp else 1.dp,
+            if (equipped) palette.accentPrimary else palette.glassHighlight
+        ),
+        modifier = Modifier
+            .width(92.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(enabled = owned, onClick = onClick)
+            .testTag(testTag)
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            swatch.map { it.copy(alpha = if (owned) 1f else 0.35f) }
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!owned) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Locked",
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                } else if (equipped) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Equipped",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Text(
+                text = name,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (owned) palette.ink else palette.muted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
             )
         }
     }
