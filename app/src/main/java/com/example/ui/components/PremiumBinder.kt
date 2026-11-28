@@ -72,6 +72,13 @@ import com.example.ui.theme.CollectorTheme
 import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.key
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
 
 /** A tab on the edge of the binder that filters it to one kind of card. */
 data class BinderBookmark(
@@ -117,7 +124,7 @@ fun PremiumBinder(
     var spread by remember { mutableStateOf(0) }
     val flip = remember { Animatable(0f) }
 
-    // Load the pictures of the pages around the current spread ahead of time so turning never shows blanks.
+    // Load the pictures of the pages around the current spread ahead of time.
     LaunchedEffect(spread, pages) {
         val loader = Coil.imageLoader(context.applicationContext)
         val firstPage = ((spread - 2).coerceAtLeast(0)) * 2
@@ -160,26 +167,41 @@ fun PremiumBinder(
             .fillMaxSize()
             .drawDesk(binder, dark)
     ) {
-        val tabW = 30.dp
-        val bookW: Dp = minOf(maxWidth - tabW * 2 - 8.dp, 520.dp)
-        val pageW: Dp = bookW / 2
-        val pageH: Dp = minOf(pageW * 3f, maxHeight - 150.dp).coerceAtLeast(280.dp)
-        val stageW: Dp = bookW + tabW * 2
-        val pageWpx = with(density) { pageW.toPx() }
+        val tabW = 24.dp
+        // Size: use all the height and width the screen gives us
+        val pageWFromWidth = (maxWidth - tabW * 2 + 8.dp) / 2
+        val bookHAvail = (maxHeight - 92.dp).coerceAtLeast(320.dp)
+        val cardWFromHeight = ((bookHAvail - 36.dp) / 2) * 0.665f
+        val cardW: Dp = minOf(cardWFromHeight, pageWFromWidth - 28.dp)
+        val cardH: Dp = cardW / 0.665f
+        val pageW: Dp = cardW + 28.dp
+        val bookH: Dp = cardH * 2 + 36.dp
+        // A closed binder is portrait: its cover is wider than one page
+        val coverK: Float = minOf(1.85f, (maxWidth - tabW * 2 - 8.dp) / pageW)
 
-        val cardH: Dp = (pageH - 34.dp - 14.dp) / 2
-        val cardW: Dp = minOf(pageW - 26.dp, cardH * 0.665f)
+        val pageWpx = with(density) { pageW.toPx() }
+        val stageWpx = with(density) { maxWidth.toPx() }
+        val tabOverlapPx = with(density) { 8.dp.toPx() }
+
+        // Left edge of the book (px). Closed: the cover is centred. Open: the spread is centred.
+        fun bookLeftPx(pos: Float): Float {
+            val p = pos.coerceIn(0f, 1f)
+            val openLeft = (stageWpx - 2f * pageWpx) / 2f
+            val closedLeft = stageWpx / 2f - coverK * pageWpx / 2f - pageWpx
+            return closedLeft + (openLeft - closedLeft) * p
+        }
+
+        val activeMark = bookmarks.firstOrNull { it.key == selectedBookmark }
 
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // ---------------------------------------------------- header line
-            val activeMark = bookmarks.firstOrNull { it.key == selectedBookmark }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                    .padding(horizontal = 18.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -215,49 +237,17 @@ fun PremiumBinder(
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f))
-
             // ----------------------------------------------------- the stage
-            val position = spread + flip.value
-            val shiftPx = -pageWpx / 2f * (1f - position).coerceIn(0f, 1f)
-
             Box(
                 modifier = Modifier
-                    .size(stageW, pageH)
-                    .graphicsLayer { translationX = shiftPx }
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
             ) {
-                // soft shadow under and around the book (grows as the cover opens)
-                val openAmount = position.coerceIn(0f, 1f)
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val left = tabW.toPx() + pageW.toPx() * (1f - openAmount)
-                    val right = tabW.toPx() + bookW.toPx()
-                    val top = 10.dp.toPx()
-                    for (i in 1..16) {
-                        val grow = i * 2.6f.dp.toPx()
-                        drawRoundRect(
-                            color = Color.Black.copy(alpha = if (dark) 0.030f else 0.020f),
-                            topLeft = Offset(left - grow * 0.8f, top - grow * 0.4f + 16.dp.toPx()),
-                            size = Size(
-                                (right - left) + grow * 1.6f,
-                                pageH.toPx() - top + grow * 0.8f
-                            ),
-                            cornerRadius = CornerRadius(14.dp.toPx() + grow)
-                        )
-                    }
-                    // contact shadow right under the book
-                    drawRoundRect(
-                        color = Color.Black.copy(alpha = if (dark) 0.28f else 0.16f),
-                        topLeft = Offset(left + 6.dp.toPx(), top + 14.dp.toPx()),
-                        size = Size((right - left) - 12.dp.toPx(), pageH.toPx() - top),
-                        cornerRadius = CornerRadius(12.dp.toPx())
-                    )
-                }
-
-                // ---- the book itself (pages, cover, drag + tap handling)
                 Box(
                     modifier = Modifier
-                        .offset(x = tabW)
-                        .size(bookW, pageH)
+                        .fillMaxWidth()
+                        .height(bookH + 12.dp)
                         .pointerInput(spread, sheetCount, pageWpx) {
                             var total = 0f
                             detectHorizontalDragGestures(
@@ -295,146 +285,174 @@ fun PremiumBinder(
                         }
                         .testTag("premium_binder")
                 ) {
-                    val f = flip.value
-                    val leftIndex: Int
-                    val rightIndex: Int
-                    val turningSheet: Int
-                    val angle: Float
-                    if (f >= 0f) {
-                        leftIndex = spread
-                        rightIndex = spread + 1
-                        turningSheet = spread
-                        angle = f * 180f
-                    } else {
-                        leftIndex = spread - 1
-                        rightIndex = spread
-                        turningSheet = spread - 1
-                        angle = 180f + f * 180f
-                    }
-
-                    val inspect: (OwnedCard) -> Unit = { card ->
-                        onButtonClickSfx()
-                        onInspectCard(card.instanceId)
-                    }
-
-                    Box(modifier = Modifier.size(pageW, pageH)) {
-                        LeftHalf(
-                            spreadIndex = leftIndex,
-                            binder = binder,
-                            pages = pages,
-                            totalCollected = totalCollected,
-                            cardW = cardW,
-                            cardH = cardH,
-                            onCardClick = inspect
-                        )
-                    }
-                    if (f != 0f || turningSheet !in 0 until sheetCount) {
-                        Box(
-                            modifier = Modifier
-                                .offset(x = pageW)
-                                .size(pageW, pageH)
-                        ) {
-                            RightHalf(
-                                spreadIndex = rightIndex,
-                                sheetCount = sheetCount,
-                                binder = binder,
-                                pages = pages,
-                                totalCollected = totalCollected,
-                                cardW = cardW,
-                                cardH = cardH,
-                                onCardClick = inspect
+                    // soft shadow, page-edge thickness and cover slab under the book
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val pos = spread + flip.value
+                        val p = pos.coerceIn(0f, 1f)
+                        val bl = bookLeftPx(pos)
+                        val left = bl + pageWpx * (1f - p)
+                        val right = bl + pageWpx + pageWpx * (coverK + (1f - coverK) * p)
+                        val top = 6.dp.toPx()
+                        val h = bookH.toPx()
+                        for (i in 1..16) {
+                            val grow = i * 2.6f.dp.toPx()
+                            drawRoundRect(
+                                color = Color.Black.copy(alpha = if (dark) 0.030f else 0.020f),
+                                topLeft = Offset(left - grow * 0.8f, top - grow * 0.4f + 16.dp.toPx()),
+                                size = Size((right - left) + grow * 1.6f, h + grow * 0.8f),
+                                cornerRadius = CornerRadius(14.dp.toPx() + grow)
                             )
+                        }
+                        // cover slab: gives the binder its thickness
+                        drawRoundRect(
+                            color = binder.coverSecondary,
+                            topLeft = Offset(left + 3.dp.toPx(), top + 6.dp.toPx()),
+                            size = Size(right - left, h),
+                            cornerRadius = CornerRadius(16.dp.toPx())
+                        )
+                        // stacked page edges on the right and bottom of an open binder
+                        val openA = ((p - 0.6f) / 0.4f).coerceIn(0f, 1f)
+                        if (openA > 0f) {
+                            for (i in 3 downTo 1) {
+                                drawRoundRect(
+                                    color = Color(0xFFEFE7D2).copy(alpha = openA),
+                                    topLeft = Offset(left + i * 1.7.dp.toPx(), top + i * 1.7.dp.toPx()),
+                                    size = Size(right - left, h),
+                                    cornerRadius = CornerRadius(6.dp.toPx())
+                                )
+                                drawRoundRect(
+                                    color = Color(0x33000000).copy(alpha = 0.2f * openA),
+                                    topLeft = Offset(left + i * 1.7.dp.toPx(), top + i * 1.7.dp.toPx()),
+                                    size = Size(right - left, h),
+                                    cornerRadius = CornerRadius(6.dp.toPx()),
+                                    style = Stroke(width = 0.8.dp.toPx())
+                                )
+                            }
                         }
                     }
 
-                    if (turningSheet in 0 until sheetCount && angle < 179.5f) {
-                        val rad = Math.toRadians(angle.toDouble()).toFloat()
-                        val cosA = cos(rad)
-                        val sinA = sin(rad)
-                        Box(
-                            modifier = Modifier
-                                .offset(x = pageW)
-                                .size(pageW, pageH)
-                                .graphicsLayer {
-                                    transformOrigin = TransformOrigin(0f, 0.5f)
-                                    scaleX = cosA
-                                    scaleY = 1f + 0.05f * sinA
-                                }
-                        ) {
-                            if (angle <= 90f) {
-                                RightHalf(
-                                    spreadIndex = turningSheet,
-                                    sheetCount = sheetCount,
-                                    binder = binder,
-                                    pages = pages,
-                                    totalCollected = totalCollected,
-                                    cardW = cardW,
-                                    cardH = cardH,
-                                    onCardClick = { card -> if (f == 0f) inspect(card) }
-                                )
-                            } else {
-                                Box(modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = -1f }) {
-                                    LeftHalf(
-                                        spreadIndex = turningSheet + 1,
-                                        binder = binder,
-                                        pages = pages,
-                                        totalCollected = totalCollected,
-                                        cardW = cardW,
-                                        cardH = cardH,
-                                        onCardClick = {}
-                                    )
-                                }
-                            }
+                    // ---- the book: every sheet near the current spread is kept composed, so nothing reloads
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .offset { IntOffset(bookLeftPx(spread + flip.value).roundToInt(), 0) }
+                            .size(pageW * 2, bookH)
+                    ) {
+                        if (spread >= sheetCount) {
                             Box(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.30f * sinA))
-                            )
+                                    .offset(x = pageW)
+                                    .size(pageW, bookH)
+                            ) { BackCover(binder = binder) }
                         }
-                    }
-
-                    if (position > 0.05f || spread > 0) {
+                        val firstSheet = (spread - 2).coerceAtLeast(0)
+                        val lastSheet = (spread + 1).coerceAtMost(sheetCount - 1)
+                        for (k in firstSheet..lastSheet) {
+                            key(k) {
+                                BookSheet(
+                                    k = k,
+                                    spread = spread,
+                                    flip = flip,
+                                    pageW = pageW,
+                                    bookH = bookH,
+                                    coverK = coverK,
+                                    front = {
+                                        if (k == 0) {
+                                            LeatherCover(binder = binder, totalCollected = totalCollected)
+                                        } else {
+                                            val pageIndex = (k - 1) * 2
+                                            PaperPage(
+                                                cards = pages.getOrNull(pageIndex).orEmpty(),
+                                                pageNumber = pageIndex + 1,
+                                                spineOnRight = false,
+                                                binder = binder,
+                                                cardW = cardW,
+                                                cardH = cardH,
+                                                onCardClick = { card ->
+                                                    if (flip.value == 0f && k == spread) {
+                                                        onButtonClickSfx()
+                                                        onInspectCard(card.instanceId)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    },
+                                    back = {
+                                        if (k == 0) {
+                                            InsideCover(binder = binder, totalCollected = totalCollected)
+                                        } else {
+                                            val pageIndex = (k - 1) * 2 + 1
+                                            PaperPage(
+                                                cards = pages.getOrNull(pageIndex).orEmpty(),
+                                                pageNumber = pageIndex + 1,
+                                                spineOnRight = true,
+                                                binder = binder,
+                                                cardW = cardW,
+                                                cardH = cardH,
+                                                onCardClick = { card ->
+                                                    if (flip.value == 0f && k == spread - 1) {
+                                                        onButtonClickSfx()
+                                                        onInspectCard(card.instanceId)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                        // metal rings along the spine
                         SpineRings(
-                            pageH = pageH,
+                            pageH = bookH,
                             ringColor = binder.ringColor,
                             modifier = Modifier
                                 .offset(x = pageW - 12.dp)
-                                .size(24.dp, pageH)
+                                .size(24.dp, bookH)
+                                .zIndex(1000f)
+                                .graphicsLayer {
+                                    val p = (spread + flip.value).coerceIn(0f, 1f)
+                                    alpha = ((p - 0.02f) * 8f).coerceIn(0f, 1f)
+                                }
                         )
                     }
-                }
 
-                // ---- bookmarks on the right edge of the binder
-                Column(
-                    modifier = Modifier
-                        .offset(x = tabW + bookW - 3.dp)
-                        .size(tabW, pageH)
-                        .padding(vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    bookmarks.forEach { mark ->
-                        BookmarkTab(
-                            mark = mark,
-                            dark = dark,
-                            selected = mark.key == selectedBookmark,
-                            enabled = mark.count > 0 || mark.key == "ALL",
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                onButtonClickSfx()
-                                onSelectBookmark(mark.key)
+                    // ---- bookmarks on the right edge of the binder
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .offset {
+                                val pos = spread + flip.value
+                                val p = pos.coerceIn(0f, 1f)
+                                val edge = bookLeftPx(pos) + pageWpx + pageWpx * (coverK + (1f - coverK) * p)
+                                IntOffset((edge - tabOverlapPx).roundToInt(), 0)
                             }
-                        )
+                            .size(tabW, bookH)
+                            .padding(vertical = 6.dp)
+                            .zIndex(2000f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        bookmarks.forEach { mark ->
+                            BookmarkTab(
+                                mark = mark,
+                                dark = dark,
+                                selected = mark.key == selectedBookmark,
+                                enabled = mark.count > 0 || mark.key == "ALL",
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    onButtonClickSfx()
+                                    onSelectBookmark(mark.key)
+                                }
+                            )
+                        }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.weight(1f))
 
             // ------------------------------------------------------ controls
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 6.dp),
+                    .padding(horizontal = 24.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -477,8 +495,105 @@ fun PremiumBinder(
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(4.dp))
         }
+    }
+}
+
+/**
+ * One physical sheet of the binder (front face and back face). Sheets keep their content while the
+ * binder is turned, so images are never rebuilt mid-flip. Everything that changes per frame is read
+ * inside graphicsLayer, so turning pages does not recompose anything.
+ */
+@Composable
+private fun BookSheet(
+    k: Int,
+    spread: Int,
+    flip: Animatable<Float, AnimationVector1D>,
+    pageW: Dp,
+    bookH: Dp,
+    coverK: Float,
+    front: @Composable () -> Unit,
+    back: @Composable () -> Unit
+) {
+    val isCover = k == 0
+    fun angleOf(f: Float): Float = when {
+        k < spread - 1 -> 180f
+        k == spread - 1 -> if (f < 0f) 180f + f * 180f else 180f
+        k == spread -> if (f > 0f) f * 180f else 0f
+        else -> 0f
+    }
+    val showingBack by remember(k, spread) { derivedStateOf { angleOf(flip.value) > 90f } }
+    val backward by remember(spread) { derivedStateOf { flip.value < 0f } }
+
+    // Left stack: higher sheet on top. Right stack: lower sheet on top. The moving sheet is always on top.
+    val z = when {
+        k < spread - 1 -> k.toFloat()
+        k == spread - 1 -> if (backward) 500f else k.toFloat()
+        k == spread -> if (!backward) 500f else 100f - k
+        else -> 100f - k
+    }
+    val sheetW = if (isCover) pageW * coverK else pageW
+
+    Box(
+        modifier = Modifier
+            .offset(x = pageW)
+            .size(sheetW, bookH)
+            .zIndex(z)
+            .graphicsLayer {
+                val f = flip.value
+                val rad = Math.toRadians(angleOf(f).toDouble()).toFloat()
+                transformOrigin = TransformOrigin(0f, 0.5f)
+                val widthFactor = if (isCover) {
+                    val pos = (spread + f).coerceIn(0f, 1f)
+                    1f + (1f / coverK - 1f) * pos
+                } else {
+                    1f
+                }
+                scaleX = cos(rad) * widthFactor
+                scaleY = 1f + 0.05f * sin(rad)
+            }
+    ) {
+        // back face (mirrored so it reads correctly once the sheet has turned over)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(if (showingBack) 1f else 0f)
+                .alpha(if (showingBack) 1f else 0f),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isCover) {
+                Box(
+                    modifier = Modifier
+                        .width(pageW)
+                        .fillMaxHeight()
+                        .graphicsLayer { scaleX = -coverK }
+                ) { back() }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { scaleX = -1f }
+                ) { back() }
+            }
+        }
+        // front face
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(if (showingBack) 0f else 1f)
+                .alpha(if (showingBack) 0f else 1f)
+        ) { front() }
+        // shade while the sheet is moving
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(5f)
+                .graphicsLayer {
+                    val rad = Math.toRadians(angleOf(flip.value).toDouble()).toFloat()
+                    alpha = (0.30f * sin(rad)).coerceAtLeast(0f)
+                }
+                .background(Color.Black)
+        )
     }
 }
 
@@ -496,65 +611,6 @@ private fun Modifier.drawDesk(binder: CardBinderDesign, dark: Boolean): Modifier
                 listOf(binder.coverPrimary.copy(alpha = if (dark) 0.28f else 0.12f), Color.Transparent)
             )
         )
-
-// ------------------------------------------------------------------ halves
-
-@Composable
-private fun LeftHalf(
-    spreadIndex: Int,
-    binder: CardBinderDesign,
-    pages: List<List<OwnedCard>>,
-    totalCollected: Int,
-    cardW: Dp,
-    cardH: Dp,
-    onCardClick: (OwnedCard) -> Unit
-) {
-    when {
-        spreadIndex <= 0 -> Unit
-        spreadIndex == 1 -> InsideCover(binder = binder, totalCollected = totalCollected)
-        else -> {
-            val pageIndex = (spreadIndex - 2) * 2 + 1
-            PaperPage(
-                cards = pages.getOrNull(pageIndex).orEmpty(),
-                pageNumber = pageIndex + 1,
-                spineOnRight = true,
-                binder = binder,
-                cardW = cardW,
-                cardH = cardH,
-                onCardClick = onCardClick
-            )
-        }
-    }
-}
-
-@Composable
-private fun RightHalf(
-    spreadIndex: Int,
-    sheetCount: Int,
-    binder: CardBinderDesign,
-    pages: List<List<OwnedCard>>,
-    totalCollected: Int,
-    cardW: Dp,
-    cardH: Dp,
-    onCardClick: (OwnedCard) -> Unit
-) {
-    when {
-        spreadIndex <= 0 -> LeatherCover(binder = binder, totalCollected = totalCollected)
-        spreadIndex >= sheetCount -> BackCover(binder = binder)
-        else -> {
-            val pageIndex = (spreadIndex - 1) * 2
-            PaperPage(
-                cards = pages.getOrNull(pageIndex).orEmpty(),
-                pageNumber = pageIndex + 1,
-                spineOnRight = false,
-                binder = binder,
-                cardW = cardW,
-                cardH = cardH,
-                onCardClick = onCardClick
-            )
-        }
-    }
-}
 
 // ------------------------------------------------------------------ faces
 
@@ -707,12 +763,12 @@ private fun PaperPage(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
-                    start = if (spineOnRight) 6.dp else 22.dp,
-                    end = if (spineOnRight) 22.dp else 6.dp,
-                    top = 14.dp,
-                    bottom = 20.dp
+                    start = if (spineOnRight) 4.dp else 18.dp,
+                    end = if (spineOnRight) 18.dp else 4.dp,
+                    top = 10.dp,
+                    bottom = 16.dp
                 ),
-            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             for (slot in 0 until CARDS_PER_PAGE) {
@@ -748,7 +804,7 @@ private fun Sleeve(
     val shape = RoundedCornerShape(8.dp)
     Box(
         modifier = Modifier
-            .size(cardW + 8.dp, cardH)
+            .size(cardW + 6.dp, cardH)
             .clip(shape)
             .background(Color(0x1F000000))
             .border(1.dp, Color(0x40000000), shape)
@@ -758,7 +814,7 @@ private fun Sleeve(
         if (card != null) {
             BinderCardFace(
                 card = card,
-                modifier = Modifier.size(cardW, cardH - 8.dp)
+                modifier = Modifier.size(cardW, cardH - 6.dp)
             )
         } else {
             Icon(
